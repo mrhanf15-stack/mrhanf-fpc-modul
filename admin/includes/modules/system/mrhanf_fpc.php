@@ -2,23 +2,36 @@
 /**
  * Mr. Hanf Full Page Cache — System Module
  *
- * @version     2.1.0
+ * @version     2.2.0
  * @php         8.1+
  * @author      Manus AI für Mr. Hanf (mr-hanf.de)
  * @copyright   2026 Mr. Hanf
  *
- * Changelog v2.1.0:
- *   - BUGFIX: declare(strict_types=1) entfernt — inkompatibel mit modified Admin-Includes
- *   - BUGFIX: readonly Properties entfernt — modified greift direkt auf $code, $title etc. zu
- *   - BUGFIX: $_check als public Property deklariert (PHP 8.2 dynamic properties deprecated)
- *   - BUGFIX: xtc_button() / xtc_button_link() verwenden jetzt BUTTON_SAVE / BUTTON_CANCEL Konstanten
- *   - BUGFIX: enabled-Vergleich von === auf == geändert (modified-Standard)
- *   - VERBESSERUNG: SORT_ORDER Konfigurationsfeld hinzugefügt
- *   - VERBESSERUNG: Cache-Verzeichnis Prüfung mit Fehlerbehandlung
- *   - VERBESSERUNG: admin_access Berechtigung wird bei install()/remove() verwaltet
+ * Changelog v2.2.0:
+ *   - BUGFIX: Sprachdatei wird jetzt direkt vom Modul geladen (Fallback)
+ *     Modified v2.0.7.2 lädt lang/modules/system/ nicht immer automatisch
+ *   - Alle Fixes aus v2.1.0 enthalten
  */
 
 defined('_VALID_XTC') or die('Direct Access to this location is not allowed.');
+
+// ---------------------------------------------------------------
+// Sprachdatei laden — MUSS vor der Klasse passieren,
+// damit die Konstanten beim Instanziieren verfügbar sind.
+// ---------------------------------------------------------------
+$_mrhanf_fpc_lang_dir = defined('DIR_FS_LANGUAGES')
+    ? DIR_FS_LANGUAGES
+    : (defined('DIR_FS_CATALOG') ? DIR_FS_CATALOG . 'lang/' : '');
+
+if ($_mrhanf_fpc_lang_dir !== '') {
+    $_mrhanf_fpc_lang = isset($_SESSION['language']) ? $_SESSION['language'] : 'german';
+    $_mrhanf_fpc_lang_file = $_mrhanf_fpc_lang_dir . $_mrhanf_fpc_lang . '/modules/system/mrhanf_fpc.php';
+
+    if (is_file($_mrhanf_fpc_lang_file) && !defined('MODULE_MRHANF_FPC_TITLE')) {
+        include_once($_mrhanf_fpc_lang_file);
+    }
+}
+unset($_mrhanf_fpc_lang_dir, $_mrhanf_fpc_lang, $_mrhanf_fpc_lang_file);
 
 class mrhanf_fpc
 {
