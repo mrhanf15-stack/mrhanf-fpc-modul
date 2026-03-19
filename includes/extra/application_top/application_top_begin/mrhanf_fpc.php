@@ -1,12 +1,9 @@
 <?php
-
-declare(strict_types=1);
-
 /**
  * Mr. Hanf Full Page Cache — application_top_begin Hook
- * v1.2.2 — Repariert, sauber, kein Debug-Code
+ * v1.2.3 — KEIN declare(strict_types=1) - nicht erlaubt in included Dateien
  *
- * @version  1.2.2
+ * @version  1.2.3
  * @php      8.3+
  */
 
