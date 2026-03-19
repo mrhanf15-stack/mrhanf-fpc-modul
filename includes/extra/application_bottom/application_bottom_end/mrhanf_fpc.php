@@ -1,10 +1,10 @@
 <?php
 /**
  * Mr. Hanf Full Page Cache — application_bottom_end Hook
- * v1.2.3 — KEIN declare(strict_types=1) - nicht erlaubt in included Dateien
+ * Kein declare(strict_types=1) — nicht erlaubt in included Dateien
  *
- * @version  1.2.3
- * @php      8.3+
+ * @version  2.1.0
+ * @php      8.1+
  */
 
 if (
@@ -16,7 +16,7 @@ if (
 }
 
 // Sicherstellen dass wir auf dem richtigen ob-Level sind
-$fpc_expected_level = ($GLOBALS['fpc_ob_level'] ?? 0) + 1;
+$fpc_expected_level = (isset($GLOBALS['fpc_ob_level']) ? (int) $GLOBALS['fpc_ob_level'] : 0) + 1;
 if (ob_get_level() < $fpc_expected_level) {
     return;
 }
@@ -33,13 +33,13 @@ $fpc_cache_file = $GLOBALS['fpc_cache_file'];
 $fpc_timestamp  = date('Y-m-d H:i:s');
 
 // HTML-Kommentar anhängen
-$fpc_html_to_save = $fpc_html . "\n<!-- MR-HANF FPC v1.2.3: Cached on {$fpc_timestamp} -->\n";
+$fpc_html_to_save = $fpc_html . "\n<!-- MR-HANF FPC v2.1.0: Cached on " . $fpc_timestamp . " -->\n";
 
 // Atomar schreiben: erst Temp-Datei, dann umbenennen
 $fpc_tmp = $fpc_cache_file . '.tmp.' . getmypid();
 
-if (file_put_contents($fpc_tmp, $fpc_html_to_save, LOCK_EX) !== false) {
-    rename($fpc_tmp, $fpc_cache_file);
+if (@file_put_contents($fpc_tmp, $fpc_html_to_save, LOCK_EX) !== false) {
+    @rename($fpc_tmp, $fpc_cache_file);
 } else {
     @unlink($fpc_tmp);
     $fpc_log = dirname($fpc_cache_file) . '/fpc_errors.log';

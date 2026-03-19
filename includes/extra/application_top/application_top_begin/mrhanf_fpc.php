@@ -1,10 +1,10 @@
 <?php
 /**
  * Mr. Hanf Full Page Cache — application_top_begin Hook
- * v1.2.3 — KEIN declare(strict_types=1) - nicht erlaubt in included Dateien
+ * Kein declare(strict_types=1) — nicht erlaubt in included Dateien
  *
- * @version  1.2.3
- * @php      8.3+
+ * @version  2.1.0
+ * @php      8.1+
  */
 
 if (!defined('MODULE_MRHANF_FPC_STATUS') || MODULE_MRHANF_FPC_STATUS !== 'true') {
@@ -31,22 +31,38 @@ $fpc_excluded_pages = array_filter(
 // -------------------------------------------------------------------------
 // Cacheability-Prüfung
 // -------------------------------------------------------------------------
-$fpc_is_cacheable = match(true) {
-    $_SERVER['REQUEST_METHOD'] !== 'GET'                   => false,
-    isset($_GET['action']) && $_GET['action'] !== ''       => false,
-    isset($_COOKIE['xtc_customer_id'])
-        && $_COOKIE['xtc_customer_id'] !== ''              => false,
-    isset($_COOKIE['xtc_cart'])
-        && $_COOKIE['xtc_cart'] !== ''                     => false,
-    isset($_COOKIE['xtc_is_admin'])
-        && $_COOKIE['xtc_is_admin'] !== ''                 => false,
-    default                                                => true,
-};
+$fpc_is_cacheable = true;
 
+// Nur GET-Requests cachen
+if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
+    $fpc_is_cacheable = false;
+}
+
+// Keine Aktionen cachen
+if ($fpc_is_cacheable && isset($_GET['action']) && $_GET['action'] !== '') {
+    $fpc_is_cacheable = false;
+}
+
+// Eingeloggte Kunden nicht cachen
+if ($fpc_is_cacheable && isset($_COOKIE['xtc_customer_id']) && $_COOKIE['xtc_customer_id'] !== '') {
+    $fpc_is_cacheable = false;
+}
+
+// Warenkorb nicht cachen
+if ($fpc_is_cacheable && isset($_COOKIE['xtc_cart']) && $_COOKIE['xtc_cart'] !== '') {
+    $fpc_is_cacheable = false;
+}
+
+// Admin nicht cachen
+if ($fpc_is_cacheable && isset($_COOKIE['xtc_is_admin']) && $_COOKIE['xtc_is_admin'] !== '') {
+    $fpc_is_cacheable = false;
+}
+
+// Ausgeschlossene Seiten prüfen
 if ($fpc_is_cacheable) {
     $current_uri = $_SERVER['REQUEST_URI'];
     foreach ($fpc_excluded_pages as $page) {
-        if (str_contains($current_uri, $page)) {
+        if (strpos($current_uri, $page) !== false) {
             $fpc_is_cacheable = false;
             break;
         }
@@ -67,7 +83,7 @@ if (!is_dir($fpc_cache_dir) && !@mkdir($fpc_cache_dir, 0755, true)) {
 // -------------------------------------------------------------------------
 // Cache-Key generieren (xxh3 wenn verfügbar, sonst md5)
 // -------------------------------------------------------------------------
-$fpc_protocol   = isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? 'https' : 'http';
+$fpc_protocol   = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on') ? 'https' : 'http';
 $fpc_full_url   = $fpc_protocol . '://' . $_SERVER['HTTP_HOST'] . $_SERVER['REQUEST_URI'];
 $fpc_hash_algo  = in_array('xxh3', hash_algos(), true) ? 'xxh3' : 'md5';
 $fpc_cache_file = $fpc_cache_dir . hash($fpc_hash_algo, $fpc_full_url) . '.html';

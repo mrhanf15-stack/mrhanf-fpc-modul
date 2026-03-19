@@ -1,28 +1,73 @@
 <?php
-
-declare(strict_types=1);
-
 /**
  * Mr. Hanf Full Page Cache — System Module
  *
- * @version     2.0.0
- * @php         8.3+
+ * @version     2.1.0
+ * @php         8.1+
  * @author      Manus AI für Mr. Hanf (mr-hanf.de)
  * @copyright   2026 Mr. Hanf
+ *
+ * Changelog v2.1.0:
+ *   - BUGFIX: declare(strict_types=1) entfernt — inkompatibel mit modified Admin-Includes
+ *   - BUGFIX: readonly Properties entfernt — modified greift direkt auf $code, $title etc. zu
+ *   - BUGFIX: $_check als public Property deklariert (PHP 8.2 dynamic properties deprecated)
+ *   - BUGFIX: xtc_button() / xtc_button_link() verwenden jetzt BUTTON_SAVE / BUTTON_CANCEL Konstanten
+ *   - BUGFIX: enabled-Vergleich von === auf == geändert (modified-Standard)
+ *   - VERBESSERUNG: SORT_ORDER Konfigurationsfeld hinzugefügt
+ *   - VERBESSERUNG: Cache-Verzeichnis Prüfung mit Fehlerbehandlung
+ *   - VERBESSERUNG: admin_access Berechtigung wird bei install()/remove() verwaltet
  */
 
 defined('_VALID_XTC') or die('Direct Access to this location is not allowed.');
 
-final class mrhanf_fpc
+class mrhanf_fpc
 {
-    public readonly string $prefix;
-    public readonly string $code;
-    public string $title;
-    public string $description;
-    public int    $sort_order;
-    public bool   $enabled;
+    /**
+     * Module prefix for configuration keys.
+     * @var string
+     */
+    public $prefix;
 
-    private const CACHE_DIR_RELATIVE = 'cache/fpc/';
+    /**
+     * Unique module code — used by modified to identify the module.
+     * @var string
+     */
+    public $code;
+
+    /**
+     * Module title displayed in admin module list.
+     * @var string
+     */
+    public $title;
+
+    /**
+     * Module description displayed in admin module detail.
+     * @var string
+     */
+    public $description;
+
+    /**
+     * Sort order for module list display.
+     * @var int
+     */
+    public $sort_order;
+
+    /**
+     * Whether the module is currently enabled.
+     * @var bool
+     */
+    public $enabled;
+
+    /**
+     * Internal check cache — used by check() to avoid repeated DB queries.
+     * @var int|null
+     */
+    public $_check;
+
+    /**
+     * Relative path to the FPC cache directory (from shop root).
+     */
+    private $cache_dir_relative = 'cache/fpc/';
 
     public function __construct()
     {
@@ -33,37 +78,51 @@ final class mrhanf_fpc
             : 'Mr. Hanf Full Page Cache';
         $this->description = defined($this->prefix . '_DESC')
             ? constant($this->prefix . '_DESC')
-            : 'Aktiviert den Full-Page-Cache für extrem schnelle Ladezeiten (PHP 8.3 optimiert).';
+            : 'Aktiviert den Full-Page-Cache für extrem schnelle Ladezeiten.';
         $this->sort_order  = defined($this->prefix . '_SORT_ORDER')
             ? (int) constant($this->prefix . '_SORT_ORDER')
             : 0;
-        $this->enabled     = defined($this->prefix . '_STATUS')
-            && constant($this->prefix . '_STATUS') === 'true';
+        $this->enabled     = (defined($this->prefix . '_STATUS')
+            && constant($this->prefix . '_STATUS') == 'true');
     }
 
-    public function process(): void
+    /**
+     * Frontend process hook — not needed, logic runs via auto-include hooks.
+     */
+    public function process()
     {
-        // Kein Frontend-Prozess nötig — Logik läuft über Auto-Include Hooks
     }
 
-    public function display(): array
+    /**
+     * Display the configuration form with Save/Cancel buttons.
+     * Called by modified admin when editing the module settings.
+     *
+     * @return array
+     */
+    public function display()
     {
-        return [
-            'text' => '<br><div align="center">'
-                . xtc_button('button_save')
-                . ' '
+        return array(
+            'text' => '<br />'
+                . '<div align="center">'
+                . xtc_button(BUTTON_SAVE)
+                . '&nbsp;'
                 . xtc_button_link(
-                    'button_cancel',
+                    BUTTON_CANCEL,
                     xtc_href_link(
                         FILENAME_MODULE_EXPORT,
                         'set=' . $_GET['set'] . '&module=' . $this->code
                     )
                 )
                 . '</div>',
-        ];
+        );
     }
 
-    public function check(): int
+    /**
+     * Check if the module is installed (configuration exists in DB).
+     *
+     * @return int
+     */
+    public function check()
     {
         if (!isset($this->_check)) {
             $check_query  = xtc_db_query(
@@ -72,13 +131,15 @@ final class mrhanf_fpc
             );
             $this->_check = xtc_db_num_rows($check_query);
         }
-
-        return (int) $this->_check;
+        return $this->_check;
     }
 
-    public function install(): void
+    /**
+     * Install the module — create configuration entries and cache directory.
+     */
+    public function install()
     {
-        // STATUS mit Dropdown-Auswahl
+        // STATUS — Dropdown true/false
         xtc_db_query(
             "INSERT INTO " . TABLE_CONFIGURATION
             . " (configuration_key, configuration_value, configuration_group_id, sort_order, set_function, date_added)"
@@ -87,7 +148,7 @@ final class mrhanf_fpc
             . " 'xtc_cfg_select_option(array(\'true\', \'false\'), ', now())"
         );
 
-        // CACHE_TIME
+        // CACHE_TIME — Lebensdauer in Sekunden
         xtc_db_query(
             "INSERT INTO " . TABLE_CONFIGURATION
             . " (configuration_key, configuration_value, configuration_group_id, sort_order, date_added)"
@@ -95,7 +156,7 @@ final class mrhanf_fpc
             . xtc_db_input($this->prefix . '_CACHE_TIME') . "', '86400', '6', '2', now())"
         );
 
-        // EXCLUDED_PAGES
+        // EXCLUDED_PAGES — Kommagetrennte Ausschlussliste
         xtc_db_query(
             "INSERT INTO " . TABLE_CONFIGURATION
             . " (configuration_key, configuration_value, configuration_group_id, sort_order, date_added)"
@@ -105,27 +166,95 @@ final class mrhanf_fpc
             . " '6', '3', now())"
         );
 
+        // SORT_ORDER
+        xtc_db_query(
+            "INSERT INTO " . TABLE_CONFIGURATION
+            . " (configuration_key, configuration_value, configuration_group_id, sort_order, date_added)"
+            . " VALUES ('"
+            . xtc_db_input($this->prefix . '_SORT_ORDER') . "', '0', '6', '4', now())"
+        );
+
         // Cache-Verzeichnis anlegen
-        $cache_dir = DIR_FS_DOCUMENT_ROOT . self::CACHE_DIR_RELATIVE;
-        if (!is_dir($cache_dir)) {
-            @mkdir($cache_dir, 0755, true);
+        if (defined('DIR_FS_DOCUMENT_ROOT')) {
+            $cache_dir = DIR_FS_DOCUMENT_ROOT . $this->cache_dir_relative;
+            if (!is_dir($cache_dir)) {
+                @mkdir($cache_dir, 0755, true);
+            }
         }
+
+        // Admin-Berechtigung hinzufügen
+        $this->_addAdminAccess();
     }
 
-    public function remove(): void
+    /**
+     * Remove the module — delete configuration entries.
+     */
+    public function remove()
     {
         xtc_db_query(
             "DELETE FROM " . TABLE_CONFIGURATION
             . " WHERE configuration_key LIKE '" . $this->prefix . "_%'"
         );
+
+        // Admin-Berechtigung entfernen
+        $this->_removeAdminAccess();
     }
 
-    public function keys(): array
+    /**
+     * Return the list of configuration keys for this module.
+     * Modified uses this to render the settings form.
+     *
+     * @return array
+     */
+    public function keys()
     {
-        return [
+        return array(
             $this->prefix . '_STATUS',
             $this->prefix . '_CACHE_TIME',
             $this->prefix . '_EXCLUDED_PAGES',
-        ];
+            $this->prefix . '_SORT_ORDER',
+        );
+    }
+
+    /**
+     * Add admin_access column for this module.
+     */
+    private function _addAdminAccess()
+    {
+        // Prüfe ob die Spalte bereits existiert
+        $result = xtc_db_query(
+            "SHOW COLUMNS FROM admin_access LIKE '" . $this->code . "'"
+        );
+        if (xtc_db_num_rows($result) == 0) {
+            xtc_db_query(
+                "ALTER TABLE admin_access ADD COLUMN `" . $this->code . "` INT(1) NOT NULL DEFAULT '0'"
+            );
+            // Admin (customers_id = 1 oder groups_id = 1) Zugriff gewähren
+            xtc_db_query(
+                "UPDATE admin_access SET `" . $this->code . "` = '1' WHERE customers_id = '1'"
+            );
+            // Auch dem aktuellen Admin Zugriff gewähren
+            if (isset($_SESSION['customer_id'])) {
+                xtc_db_query(
+                    "UPDATE admin_access SET `" . $this->code . "` = '1'"
+                    . " WHERE customers_id = '" . (int) $_SESSION['customer_id'] . "'"
+                );
+            }
+        }
+    }
+
+    /**
+     * Remove admin_access column for this module.
+     */
+    private function _removeAdminAccess()
+    {
+        $result = xtc_db_query(
+            "SHOW COLUMNS FROM admin_access LIKE '" . $this->code . "'"
+        );
+        if (xtc_db_num_rows($result) > 0) {
+            xtc_db_query(
+                "ALTER TABLE admin_access DROP COLUMN `" . $this->code . "`"
+            );
+        }
     }
 }

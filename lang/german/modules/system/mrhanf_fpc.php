@@ -7,4 +7,5 @@ define('MODULE_MRHANF_FPC_CACHE_TIME_TITLE', 'Cache Lebensdauer (Sekunden)');
 define('MODULE_MRHANF_FPC_CACHE_TIME_DESC', 'Wie lange soll eine Seite im Cache bleiben? Standard: 86400 (24 Stunden)');
 define('MODULE_MRHANF_FPC_EXCLUDED_PAGES_TITLE', 'Ausgeschlossene Seiten');
 define('MODULE_MRHANF_FPC_EXCLUDED_PAGES_DESC', 'Kommagetrennte Liste von URL-Teilen, die NICHT gecacht werden sollen (z.B. Warenkorb, Login, Kasse).');
-?>
+define('MODULE_MRHANF_FPC_SORT_ORDER_TITLE', 'Sortierreihenfolge');
+define('MODULE_MRHANF_FPC_SORT_ORDER_DESC', 'Reihenfolge der Anzeige in der Modulliste.');
