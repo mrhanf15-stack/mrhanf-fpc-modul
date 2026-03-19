@@ -141,7 +141,7 @@ curl_setopt_array($ch, array(
     CURLOPT_TIMEOUT        => 30,
     CURLOPT_CONNECTTIMEOUT => 10,
     CURLOPT_SSL_VERIFYPEER => false,
-    CURLOPT_USERAGENT      => 'MrHanf-FPC-Preloader/6.0',
+    CURLOPT_USERAGENT      => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
     CURLOPT_ENCODING       => '',
     CURLOPT_COOKIE         => '',
 ));
