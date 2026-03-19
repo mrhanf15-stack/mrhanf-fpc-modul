@@ -169,8 +169,11 @@ foreach ($filtered as $url) {
     $html = curl_exec($ch);
     $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
 
-    if ($html === false || $code !== 200) {
+    if ($html === false || $code != 200) {
         $errors++;
+        if ($errors <= 5) {
+            echo '[FPC] FEHLER: ' . $url . ' (HTTP ' . $code . ', curl: ' . curl_error($ch) . ')' . "\n";
+        }
         continue;
     }
 
