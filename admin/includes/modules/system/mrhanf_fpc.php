@@ -1,6 +1,6 @@
 <?php
 /* -----------------------------------------------------------------------------------------
-   Mr. Hanf Full Page Cache (FPC) — System Module v3.1.0
+   Mr. Hanf Full Page Cache (FPC) — System Module v3.2.0
    modified eCommerce Shopsoftware
    http://www.modified-shop.org
 
@@ -52,7 +52,7 @@ class mrhanf_fpc
         $this->title       = MODULE_MRHANF_FPC_TEXT_TITLE;
         $this->description = MODULE_MRHANF_FPC_TEXT_DESCRIPTION;
         $this->sort_order  = defined('MODULE_MRHANF_FPC_SORT_ORDER') ? MODULE_MRHANF_FPC_SORT_ORDER : 0;
-        $this->enabled     = ((defined('MODULE_MRHANF_FPC_STATUS') && MODULE_MRHANF_FPC_STATUS == 'true') ? true : false);
+        $this->enabled     = ((defined('MODULE_MRHANF_FPC_STATUS') && MODULE_MRHANF_FPC_STATUS == 'True') ? true : false);
     }
 
     function process($file)
@@ -80,10 +80,26 @@ class mrhanf_fpc
 
     function install()
     {
-        xtc_db_query("INSERT INTO " . TABLE_CONFIGURATION . " (configuration_key, configuration_value, configuration_group_id, sort_order, set_function, date_added) VALUES ('MODULE_MRHANF_FPC_STATUS', 'true', '6', '1', 'xtc_cfg_select_option(array(\'true\', \'false\'), ', now())");
-        xtc_db_query("INSERT INTO " . TABLE_CONFIGURATION . " (configuration_key, configuration_value, configuration_group_id, sort_order, date_added) VALUES ('MODULE_MRHANF_FPC_CACHE_TIME', '86400', '6', '2', now())");
-        xtc_db_query("INSERT INTO " . TABLE_CONFIGURATION . " (configuration_key, configuration_value, configuration_group_id, sort_order, date_added) VALUES ('MODULE_MRHANF_FPC_EXCLUDED_PAGES', 'checkout,login,account,shopping_cart,logoff,admin,password_double_opt,create_account,contact_us,tell_a_friend,product_reviews_write', '6', '3', now())");
-        xtc_db_query("INSERT INTO " . TABLE_CONFIGURATION . " (configuration_key, configuration_value, configuration_group_id, sort_order, date_added) VALUES ('MODULE_MRHANF_FPC_SORT_ORDER', '0', '6', '4', now())");
+        $cfg = array(
+            array('MODULE_MRHANF_FPC_STATUS',         'True',  1, "xtc_cfg_select_option(array('True', 'False'),"),
+            array('MODULE_MRHANF_FPC_CACHE_TIME',     '86400', 2, ''),
+            array('MODULE_MRHANF_FPC_EXCLUDED_PAGES',  'checkout,login,account,shopping_cart,logoff,admin,password_double_opt,create_account,contact_us,tell_a_friend,product_reviews_write', 3, ''),
+            array('MODULE_MRHANF_FPC_SORT_ORDER',     '0',     4, ''),
+        );
+        foreach ($cfg as $c) {
+            $key  = xtc_db_input($c[0]);
+            $val  = xtc_db_input($c[1]);
+            $sort = (int) $c[2];
+            $func = xtc_db_input($c[3]);
+            $sql  = "INSERT INTO " . TABLE_CONFIGURATION
+                  . " (configuration_key, configuration_value, configuration_group_id, sort_order, date_added"
+                  . ($func !== '' ? ", set_function" : "")
+                  . ") VALUES ('"
+                  . $key . "', '" . $val . "', 6, " . $sort . ", NOW()"
+                  . ($func !== '' ? ", '" . $func . "'" : "")
+                  . ")";
+            xtc_db_query($sql);
+        }
 
         // Cache-Verzeichnis anlegen
         if (defined('DIR_FS_DOCUMENT_ROOT')) {

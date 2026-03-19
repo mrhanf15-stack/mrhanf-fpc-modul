@@ -8,7 +8,7 @@
    -----------------------------------------------------------------------------------------*/
 
 // Nur ausfuehren wenn das Modul installiert und aktiv ist
-if (defined('MODULE_MRHANF_FPC_STATUS') && MODULE_MRHANF_FPC_STATUS == 'true') {
+if (defined('MODULE_MRHANF_FPC_STATUS') && MODULE_MRHANF_FPC_STATUS == 'True') {
 
     // Nur GET-Requests cachen
     if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
