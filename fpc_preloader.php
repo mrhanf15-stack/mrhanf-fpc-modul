@@ -106,10 +106,10 @@ foreach ($sitemap_urls as $sitemap_url) {
 // 2. Fallback: SEO-URLs aus DB
 if (empty($urls)) {
     echo '[FPC] Keine Sitemap. Lade URLs aus DB...' . "\n";
-    $r = $db->query("SELECT url_rewrite FROM seo_url WHERE url_rewrite != '' ORDER BY url_rewrite LIMIT " . ($max_pages * 2));
+    $r = $db->query("SELECT DISTINCT url_text FROM clean_seo_url WHERE url_text != '' ORDER BY url_text LIMIT " . ($max_pages * 2));
     if ($r) {
         while ($row = $r->fetch_assoc()) {
-            $urls[] = $shop_url . '/' . ltrim($row['url_rewrite'], '/');
+            $urls[] = $shop_url . '/' . ltrim($row['url_text'], '/');
         }
     }
     array_unshift($urls, $shop_url . '/');
