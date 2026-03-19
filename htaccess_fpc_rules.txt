@@ -1,0 +1,48 @@
+# ============================================================
+# Mr. Hanf Full Page Cache v6.0.0 - .htaccess Regeln
+# ============================================================
+# Diese Regeln muessen am ANFANG der .htaccess eingefuegt werden,
+# VOR allen anderen RewriteRules des Shops.
+#
+# Funktionsweise:
+#   1. Prueft ob die Anfrage ein GET-Request ist
+#   2. Prueft ob KEIN Session-Cookie gesetzt ist (= Gast)
+#   3. Prueft ob eine gecachte HTML-Datei existiert
+#   4. Wenn ja: leitet an fpc_serve.php weiter (TTFB < 10ms)
+#   5. Wenn nein: normaler Shop-Ablauf
+# ============================================================
+
+# --- FPC START ---
+<IfModule mod_rewrite.c>
+RewriteEngine On
+
+# Nur GET-Requests
+RewriteCond %{REQUEST_METHOD} =GET
+
+# Kein Session-Cookie (Gast-Besucher)
+RewriteCond %{HTTP_COOKIE} !MODsid [NC]
+RewriteCond %{HTTP_COOKIE} !PHPSESSID [NC]
+
+# Keine Admin-Seiten
+RewriteCond %{REQUEST_URI} !^/admin [NC]
+
+# Keine statischen Dateien
+RewriteCond %{REQUEST_URI} !\.(css|js|jpg|jpeg|png|gif|svg|ico|woff|woff2|ttf|eot|pdf|zip)$ [NC]
+
+# Keine Checkout/Login/Warenkorb-Seiten
+RewriteCond %{QUERY_STRING} !action= [NC]
+RewriteCond %{REQUEST_URI} !checkout [NC]
+RewriteCond %{REQUEST_URI} !login [NC]
+RewriteCond %{REQUEST_URI} !account [NC]
+RewriteCond %{REQUEST_URI} !shopping_cart [NC]
+RewriteCond %{REQUEST_URI} !logoff [NC]
+
+# Cache-Datei existiert? (Startseite)
+RewriteCond %{DOCUMENT_ROOT}/cache/fpc/index.html -f
+RewriteRule ^$ fpc_serve.php [L,QSA]
+
+# Cache-Datei existiert? (Unterseiten)
+RewriteCond %{DOCUMENT_ROOT}/cache/fpc/%{REQUEST_URI}/index.html -f
+RewriteRule ^(.+)$ fpc_serve.php [L,QSA]
+</IfModule>
+# --- FPC ENDE ---

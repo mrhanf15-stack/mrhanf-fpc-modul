@@ -1,16 +1,16 @@
 <?php
 /**
- * Mr. Hanf Full Page Cache v4.0.0 – English Language File (Admin)
- * PHP 8.3 | Hookpoint: ~/lang/english/extra/admin/
+ * Mr. Hanf Full Page Cache v6.0.0 - English Language File
  */
-if (!defined('_VALID_XTC')) { return; }
 define('MODULE_MRHANF_FPC_TITLE', 'Mr. Hanf Full Page Cache');
-define('MODULE_MRHANF_FPC_DESC', 'Enables extremely fast HTML caching for guests. Reduces TTFB from 2-3 seconds to under 0.1 seconds. Cache files are stored in <code>cache/fpc/</code>.');
+define('MODULE_MRHANF_FPC_DESC', 'Cron-based preloading system. Generates static HTML files for extremely fast page loads.');
 define('MODULE_MRHANF_FPC_STATUS_TITLE', 'Enable Module');
 define('MODULE_MRHANF_FPC_STATUS_DESC', 'Should the Full Page Cache be enabled?');
 define('MODULE_MRHANF_FPC_CACHE_TIME_TITLE', 'Cache Lifetime (seconds)');
 define('MODULE_MRHANF_FPC_CACHE_TIME_DESC', 'How long should a page stay in cache? Default: 86400 (24 hours)');
 define('MODULE_MRHANF_FPC_EXCLUDED_PAGES_TITLE', 'Excluded Pages');
-define('MODULE_MRHANF_FPC_EXCLUDED_PAGES_DESC', 'Comma-separated list of URL parts that should NOT be cached (e.g. checkout, login, account).');
+define('MODULE_MRHANF_FPC_EXCLUDED_PAGES_DESC', 'Comma-separated list of URL parts that should NOT be cached.');
+define('MODULE_MRHANF_FPC_PRELOAD_LIMIT_TITLE', 'Max. Pages per Cron Run');
+define('MODULE_MRHANF_FPC_PRELOAD_LIMIT_DESC', 'Maximum number of pages to cache per cron run. Default: 500');
 define('MODULE_MRHANF_FPC_SORT_ORDER_TITLE', 'Sort Order');
-define('MODULE_MRHANF_FPC_SORT_ORDER_DESC', 'Display order in the admin area.');
+define('MODULE_MRHANF_FPC_SORT_ORDER_DESC', 'Display order in the module list.');
