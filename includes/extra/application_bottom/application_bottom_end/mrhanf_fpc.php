@@ -1,11 +1,11 @@
 <?php
-/* -----------------------------------------------------------------------------------------
-   Mr. Hanf Full Page Cache (FPC) — Cache-Save Hook (application_bottom_end)
-   -----------------------------------------------------------------------------------------
-   Faengt den Output-Buffer ab und speichert ihn atomar als Cache-Datei.
-   Wird nur ausgefuehrt wenn application_top_begin einen Cache-MISS erkannt hat.
-   -----------------------------------------------------------------------------------------*/
-
+/**
+ * Mr. Hanf Full Page Cache v4.0.0 – Cache-Save Hook (application_bottom_end)
+ * Hookpoint: ~/includes/extra/application_bottom/application_bottom_end/
+ *
+ * Faengt den Output-Buffer ab und speichert ihn atomar als Cache-Datei.
+ * Wird nur ausgefuehrt wenn application_top_begin einen Cache-MISS erkannt hat.
+ */
 if (isset($GLOBALS['mrhanf_fpc_file']) && $GLOBALS['mrhanf_fpc_file'] != '') {
 
     $mrhanf_fpc_html = ob_get_contents();

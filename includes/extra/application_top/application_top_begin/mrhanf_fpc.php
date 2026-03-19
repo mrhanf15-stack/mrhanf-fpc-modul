@@ -1,14 +1,13 @@
 <?php
-/* -----------------------------------------------------------------------------------------
-   Mr. Hanf Full Page Cache (FPC) — Cache-Check Hook (application_top_begin)
-   -----------------------------------------------------------------------------------------
-   Prueft ob ein gueltiger Cache existiert und liefert ihn sofort aus.
-   Bei Cache-HIT wird der PHP-Prozess mit exit beendet.
-   Bei Cache-MISS wird ob_start() gestartet fuer spaeteres Speichern.
-   -----------------------------------------------------------------------------------------*/
-
-// Nur ausfuehren wenn das Modul installiert und aktiv ist
-if (defined('MODULE_MRHANF_FPC_STATUS') && MODULE_MRHANF_FPC_STATUS == 'True') {
+/**
+ * Mr. Hanf Full Page Cache v4.0.0 – Cache-Check Hook (application_top_begin)
+ * Hookpoint: ~/includes/extra/application_top/application_top_begin/
+ *
+ * Prueft ob ein gueltiger Cache existiert und liefert ihn sofort aus.
+ * Bei Cache-HIT wird der PHP-Prozess mit exit beendet.
+ * Bei Cache-MISS wird ob_start() gestartet fuer spaeteres Speichern.
+ */
+if (defined('MODULE_MRHANF_FPC_STATUS') && constant('MODULE_MRHANF_FPC_STATUS') === 'True') {
 
     // Nur GET-Requests cachen
     if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
@@ -47,7 +46,7 @@ if (defined('MODULE_MRHANF_FPC_STATUS') && MODULE_MRHANF_FPC_STATUS == 'True') {
     }
 
     // Cache-Key generieren (URL-basiert)
-    $mrhanf_fpc_key = md5($mrhanf_fpc_uri);
+    $mrhanf_fpc_key  = md5($mrhanf_fpc_uri);
     $mrhanf_fpc_file = $mrhanf_fpc_dir . $mrhanf_fpc_key . '.html';
 
     // Cache-Lebensdauer
