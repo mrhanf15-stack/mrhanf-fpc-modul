@@ -1,15 +1,10 @@
 <?php
 //
-// Mr. Hanf Full Page Cache v6.0.0 - Cron Preloader
+// Mr. Hanf Full Page Cache v6.1.0 - Cron Preloader
 //
-// Dieses Script wird per Cron aufgerufen und generiert statische
-// HTML-Dateien fuer die wichtigsten Seiten des Shops.
-//
-// Aufruf:
-//   /usr/local/bin/php /pfad/zum/shop/fpc_preloader.php
-//
-// Crontab (alle 30 Minuten):
-//   */30 * * * * cd /pfad/zum/shop && /usr/local/bin/php fpc_preloader.php >> cache/fpc/preloader.log 2>&1
+// Cron-Job der Shop-Seiten abruft und als statische HTML-Dateien speichert.
+// Primaere URL-Quelle: sitemap.xml
+// Fallback: Aktive Produkte/Kategorien aus der DB
 //
 
 $shop_dir = __DIR__ . '/';
@@ -46,16 +41,13 @@ $max_pages   = isset($fpc_config['MODULE_MRHANF_FPC_PRELOAD_LIMIT']) ? (int) $fp
 $excluded    = isset($fpc_config['MODULE_MRHANF_FPC_EXCLUDED_PAGES']) ? $fpc_config['MODULE_MRHANF_FPC_EXCLUDED_PAGES'] : '';
 $exclude_arr = array_filter(array_map('trim', explode(',', $excluded)));
 
+// Chrome User-Agent (Reverse-Proxy blockiert unbekannte UAs)
+$user_agent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+
 // Shop-URL ermitteln
 $shop_url = defined('HTTPS_SERVER') ? rtrim(HTTPS_SERVER, '/') : '';
 if (empty($shop_url)) {
     $shop_url = defined('HTTP_SERVER') ? rtrim(HTTP_SERVER, '/') : '';
-}
-if (empty($shop_url)) {
-    $r = $db->query("SELECT configuration_value FROM configuration WHERE configuration_key = 'HTTP_SERVER' LIMIT 1");
-    if ($r && $row = $r->fetch_assoc()) {
-        $shop_url = rtrim($row['configuration_value'], '/');
-    }
 }
 if (empty($shop_url)) {
     die('[FPC] FEHLER: Shop-URL konnte nicht ermittelt werden.' . "\n");
@@ -72,53 +64,106 @@ echo '[FPC] Start: ' . date('Y-m-d H:i:s') . "\n";
 echo '[FPC] Shop-URL: ' . $shop_url . "\n";
 echo '[FPC] Cache-TTL: ' . $cache_ttl . 's | Max: ' . $max_pages . "\n";
 
-// URLs sammeln
+// --- URLs sammeln ---
 $urls = array();
 
-// 1. Sitemap versuchen
-$sitemap_urls = array(
-    $shop_url . '/sitemap.xml',
-    $shop_url . '/sitemap_index.xml',
-);
+// 1. Sitemap laden (mit Chrome-UA wegen Reverse-Proxy)
+$sitemap_url = $shop_url . '/sitemap.xml';
+$ch_sitemap = curl_init($sitemap_url);
+curl_setopt_array($ch_sitemap, array(
+    CURLOPT_RETURNTRANSFER => true,
+    CURLOPT_FOLLOWLOCATION => true,
+    CURLOPT_SSL_VERIFYPEER => false,
+    CURLOPT_TIMEOUT        => 30,
+    CURLOPT_USERAGENT      => $user_agent,
+));
+$sitemap_xml = curl_exec($ch_sitemap);
+$sitemap_code = curl_getinfo($ch_sitemap, CURLINFO_HTTP_CODE);
+curl_close($ch_sitemap);
 
-foreach ($sitemap_urls as $sitemap_url) {
-    $ctx = stream_context_create(array('http' => array('timeout' => 10), 'ssl' => array('verify_peer' => false)));
-    $sitemap_xml = @file_get_contents($sitemap_url, false, $ctx);
-    if ($sitemap_xml !== false && strlen($sitemap_xml) > 100) {
-        echo '[FPC] Sitemap gefunden: ' . $sitemap_url . "\n";
-        if (strpos($sitemap_xml, '<sitemapindex') !== false) {
-            preg_match_all('/<loc>(.*?)<\/loc>/i', $sitemap_xml, $matches);
-            foreach ($matches[1] as $sub_url) {
-                $sub_xml = @file_get_contents(trim($sub_url), false, $ctx);
-                if ($sub_xml !== false) {
-                    preg_match_all('/<loc>(.*?)<\/loc>/i', $sub_xml, $sub_m);
-                    foreach ($sub_m[1] as $u) { $urls[] = trim($u); }
+if ($sitemap_xml !== false && $sitemap_code == 200 && strlen($sitemap_xml) > 100) {
+    echo '[FPC] Sitemap geladen: ' . $sitemap_url . ' (' . strlen($sitemap_xml) . ' Bytes)' . "\n";
+
+    // Pruefen ob Sitemap-Index
+    if (strpos($sitemap_xml, '<sitemapindex') !== false) {
+        preg_match_all('/<loc>(.*?)<\/loc>/i', $sitemap_xml, $matches);
+        echo '[FPC] Sitemap-Index mit ' . count($matches[1]) . ' Sub-Sitemaps' . "\n";
+        foreach ($matches[1] as $sub_url) {
+            $ch_sub = curl_init(trim($sub_url));
+            curl_setopt_array($ch_sub, array(
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_FOLLOWLOCATION => true,
+                CURLOPT_SSL_VERIFYPEER => false,
+                CURLOPT_TIMEOUT        => 30,
+                CURLOPT_USERAGENT      => $user_agent,
+            ));
+            $sub_xml = curl_exec($ch_sub);
+            curl_close($ch_sub);
+            if ($sub_xml !== false) {
+                preg_match_all('/<loc>(.*?)<\/loc>/i', $sub_xml, $sub_m);
+                foreach ($sub_m[1] as $u) {
+                    $urls[] = trim($u);
                 }
             }
-        } else {
-            preg_match_all('/<loc>(.*?)<\/loc>/i', $sitemap_xml, $matches);
-            foreach ($matches[1] as $u) { $urls[] = trim($u); }
         }
-        break;
+    } else {
+        // Einfache Sitemap
+        preg_match_all('/<loc>(.*?)<\/loc>/i', $sitemap_xml, $matches);
+        foreach ($matches[1] as $u) {
+            $urls[] = trim($u);
+        }
     }
+    echo '[FPC] ' . count($urls) . ' URLs aus Sitemap' . "\n";
+} else {
+    echo '[FPC] Sitemap nicht verfuegbar (HTTP ' . $sitemap_code . '). Lade aus DB...' . "\n";
 }
 
-// 2. Fallback: SEO-URLs aus DB
+// 2. Fallback: Aktive Produkte und Kategorien aus DB (NICHT clean_seo_url!)
 if (empty($urls)) {
-    echo '[FPC] Keine Sitemap. Lade URLs aus DB...' . "\n";
-    $r = $db->query("SELECT DISTINCT url_text FROM clean_seo_url WHERE url_text != '' ORDER BY url_text LIMIT " . ($max_pages * 2));
+    echo '[FPC] Lade aktive Produkte/Kategorien aus DB...' . "\n";
+
+    // Startseite
+    $urls[] = $shop_url . '/';
+
+    // Aktive Kategorien mit SEO-URL
+    $r = $db->query("
+        SELECT DISTINCT c.url_text
+        FROM clean_seo_url c
+        INNER JOIN categories cat ON c.id = cat.categories_id AND c.type = 'categories'
+        WHERE cat.categories_status = 1
+          AND c.url_text != ''
+          AND c.language_id = 2
+        LIMIT " . $max_pages);
     if ($r) {
         while ($row = $r->fetch_assoc()) {
             $urls[] = $shop_url . '/' . ltrim($row['url_text'], '/');
         }
     }
-    array_unshift($urls, $shop_url . '/');
+
+    // Aktive Produkte mit SEO-URL
+    $remaining = $max_pages - count($urls);
+    if ($remaining > 0) {
+        $r = $db->query("
+            SELECT DISTINCT c.url_text
+            FROM clean_seo_url c
+            INNER JOIN products p ON c.id = p.products_id AND c.type = 'products'
+            WHERE p.products_status = 1
+              AND c.url_text != ''
+              AND c.language_id = 2
+            LIMIT " . $remaining);
+        if ($r) {
+            while ($row = $r->fetch_assoc()) {
+                $urls[] = $shop_url . '/' . ltrim($row['url_text'], '/');
+            }
+        }
+    }
+
+    echo '[FPC] ' . count($urls) . ' URLs aus DB' . "\n";
 }
 
 $urls = array_unique($urls);
-echo '[FPC] ' . count($urls) . ' URLs gefunden' . "\n";
 
-// Filtern
+// Filtern (ausgeschlossene Seiten)
 $filtered = array();
 foreach ($urls as $url) {
     $skip = false;
@@ -128,9 +173,9 @@ foreach ($urls as $url) {
     if (!$skip) { $filtered[] = $url; }
 }
 $filtered = array_slice($filtered, 0, $max_pages);
-echo '[FPC] ' . count($filtered) . ' URLs nach Filter' . "\n";
+echo '[FPC] ' . count($filtered) . ' URLs nach Filter (max ' . $max_pages . ')' . "\n";
 
-// Preloading
+// --- Preloading ---
 $cached = 0; $skipped = 0; $errors = 0;
 
 $ch = curl_init();
@@ -138,20 +183,19 @@ curl_setopt_array($ch, array(
     CURLOPT_RETURNTRANSFER => true,
     CURLOPT_FOLLOWLOCATION => true,
     CURLOPT_MAXREDIRS      => 3,
-    CURLOPT_TIMEOUT        => 30,
-    CURLOPT_CONNECTTIMEOUT => 10,
+    CURLOPT_TIMEOUT        => 15,
+    CURLOPT_CONNECTTIMEOUT => 5,
     CURLOPT_SSL_VERIFYPEER => false,
-    CURLOPT_USERAGENT      => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    CURLOPT_USERAGENT      => $user_agent,
     CURLOPT_ENCODING       => '',
     CURLOPT_COOKIE         => '',
 ));
 
-foreach ($filtered as $url) {
+foreach ($filtered as $i => $url) {
     $parsed = parse_url($url);
     $path   = isset($parsed['path']) ? $parsed['path'] : '/';
     if ($path === '') $path = '/';
 
-    // Cache-Pfad: /samen-shop/xyz/ -> cache/fpc/samen-shop/xyz/index.html
     $clean = trim($path, '/');
     if ($clean === '') {
         $cache_file = $cache_dir . 'index.html';
@@ -171,8 +215,8 @@ foreach ($filtered as $url) {
 
     if ($html === false || $code != 200) {
         $errors++;
-        if ($errors <= 5) {
-            echo '[FPC] FEHLER: ' . $url . ' (HTTP ' . $code . ', curl: ' . curl_error($ch) . ')' . "\n";
+        if ($errors <= 10) {
+            echo '[FPC] FEHLER: ' . $url . ' (HTTP ' . $code . ')' . "\n";
         }
         continue;
     }
@@ -186,7 +230,7 @@ foreach ($filtered as $url) {
     // Session-IDs entfernen
     $html = preg_replace('/MODsid=[a-zA-Z0-9]+/', '', $html);
 
-    // Kommentar am Ende hinzufuegen
+    // Cache-Kommentar
     $html .= "\n<!-- FPC cached: " . date('Y-m-d H:i:s') . " -->\n";
 
     $dir = dirname($cache_file);
@@ -196,6 +240,11 @@ foreach ($filtered as $url) {
         $cached++;
     } else {
         $errors++;
+    }
+
+    // Fortschritt alle 50 Seiten
+    if ($cached > 0 && $cached % 50 == 0) {
+        echo '[FPC] Fortschritt: ' . $cached . ' gecacht...' . "\n";
     }
 
     usleep(50000); // 50ms Pause
