@@ -5,4 +5,6 @@ define('MODULE_MRHANF_FPC_STATUS_TITLE', 'Enable Module');
 define('MODULE_MRHANF_FPC_STATUS_DESC', 'Should the cache be enabled?');
 define('MODULE_MRHANF_FPC_CACHE_TIME_TITLE', 'Cache Lifetime (seconds)');
 define('MODULE_MRHANF_FPC_CACHE_TIME_DESC', 'How long should a page stay in cache? Default: 86400 (24 hours)');
+define('MODULE_MRHANF_FPC_EXCLUDED_PAGES_TITLE', 'Excluded Pages');
+define('MODULE_MRHANF_FPC_EXCLUDED_PAGES_DESC', 'Comma-separated list of URL parts that should NOT be cached (e.g. cart, login, checkout).');
 ?>

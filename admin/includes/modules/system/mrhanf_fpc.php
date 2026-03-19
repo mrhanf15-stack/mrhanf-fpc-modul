@@ -5,7 +5,7 @@ declare(strict_types=1);
 /**
  * Mr. Hanf Full Page Cache — System Module
  *
- * @version     1.2.0
+ * @version     2.0.0
  * @php         8.3+
  * @author      Manus AI für Mr. Hanf (mr-hanf.de)
  * @copyright   2026 Mr. Hanf
@@ -78,48 +78,37 @@ final class mrhanf_fpc
 
     public function install(): void
     {
-        $configs = [
-            [
-                'key'          => $this->prefix . '_STATUS',
-                'value'        => 'true',
-                'set_function' => "xtc_cfg_select_option(array('true', 'false'), ",
-                'sort_order'   => 1,
-            ],
-            [
-                'key'          => $this->prefix . '_CACHE_TIME',
-                'value'        => '86400',
-                'set_function' => '',
-                'sort_order'   => 2,
-            ],
-            [
-                'key'          => $this->prefix . '_EXCLUDED_PAGES',
-                'value'        => 'checkout,login,account,shopping_cart,logoff,admin,password_double_opt,create_account,contact_us,tell_a_friend,product_reviews_write',
-                'set_function' => '',
-                'sort_order'   => 3,
-            ],
-        ];
+        // STATUS mit Dropdown-Auswahl
+        xtc_db_query(
+            "INSERT INTO " . TABLE_CONFIGURATION
+            . " (configuration_key, configuration_value, configuration_group_id, sort_order, set_function, date_added)"
+            . " VALUES ('"
+            . xtc_db_input($this->prefix . '_STATUS') . "', 'true', '6', '1',"
+            . " 'xtc_cfg_select_option(array(\'true\', \'false\'), ', now())"
+        );
 
-        foreach ($configs as $config) {
-            $set_fn = !empty($config['set_function'])
-                ? ", set_function = '" . xtc_db_input($config['set_function']) . "'"
-                : '';
+        // CACHE_TIME
+        xtc_db_query(
+            "INSERT INTO " . TABLE_CONFIGURATION
+            . " (configuration_key, configuration_value, configuration_group_id, sort_order, date_added)"
+            . " VALUES ('"
+            . xtc_db_input($this->prefix . '_CACHE_TIME') . "', '86400', '6', '2', now())"
+        );
 
-            xtc_db_query(
-                "INSERT INTO " . TABLE_CONFIGURATION
-                . " (configuration_key, configuration_value, configuration_group_id, sort_order{$set_fn}, date_added)"
-                . " VALUES ('"
-                . xtc_db_input($config['key']) . "', '"
-                . xtc_db_input($config['value']) . "', '6', '"
-                . (int) $config['sort_order'] . "'"
-                . (!empty($config['set_function']) ? ", '" . xtc_db_input($config['set_function']) . "'" : '')
-                . ", now())"
-            );
-        }
+        // EXCLUDED_PAGES
+        xtc_db_query(
+            "INSERT INTO " . TABLE_CONFIGURATION
+            . " (configuration_key, configuration_value, configuration_group_id, sort_order, date_added)"
+            . " VALUES ('"
+            . xtc_db_input($this->prefix . '_EXCLUDED_PAGES')
+            . "', 'checkout,login,account,shopping_cart,logoff,admin,password_double_opt,create_account,contact_us,tell_a_friend,product_reviews_write',"
+            . " '6', '3', now())"
+        );
 
         // Cache-Verzeichnis anlegen
         $cache_dir = DIR_FS_DOCUMENT_ROOT . self::CACHE_DIR_RELATIVE;
         if (!is_dir($cache_dir)) {
-            @mkdir($cache_dir, 0o755, true);
+            @mkdir($cache_dir, 0755, true);
         }
     }
 
