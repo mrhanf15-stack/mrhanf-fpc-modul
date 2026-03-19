@@ -4,11 +4,9 @@ declare(strict_types=1);
 
 /**
  * Mr. Hanf Full Page Cache — application_bottom_end Hook
+ * v1.2.1 — ob_level-Sicherung, atomares Schreiben, Fehlerprotokoll
  *
- * Wird von Modified automatisch ganz am Ende von application_bottom.php geladen.
- * Speichert das fertig gerenderte HTML als Cache-Datei.
- *
- * @version  1.2.0
+ * @version  1.2.1
  * @php      8.3+
  */
 
@@ -17,6 +15,13 @@ if (
     || $GLOBALS['fpc_is_cacheable'] !== true
     || !isset($GLOBALS['fpc_cache_file'])
 ) {
+    return;
+}
+
+// Sicherstellen dass wir auf dem richtigen ob-Level sind
+$fpc_expected_level = ($GLOBALS['fpc_ob_level'] ?? 0) + 1;
+if (ob_get_level() < $fpc_expected_level) {
+    // Output Buffering wurde zwischendurch beendet — kein Caching möglich
     return;
 }
 
@@ -31,17 +36,23 @@ if (!is_string($fpc_html) || strlen($fpc_html) < 1024) {
 $fpc_cache_file = $GLOBALS['fpc_cache_file'];
 $fpc_timestamp  = date('Y-m-d H:i:s');
 
-// HTML-Kommentar für Debug-Zwecke anhängen
-$fpc_html .= "\n<!-- MR-HANF FPC v1.2: Cached on {$fpc_timestamp} -->\n";
+// HTML-Kommentar anhängen
+$fpc_html_to_save = $fpc_html . "\n<!-- MR-HANF FPC v1.2.1: Cached on {$fpc_timestamp} -->\n";
 
-// Atomar schreiben: erst in Temp-Datei, dann umbenennen (verhindert Race Conditions)
-$fpc_tmp_file = $fpc_cache_file . '.tmp.' . getmypid();
+// Atomar schreiben: erst Temp-Datei, dann umbenennen
+$fpc_tmp = $fpc_cache_file . '.tmp.' . getmypid();
 
-if (file_put_contents($fpc_tmp_file, $fpc_html, LOCK_EX) !== false) {
-    rename($fpc_tmp_file, $fpc_cache_file);
+if (file_put_contents($fpc_tmp, $fpc_html_to_save, LOCK_EX) !== false) {
+    rename($fpc_tmp, $fpc_cache_file);
 } else {
-    // Schreiben fehlgeschlagen → Temp-Datei aufräumen
-    @unlink($fpc_tmp_file);
+    // Schreiben fehlgeschlagen → Fehler loggen (optional)
+    @unlink($fpc_tmp);
+    $fpc_log = dirname($fpc_cache_file) . '/fpc_errors.log';
+    @file_put_contents(
+        $fpc_log,
+        date('[Y-m-d H:i:s]') . ' WRITE FAILED: ' . $fpc_cache_file . PHP_EOL,
+        FILE_APPEND | LOCK_EX
+    );
 }
 
 ob_end_flush();
