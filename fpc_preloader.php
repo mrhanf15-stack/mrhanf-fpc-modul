@@ -1,16 +1,16 @@
 <?php
-/**
- * Mr. Hanf Full Page Cache v6.0.0 - Cron Preloader
- *
- * Dieses Script wird per Cron aufgerufen und generiert statische
- * HTML-Dateien fuer die wichtigsten Seiten des Shops.
- *
- * Aufruf:
- *   /usr/local/bin/php /pfad/zum/shop/fpc_preloader.php
- *
- * Crontab (alle 30 Minuten):
- *   */30 * * * * cd /pfad/zum/shop && /usr/local/bin/php fpc_preloader.php >> cache/fpc/preloader.log 2>&1
- */
+//
+// Mr. Hanf Full Page Cache v6.0.0 - Cron Preloader
+//
+// Dieses Script wird per Cron aufgerufen und generiert statische
+// HTML-Dateien fuer die wichtigsten Seiten des Shops.
+//
+// Aufruf:
+//   /usr/local/bin/php /pfad/zum/shop/fpc_preloader.php
+//
+// Crontab (alle 30 Minuten):
+//   */30 * * * * cd /pfad/zum/shop && /usr/local/bin/php fpc_preloader.php >> cache/fpc/preloader.log 2>&1
+//
 
 $shop_dir = __DIR__ . '/';
 if (!is_file($shop_dir . 'includes/configure.php')) {
