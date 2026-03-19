@@ -1,6 +1,6 @@
 <?php
 /* -----------------------------------------------------------------------------------------
-   Mr. Hanf Full Page Cache (FPC) — System Module v3.0.0
+   Mr. Hanf Full Page Cache (FPC) — System Module v3.1.0
    modified eCommerce Shopsoftware
    http://www.modified-shop.org
 
@@ -13,12 +13,13 @@ defined('_VALID_XTC') or die('Direct Access to this location is not allowed.');
 
 // -----------------------------------------------------------------------------------------
 // SPRACHDATEI LADEN — Fallback fuer modified-Versionen die das nicht automatisch tun.
-// Muss VOR der Klassendefinition stehen, damit die Konstanten beim Instanziieren da sind.
+// Die Sprachdatei liegt unter lang/{sprache}/extra/admin/mrhanf_fpc.php (Auto-Include).
+// Falls der Auto-Include nicht greift, laden wir sie hier manuell.
 // -----------------------------------------------------------------------------------------
 if (!defined('MODULE_MRHANF_FPC_TEXT_TITLE')) {
-    // Versuche ueber DIR_FS_LANGUAGES (Standard-Pfad in modified)
     if (defined('DIR_FS_LANGUAGES') && isset($_SESSION['language'])) {
-        $_mrhanf_fpc_lf = DIR_FS_LANGUAGES . $_SESSION['language'] . '/modules/system/mrhanf_fpc.php';
+        // Primaerer Pfad: extra/admin/ (Auto-Include Hookpoint)
+        $_mrhanf_fpc_lf = DIR_FS_LANGUAGES . $_SESSION['language'] . '/extra/admin/mrhanf_fpc.php';
         if (is_file($_mrhanf_fpc_lf)) {
             include($_mrhanf_fpc_lf);
         }
