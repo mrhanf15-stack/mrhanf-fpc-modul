@@ -234,7 +234,7 @@ foreach ($filtered as $i => $url) {
     $html .= "\n<!-- FPC cached: " . date('Y-m-d H:i:s') . " -->\n";
 
     $dir = dirname($cache_file);
-    if (!is_dir($dir)) { mkdir($dir, 0777, true); }
+    if (!is_dir($dir)) { @mkdir($dir, 0777, true); }
 
     if (file_put_contents($cache_file, $html) !== false) {
         $cached++;
