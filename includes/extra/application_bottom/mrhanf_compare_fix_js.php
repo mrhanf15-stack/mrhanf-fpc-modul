@@ -1,11 +1,11 @@
 <?php
 /**
- * Mr. Hanf - Produktvergleich Cookie-Fix (JavaScript-Seite)
+ * Mr. Hanf - Produktvergleich Cookie-Fix (JavaScript-Seite) v1.1
  *
  * Ergaenzung zu mrhanf_compare_fix.php:
- * Loescht den pc_compare_ids Cookie auch clientseitig per JavaScript,
- * wenn der Benutzer die Logoff-Seite aufruft. Dies ist notwendig, weil
- * der Cookie kein HttpOnly-Flag hat (JavaScript muss ihn lesen koennen).
+ *   1. Loescht pc_compare_ids Cookie clientseitig per JavaScript
+ *   2. Ruft Ajax sub_action=clear auf um Server-Session zu leeren
+ *   3. Setzt Badge-Zaehler sofort auf 0
  *
  * Installationspfad: includes/extra/application_bottom/mrhanf_compare_fix_js.php
  */
@@ -26,31 +26,48 @@ if ($current_page !== 'logoff') {
 <script>
 (function() {
     'use strict';
-    // pc_compare_ids Cookie loeschen (clientseitig)
-    var domains = ['', '.mr-hanf.de', 'mr-hanf.de', 'www.mr-hanf.de'];
-    var paths = ['/', ''];
-    domains.forEach(function(domain) {
-        paths.forEach(function(path) {
-            var cookie = 'pc_compare_ids=;expires=Thu, 01 Jan 1970 00:00:00 UTC;path=' + (path || '/');
-            if (domain) cookie += ';domain=' + domain;
-            cookie += ';SameSite=Lax';
-            document.cookie = cookie;
-        });
-    });
 
-    // ProductCompare-Objekt zuruecksetzen falls vorhanden
-    if (window.ProductCompare) {
-        try {
-            window.ProductCompare.clearCookie();
-        } catch(e) {}
+    function clearCompare() {
+        // 1. pc_compare_ids Cookie loeschen (alle Domain-Varianten)
+        var domains = ['', '.mr-hanf.de', 'mr-hanf.de', 'www.mr-hanf.de'];
+        var paths = ['/'];
+        domains.forEach(function(domain) {
+            paths.forEach(function(path) {
+                var cookie = 'pc_compare_ids=;expires=Thu, 01 Jan 1970 00:00:00 UTC;path=' + path;
+                if (domain) cookie += ';domain=' + domain;
+                cookie += ';SameSite=Lax;Secure';
+                document.cookie = cookie;
+            });
+        });
+
+        // 2. ProductCompare-Objekt zuruecksetzen falls vorhanden
+        if (window.ProductCompare) {
+            try {
+                window.ProductCompare.clearCookie();
+            } catch(e) {}
+        }
+
+        // 3. Server-Session per Ajax leeren
+        //    Dies stellt sicher dass die PHP-Session auch wirklich geleert wird
+        var xhr = new XMLHttpRequest();
+        xhr.open('GET', '/ajax.php?ext=product_compare&sub_action=clear', true);
+        xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
+        xhr.send();
+
+        // 4. Badge auf 0 setzen
+        var badge = document.getElementById('product-compare-badge');
+        if (badge) {
+            var countEl = badge.querySelector('.compare-count');
+            if (countEl) countEl.textContent = '0';
+            badge.classList.remove('active');
+        }
     }
 
-    // Badge auf 0 setzen
-    var badge = document.getElementById('product-compare-badge');
-    if (badge) {
-        var countEl = badge.querySelector('.compare-count');
-        if (countEl) countEl.textContent = '0';
-        badge.classList.remove('active');
+    // Sofort ausfuehren
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', clearCompare);
+    } else {
+        clearCompare();
     }
 })();
 </script>
