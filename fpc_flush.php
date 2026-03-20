@@ -1,6 +1,6 @@
 <?php
 /**
- * Mr. Hanf Full Page Cache v6.0.0 - Cache Flush Script
+ * Mr. Hanf Full Page Cache v6.1.1 - Cache Flush Script
  *
  * Leert den gesamten FPC-Cache oder einzelne Seiten.
  *

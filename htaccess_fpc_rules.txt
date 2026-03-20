@@ -1,5 +1,5 @@
 # ============================================================
-# Mr. Hanf Full Page Cache v6.0.0 - .htaccess Regeln
+# Mr. Hanf Full Page Cache v6.1.1 - .htaccess Regeln
 # ============================================================
 # Diese Regeln muessen am ANFANG der .htaccess eingefuegt werden,
 # VOR allen anderen RewriteRules des Shops.
@@ -7,9 +7,15 @@
 # Funktionsweise:
 #   1. Prueft ob die Anfrage ein GET-Request ist
 #   2. Prueft ob KEIN Session-Cookie gesetzt ist (= Gast)
-#   3. Prueft ob eine gecachte HTML-Datei existiert
-#   4. Wenn ja: leitet an fpc_serve.php weiter (TTFB < 10ms)
-#   5. Wenn nein: normaler Shop-Ablauf
+#   3. Prueft ob die URL nicht ausgeschlossen ist
+#   4. Prueft ob eine gecachte HTML-Datei existiert
+#   5. Wenn ja: leitet an fpc_serve.php weiter (TTFB < 10ms)
+#   6. Wenn nein: normaler Shop-Ablauf
+#
+# CHANGELOG v6.1.1:
+#   - /vergleich ausgeschlossen (sessionabhaengige Vergleichsseite)
+#   - /wishlist ausgeschlossen (Merkzettel)
+#   - password_double_opt, create_account ausgeschlossen
 # ============================================================
 
 # --- FPC START ---
@@ -36,6 +42,15 @@ RewriteCond %{REQUEST_URI} !login [NC]
 RewriteCond %{REQUEST_URI} !account [NC]
 RewriteCond %{REQUEST_URI} !shopping_cart [NC]
 RewriteCond %{REQUEST_URI} !logoff [NC]
+
+# Keine sessionabhaengigen Seiten (Vergleich, Merkzettel)
+RewriteCond %{REQUEST_URI} !^/vergleich [NC]
+RewriteCond %{REQUEST_URI} !^/wishlist [NC]
+RewriteCond %{REQUEST_URI} !password_double_opt [NC]
+RewriteCond %{REQUEST_URI} !create_account [NC]
+RewriteCond %{REQUEST_URI} !contact_us [NC]
+RewriteCond %{REQUEST_URI} !tell_a_friend [NC]
+RewriteCond %{REQUEST_URI} !product_reviews_write [NC]
 
 # Cache-Datei existiert? (Startseite)
 RewriteCond %{DOCUMENT_ROOT}/cache/fpc/index.html -f

@@ -1,6 +1,6 @@
 <?php
 //
-// Mr. Hanf Full Page Cache v6.1.0 - Cron Preloader
+// Mr. Hanf Full Page Cache v6.1.1 - Cron Preloader
 //
 // Cron-Job der Shop-Seiten abruft und als statische HTML-Dateien speichert.
 // Primaere URL-Quelle: sitemap.xml

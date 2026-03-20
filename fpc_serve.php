@@ -1,6 +1,6 @@
 <?php
 /**
- * Mr. Hanf Full Page Cache v6.0.0 - Statischer Cache-Handler
+ * Mr. Hanf Full Page Cache v6.1.1 - Statischer Cache-Handler
  *
  * Dieses Script wird von .htaccess aufgerufen, wenn eine gecachte
  * Version einer Seite existiert. Es liefert die statische HTML-Datei
@@ -13,6 +13,10 @@
  *   1. Kein Cookie 'MODsid' gesetzt ist (= Gast-Besucher)
  *   2. REQUEST_METHOD = GET
  *   3. Eine Cache-Datei unter cache/fpc/ existiert
+ *
+ * CHANGELOG v6.1.1:
+ *   - Zusaetzliche URL-basierte Ausschlussliste als zweite Sicherheitsstufe
+ *   - /vergleich, /wishlist und andere sessionabhaengige Seiten ausgeschlossen
  */
 
 // Nur GET-Requests cachen
@@ -38,6 +42,32 @@ if ($pos !== false) {
 $uri = rtrim($uri, '/');
 if ($uri === '') {
     $uri = '/';
+}
+
+// --- Zweite Sicherheitsstufe: URL-basierte Ausschlussliste ---
+// Diese Liste verhindert, dass sessionabhaengige Seiten aus dem Cache
+// ausgeliefert werden, auch wenn die .htaccess-Regeln sie durchlassen sollten.
+$excluded_paths = array(
+    '/vergleich',           // Produktvergleich (sessionabhaengig)
+    '/wishlist',            // Merkzettel (sessionabhaengig)
+    '/checkout',            // Bestellprozess
+    '/login',               // Login-Seite
+    '/account',             // Kundenkonto
+    '/shopping_cart',       // Warenkorb
+    '/logoff',              // Abmelden
+    '/password_double_opt', // Passwort-Opt-In
+    '/create_account',      // Registrierung
+    '/contact_us',          // Kontaktformular
+    '/tell_a_friend',       // Weiterempfehlen
+    '/product_reviews_write', // Bewertung schreiben
+    '/admin',               // Admin-Bereich
+);
+
+foreach ($excluded_paths as $excluded) {
+    // Exakter Pfad oder Pfad-Praefix (z.B. /vergleich oder /vergleich/...)
+    if ($uri === $excluded || strpos($uri, $excluded . '/') === 0 || strpos($uri, $excluded . '?') === 0) {
+        return false;
+    }
 }
 
 // Cache-Datei Pfad berechnen
