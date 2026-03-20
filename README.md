@@ -99,6 +99,29 @@ Sie können den Cache auf drei Arten leeren:
 2. Per SSH: `php fpc_flush.php`
 3. Per SSH für eine einzelne URL: `php fpc_flush.php --url /vergleich`
 
+## Produktvergleich Cookie-Fix (v6.1.1)
+
+Das Modul enthält einen separaten Fix für ein Bug im Produktvergleich-System:
+
+**Problem:** Wenn ein angemeldeter Kunde Produkte in den Vergleich legt, sich abmeldet und dann den Vergleich leert, bleibt das Vergleichs-Icon trotzdem befüllt. Nach einem Refresh erscheinen die Produkte sogar wieder im Vergleich — weil der `pc_compare_ids`-Cookie beim Abmelden nicht gelöscht wird und der `cookieRestore`-Mechanismus die Produkte erneut in die Server-Session schreibt.
+
+**Lösung:** Zwei PHP-Dateien im `includes/extra/`-System von modified:
+
+| Datei | Funktion |
+|---|---|
+| `includes/extra/application_top/mrhanf_compare_fix.php` | Löscht beim Logoff den `pc_compare_ids`-Cookie serverseitig |
+| `includes/extra/application_bottom/mrhanf_compare_fix_js.php` | Löscht beim Logoff den Cookie auch clientseitig per JavaScript |
+
+**Installation:**
+1. Beide Dateien in die entsprechenden Verzeichnisse des Shops hochladen
+2. Die Dateien werden von modified automatisch eingebunden — kein weiterer Eingriff nötig
+3. Optional: `sql/mrhanf_compare_saved.sql` ausführen, wenn die Vergleichsliste nach dem Login wiederhergestellt werden soll
+
+**Gewünschtes Verhalten nach dem Fix:**
+- Abmelden → Vergleichs-Icon sofort auf 0, Cookie gelöscht
+- Anmelden → leere Vergleichsliste (sauberer Start)
+- Optional: Anmelden → gespeicherte Vergleichsliste aus DB wiederherstellen
+
 ## Fehlerbehebung
 - **Der Cache wird nicht aufgebaut:** Prüfen Sie, ob der Cron-Job korrekt läuft und ob das Verzeichnis `cache/fpc/` Schreibrechte (777) hat. Lesen Sie die Datei `cache/fpc/preloader.log`.
 - **Die Seiten laden nicht schneller:** Prüfen Sie, ob die `.htaccess` Regeln korrekt an den Anfang der Datei kopiert wurden. Testen Sie den Aufruf in einem Inkognito-Fenster (ohne Login).
