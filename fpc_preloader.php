@@ -1,11 +1,28 @@
 <?php
 //
-// Mr. Hanf Full Page Cache v6.1.1 - Cron Preloader
+// Mr. Hanf Full Page Cache v7.0.0 - Cron Preloader (Ausfallsicher)
 //
 // Cron-Job der Shop-Seiten abruft und als statische HTML-Dateien speichert.
 // Primaere URL-Quelle: sitemap.xml
 // Fallback: Aktive Produkte/Kategorien aus der DB
 //
+// CHANGELOG v7.0.0:
+//   - HTML-Validierung: Mindestgroesse + </html> Tag pruefen vor Speichern
+//   - Atomic Write: Erst .tmp schreiben, validieren, dann umbenennen
+//   - Health-Marker: <!-- FPC-VALID --> wird an jede Cache-Datei angehaengt
+//   - Bestehende gueltige Cache-Dateien werden NICHT mit ungueltigem Content ueberschrieben
+//   - PHP-Fehler im HTML werden erkannt und uebersprungen
+//   - Detailliertes Logging fuer Fehleranalyse
+//
+// @version   7.0.0
+// @date      2026-03-20
+
+// ============================================================
+// v7.0 KONFIGURATION
+// ============================================================
+$FPC_MIN_HTML_SIZE     = 1000;    // Mindestgroesse fuer gueltiges HTML in Bytes
+$FPC_HEALTH_MARKER     = '<!-- FPC-VALID -->';  // Pflicht-Marker fuer fpc_serve.php
+$FPC_REQUIRE_CLOSING   = true;   // Prueft ob </html> oder </body> vorhanden ist
 
 $shop_dir = __DIR__ . '/';
 if (!is_file($shop_dir . 'includes/configure.php')) {
@@ -60,9 +77,13 @@ if (!is_dir($cache_dir)) {
     mkdir($cache_dir, 0777, true);
 }
 
+// Log-Datei
+$log_file = $cache_dir . 'preloader.log';
+
 echo '[FPC] Start: ' . date('Y-m-d H:i:s') . "\n";
 echo '[FPC] Shop-URL: ' . $shop_url . "\n";
 echo '[FPC] Cache-TTL: ' . $cache_ttl . 's | Max: ' . $max_pages . "\n";
+echo '[FPC] v7.0 Ausfallsicher: Min-Size=' . $FPC_MIN_HTML_SIZE . ' | Marker=' . $FPC_HEALTH_MARKER . "\n";
 
 // --- URLs sammeln ---
 $urls = array();
@@ -118,7 +139,7 @@ if ($sitemap_xml !== false && $sitemap_code == 200 && strlen($sitemap_xml) > 100
     echo '[FPC] Sitemap nicht verfuegbar (HTTP ' . $sitemap_code . '). Lade aus DB...' . "\n";
 }
 
-// 2. Fallback: Aktive Produkte und Kategorien aus DB (NICHT clean_seo_url!)
+// 2. Fallback: Aktive Produkte und Kategorien aus DB
 if (empty($urls)) {
     echo '[FPC] Lade aktive Produkte/Kategorien aus DB...' . "\n";
 
@@ -176,7 +197,7 @@ $filtered = array_slice($filtered, 0, $max_pages);
 echo '[FPC] ' . count($filtered) . ' URLs nach Filter (max ' . $max_pages . ')' . "\n";
 
 // --- Preloading ---
-$cached = 0; $skipped = 0; $errors = 0;
+$cached = 0; $skipped = 0; $errors = 0; $invalid = 0;
 
 $ch = curl_init();
 curl_setopt_array($ch, array(
@@ -213,6 +234,7 @@ foreach ($filtered as $i => $url) {
     $html = curl_exec($ch);
     $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
 
+    // HTTP-Fehler oder cURL-Fehler
     if ($html === false || $code != 200) {
         $errors++;
         if ($errors <= 10) {
@@ -221,26 +243,89 @@ foreach ($filtered as $i => $url) {
         continue;
     }
 
+    // Content-Type pruefen
     $ct = curl_getinfo($ch, CURLINFO_CONTENT_TYPE);
     if (strpos($ct, 'text/html') === false) {
         $skipped++;
         continue;
     }
 
+    // ==========================================================
+    // v7.0: HTML-VALIDIERUNG (Schutz vor weissen Seiten)
+    // ==========================================================
+
+    // 1. Mindestgroesse pruefen
+    if (strlen($html) < $FPC_MIN_HTML_SIZE) {
+        $invalid++;
+        if ($invalid <= 10) {
+            echo '[FPC] UNGUELTIG (zu kurz: ' . strlen($html) . ' Bytes): ' . $url . "\n";
+        }
+        // Bestehende gueltige Cache-Datei NICHT ueberschreiben!
+        continue;
+    }
+
+    // 2. Closing-Tag pruefen (</html> oder </body>)
+    if ($FPC_REQUIRE_CLOSING) {
+        $lower_tail = strtolower(substr($html, -500));
+        if (strpos($lower_tail, '</html>') === false && strpos($lower_tail, '</body>') === false) {
+            $invalid++;
+            if ($invalid <= 10) {
+                echo '[FPC] UNGUELTIG (kein </html> Tag): ' . $url . "\n";
+            }
+            continue;
+        }
+    }
+
+    // 3. PHP-Fehlermeldungen im HTML erkennen
+    if (stripos($html, 'Fatal error') !== false
+        || stripos($html, 'Parse error') !== false
+        || stripos($html, 'Smarty error') !== false) {
+        $invalid++;
+        if ($invalid <= 10) {
+            echo '[FPC] UNGUELTIG (PHP/Smarty-Fehler im HTML): ' . $url . "\n";
+        }
+        continue;
+    }
+
+    // === HTML ist gueltig! ===
+
     // Session-IDs entfernen
     $html = preg_replace('/MODsid=[a-zA-Z0-9]+/', '', $html);
 
-    // Cache-Kommentar
-    $html .= "\n<!-- FPC cached: " . date('Y-m-d H:i:s') . " -->\n";
+    // v7.0: Health-Marker und Cache-Kommentar anhaengen
+    $html .= "\n" . $FPC_HEALTH_MARKER . "\n";
+    $html .= '<!-- FPC cached: ' . date('Y-m-d H:i:s') . ' | v7.0 -->' . "\n";
 
+    // ==========================================================
+    // v7.0: ATOMIC WRITE (Rename-Pattern)
+    // Verhindert dass eine halb-geschriebene Datei ausgeliefert wird
+    // ==========================================================
     $dir = dirname($cache_file);
     if (!is_dir($dir)) { @mkdir($dir, 0777, true); }
 
-    if (file_put_contents($cache_file, $html) !== false) {
-        $cached++;
-    } else {
+    // Erst in temporaere Datei schreiben (PID fuer Eindeutigkeit)
+    $tmp_file = $cache_file . '.tmp.' . getmypid();
+
+    $bytes_written = @file_put_contents($tmp_file, $html);
+
+    if ($bytes_written === false || $bytes_written < $FPC_MIN_HTML_SIZE) {
+        // Schreiben fehlgeschlagen -> temporaere Datei loeschen
+        @unlink($tmp_file);
         $errors++;
+        if ($errors <= 10) {
+            echo '[FPC] SCHREIBFEHLER: ' . $cache_file . "\n";
+        }
+        continue;
     }
+
+    // Temporaere Datei atomar umbenennen
+    if (!@rename($tmp_file, $cache_file)) {
+        @unlink($tmp_file);
+        $errors++;
+        continue;
+    }
+
+    $cached++;
 
     // Fortschritt alle 50 Seiten
     if ($cached > 0 && $cached % 50 == 0) {
@@ -253,5 +338,10 @@ foreach ($filtered as $i => $url) {
 curl_close($ch);
 $db->close();
 
-echo '[FPC] Fertig: ' . date('Y-m-d H:i:s') . "\n";
-echo '[FPC] Gecacht: ' . $cached . ' | Uebersprungen: ' . $skipped . ' | Fehler: ' . $errors . "\n";
+$summary = '[FPC] Fertig: ' . date('Y-m-d H:i:s') . "\n"
+         . '[FPC] v7.0 | Gecacht: ' . $cached . ' | Uebersprungen: ' . $skipped
+         . ' | Ungueltig: ' . $invalid . ' | Fehler: ' . $errors . "\n";
+echo $summary;
+
+// Log schreiben
+@file_put_contents($log_file, date('Y-m-d H:i:s') . ' ' . $summary, FILE_APPEND);
