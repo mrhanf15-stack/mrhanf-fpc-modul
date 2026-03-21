@@ -22,8 +22,15 @@
  *   - Auto-Cleanup: Korrupte/abgelaufene Dateien werden automatisch geloescht
  *   - Fallback: Bei ungueltigem Cache -> return false -> normaler Shop-Ablauf
  *
- * @version   7.0.0
- * @date      2026-03-20
+ * CHANGELOG v7.0.3:
+ *   - 304 Not Modified / ETag / Last-Modified ENTFERNT
+ *   - Diese Header verursachten weisse Seiten beim Browser-Refresh
+ *   - Der Artfiles-Proxy/Apache hat bei 304 content-length:0 gesendet
+ *   - Cache wird jetzt IMMER vollstaendig ausgeliefert (sicherer)
+ *   - Cache-Control: no-store verhindert Browser-Caching der FPC-Antwort
+ *
+ * @version   7.0.3
+ * @date      2026-03-22
  */
 
 // ============================================================
@@ -160,30 +167,19 @@ if (strpos($tail, $FPC_HEALTH_MARKER) === false) {
 // CACHE-DATEI AUSLIEFERN (validiert!)
 // ============================================================
 
-// HTTP-Caching-Header setzen
+// HTTP-Header setzen
+// WICHTIG: Kein Last-Modified, kein ETag, kein 304!
+// Diese verursachten weisse Seiten beim Browser-Refresh auf Artfiles-Servern.
+// Der FPC liefert IMMER den vollstaendigen HTML-Inhalt aus.
 header('Content-Type: text/html; charset=utf-8');
 header('X-FPC-Cache: HIT');
-header('X-FPC-Version: 7.0.0');
+header('X-FPC-Version: 7.0.3');
 header('X-FPC-Cached-At: ' . gmdate('D, d M Y H:i:s', $mtime) . ' GMT');
-header('Last-Modified: ' . gmdate('D, d M Y H:i:s', $mtime) . ' GMT');
-header('Cache-Control: public, max-age=300');
 
-// ETag fuer Conditional Requests
-$etag = '"fpc-' . md5($cache_file . $mtime) . '"';
-header('ETag: ' . $etag);
-
-// 304 Not Modified wenn moeglich
-if (isset($_SERVER['HTTP_IF_NONE_MATCH']) && trim($_SERVER['HTTP_IF_NONE_MATCH']) === $etag) {
-    http_response_code(304);
-    exit;
-}
-if (isset($_SERVER['HTTP_IF_MODIFIED_SINCE'])) {
-    $since = strtotime($_SERVER['HTTP_IF_MODIFIED_SINCE']);
-    if ($since !== false && $since >= $mtime) {
-        http_response_code(304);
-        exit;
-    }
-}
+// Browser soll die FPC-Antwort NICHT cachen (verhindert 304-Probleme)
+header('Cache-Control: no-store, no-cache, must-revalidate');
+header('Pragma: no-cache');
+header('Expires: 0');
 
 // Datei ausgeben
 readfile($cache_file);
