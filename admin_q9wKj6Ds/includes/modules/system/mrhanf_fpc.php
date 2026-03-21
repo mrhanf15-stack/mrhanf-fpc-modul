@@ -1,6 +1,6 @@
 <?php
 /**
- * Mr. Hanf Full Page Cache v7.0.0 - System-Modul fuer modified eCommerce
+ * Mr. Hanf Full Page Cache v7.0.2 - System-Modul fuer modified eCommerce
  *
  * Cron-basiertes Preloading-System:
  *   - Ein Cron-Job (fpc_preloader.php) ruft Shop-Seiten ab und speichert
@@ -32,8 +32,13 @@ class mrhanf_fpc
                            ? MODULE_MRHANF_FPC_DESC
                            : 'Cron-basiertes Preloading mit statischen HTML-Dateien.';
 
-        // Cache-Status-Info an Beschreibung anhaengen
-        $this->description .= $this->_getCacheStatusHtml();
+        // WICHTIG: Cache-Status NUR im Admin-Bereich laden!
+        // Im Frontend wuerde _getCacheStatusHtml() ueber tausende Cache-Dateien
+        // iterieren (RecursiveDirectoryIterator) und einen Memory-Overflow
+        // oder Timeout verursachen -> weisse Seite (content-length: 0)
+        if ($this->_isAdmin()) {
+            $this->description .= $this->_getCacheStatusHtml();
+        }
 
         $this->sort_order = defined('MODULE_MRHANF_FPC_SORT_ORDER')
                           ? (int) MODULE_MRHANF_FPC_SORT_ORDER
@@ -41,6 +46,27 @@ class mrhanf_fpc
 
         $this->enabled = defined('MODULE_MRHANF_FPC_STATUS')
                       && MODULE_MRHANF_FPC_STATUS == 'True';
+    }
+
+    /**
+     * Pruefen ob wir im Admin-Bereich sind
+     * Verhindert schwere Operationen im Frontend
+     */
+    private function _isAdmin()
+    {
+        // modified eCommerce definiert IS_ADMIN_FILE im Admin-Bereich
+        if (defined('IS_ADMIN_FILE') && IS_ADMIN_FILE === true) {
+            return true;
+        }
+        // Fallback: Pruefen ob Admin-Pfad in REQUEST_URI
+        if (isset($_SERVER['REQUEST_URI']) && strpos($_SERVER['REQUEST_URI'], '/admin') !== false) {
+            return true;
+        }
+        // Fallback: Pruefen ob FILENAME_MODULE_EXPORT definiert ist (nur im Admin)
+        if (defined('FILENAME_MODULE_EXPORT')) {
+            return true;
+        }
+        return false;
     }
 
     /**
