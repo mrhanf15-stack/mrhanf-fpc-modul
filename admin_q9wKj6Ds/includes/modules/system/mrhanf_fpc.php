@@ -1,6 +1,6 @@
 <?php
 /**
- * Mr. Hanf Full Page Cache v7.0.2 - System-Modul fuer modified eCommerce
+ * Mr. Hanf Full Page Cache v7.0.3 - System-Modul fuer modified eCommerce
  *
  * Cron-basiertes Preloading-System:
  *   - Ein Cron-Job (fpc_preloader.php) ruft Shop-Seiten ab und speichert
@@ -24,6 +24,19 @@ class mrhanf_fpc
 
     public function __construct()
     {
+        // v7.0.3: Im Frontend darf dieses Modul NICHTS tun!
+        // Der FPC wird komplett ueber .htaccess + fpc_serve.php gesteuert.
+        // Das Admin-Modul ist NUR fuer Konfiguration im Admin-Bereich.
+        if (!$this->_isAdmin()) {
+            // Frontend: Nur Minimal-Setup, KEINE Datei-Operationen
+            $this->title       = 'Mr. Hanf Full Page Cache';
+            $this->description = '';
+            $this->sort_order  = 0;
+            $this->enabled     = false;  // Im Frontend DEAKTIVIERT
+            return;  // SOFORT BEENDEN
+        }
+
+        // === Ab hier NUR im Admin-Bereich ===
         $this->title = defined('MODULE_MRHANF_FPC_TITLE')
                      ? MODULE_MRHANF_FPC_TITLE
                      : 'Mr. Hanf Full Page Cache';
@@ -32,13 +45,7 @@ class mrhanf_fpc
                            ? MODULE_MRHANF_FPC_DESC
                            : 'Cron-basiertes Preloading mit statischen HTML-Dateien.';
 
-        // WICHTIG: Cache-Status NUR im Admin-Bereich laden!
-        // Im Frontend wuerde _getCacheStatusHtml() ueber tausende Cache-Dateien
-        // iterieren (RecursiveDirectoryIterator) und einen Memory-Overflow
-        // oder Timeout verursachen -> weisse Seite (content-length: 0)
-        if ($this->_isAdmin()) {
-            $this->description .= $this->_getCacheStatusHtml();
-        }
+        $this->description .= $this->_getCacheStatusHtml();
 
         $this->sort_order = defined('MODULE_MRHANF_FPC_SORT_ORDER')
                           ? (int) MODULE_MRHANF_FPC_SORT_ORDER
