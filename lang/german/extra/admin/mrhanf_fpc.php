@@ -1,6 +1,6 @@
 <?php
 /**
- * Mr. Hanf Full Page Cache v6.0.0 - Deutsche Sprachdatei
+ * Mr. Hanf Full Page Cache v7.0.0 - Deutsche Sprachdatei
  */
 define('MODULE_MRHANF_FPC_TITLE', 'Mr. Hanf Full Page Cache');
 define('MODULE_MRHANF_FPC_DESC', 'Cron-basiertes Preloading-System. Generiert statische HTML-Dateien f&uuml;r extrem schnelle Ladezeiten.');

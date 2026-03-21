@@ -1,6 +1,6 @@
 <?php
 /**
- * Mr. Hanf Full Page Cache v6.1.1 - System-Modul fuer modified eCommerce
+ * Mr. Hanf Full Page Cache v7.0.0 - System-Modul fuer modified eCommerce
  *
  * Cron-basiertes Preloading-System:
  *   - Ein Cron-Job (fpc_preloader.php) ruft Shop-Seiten ab und speichert
@@ -75,7 +75,7 @@ class mrhanf_fpc
 
         $html  = '<br /><br />';
         $html .= '<table border="0" cellpadding="4" cellspacing="0" style="background:#f8f8f8; border:1px solid #ccc; margin-top:8px;">';
-        $html .= '<tr><td colspan="2" style="background:#4a90d9; color:#fff; font-weight:bold; padding:6px;">Cache-Status (v6.1.1)</td></tr>';
+        $html .= '<tr><td colspan="2" style="background:#4a90d9; color:#fff; font-weight:bold; padding:6px;">Cache-Status (v7.0.0)</td></tr>';
         $html .= '<tr><td><b>Gecachte Seiten:</b></td><td>' . $files . '</td></tr>';
         $html .= '<tr><td><b>Cache-Groesse:</b></td><td>' . $this->_formatBytes($size) . '</td></tr>';
         $html .= '<tr><td><b>Letzter Cron-Lauf:</b></td><td>' . $last_run . '</td></tr>';
@@ -295,6 +295,15 @@ class mrhanf_fpc
             'MODULE_MRHANF_FPC_PRELOAD_LIMIT',
             'MODULE_MRHANF_FPC_SORT_ORDER',
         );
+    }
+
+    /**
+     * Einstellungen speichern - WICHTIG: Ohne diese Methode gibt es eine weisse Seite!
+     */
+    public function process($file)
+    {
+        // Wird von modified eCommerce beim Speichern aufgerufen
+        // Die eigentliche Speicherung uebernimmt das Framework
     }
 
     public function display()

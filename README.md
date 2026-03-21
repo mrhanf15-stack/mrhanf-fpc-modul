@@ -1,9 +1,21 @@
-# Mr. Hanf Full Page Cache (FPC) v6.1.1
+# Mr. Hanf Full Page Cache (FPC) v7.0.0
 
 Ein extrem schnelles, Cron-basiertes Full Page Cache System für modified eCommerce (v2.0.7.2).
 Speziell entwickelt, um Reverse-Proxies (wie bei Artfiles) zu umgehen, indem statische HTML-Dateien generiert und per `.htaccess` ausgeliefert werden.
 
 ## Changelog
+
+### v7.0.0 (2026-03-21) — Ausfallsicher / Failsafe
+- **NEU: 5 Schutzschichten gegen weisse Seiten (White Pages)**
+  1. **Mindestgroesse-Validierung** — Serve: 500 Bytes, Preloader: 1000 Bytes
+  2. **Health-Marker-Pruefung** — Jede gecachte Datei muss `<!-- FPC-VALID -->` enthalten
+  3. **TTL-Validierung** — Maximales Alter 48 Stunden (Notfall-TTL)
+  4. **Closing-Tag-Pruefung** — `</html>` oder `</body>` muss vorhanden sein
+  5. **PHP-Fehler-Erkennung** — Keine `Fatal error`, `Warning`, `Parse error` im Cache
+- **NEU: Atomic Write Operations** — Preloader schreibt in `.tmp`-Datei, validiert, dann `rename()` (verhindert korrupte Cache-Dateien)
+- **NEU: Graceful Fallback** — Bei ungueltigem Cache wird die Seite live vom Shop geladen (kein White Page)
+- **Bugfix:** `process()` Methode im Admin-Modul hinzugefuegt (verhindert weisse Seite beim Speichern der Einstellungen)
+- **Bugfix:** Sprachdateien fuer alle 4 Sprachen (DE, EN, FR, ES) hinzugefuegt
 
 ### v6.1.1 (2026-03-20)
 - **Bugfix:** `/vergleich` (Produktvergleichsseite) aus dem Cache ausgeschlossen — die Seite ist sessionabhängig und darf nicht gecacht werden
@@ -14,14 +26,17 @@ Speziell entwickelt, um Reverse-Proxies (wie bei Artfiles) zu umgehen, indem sta
 ### v6.0.0
 - Initiale Version mit Cron-basiertem Preloading und `.htaccess`-Auslieferung
 
-## Warum v6.x? (Die Artfiles-Lösung)
-Herkömmliche Caching-Module nutzen Hooks in PHP (`application_top.php`), um gecachte Seiten auszuliefern. Bei Hostern wie Artfiles sitzt jedoch ein Reverse-Proxy (Nginx/Varnish) *vor* dem PHP-Interpreter. Dieser Proxy fängt normale Seitenaufrufe ab und reicht sie gar nicht erst an PHP weiter, weshalb herkömmliche Hook-basierte Caches nicht funktionieren.
+## Warum v7.0? (Ausfallsicher / Failsafe)
 
-**Die Lösung:**
-Dieses Modul nutzt einen Cron-Job, der im Hintergrund den Shop besucht und fertige HTML-Dateien unter `/cache/fpc/` speichert. Die `.htaccess` prüft bei jedem Aufruf, ob eine statische HTML-Datei existiert. Wenn ja, wird diese über ein winziges PHP-Script (`fpc_serve.php`) in unter 10ms ausgeliefert. Wenn nein, greift der normale Shop-Ablauf.
+**Das Problem:** In v6.x konnte es vorkommen, dass der Cache leere oder fehlerhafte HTML-Dateien enthielt (z.B. durch PHP-Fehler, Timeout beim Preloading, oder korrupte Schreibvorgaenge). Wenn `fpc_serve.php` solche Dateien auslieferte, sah der Besucher eine **weisse Seite** statt des Shops.
+
+**Die Loesung in v7.0:** Jede Cache-Datei wird vor der Auslieferung durch 5 unabhaengige Pruefungen validiert. Faellt auch nur eine Pruefung durch, wird die Datei **nicht** ausgeliefert und der normale Shop-Ablauf greift. Zusaetzlich schreibt der Preloader Dateien atomar (erst `.tmp`, dann `rename()`), sodass nie eine halb geschriebene Datei im Cache landet.
 
 ## Features
 - **TTFB unter 0.1 Sekunden** für Gäste
+- **5-fache Validierung** gegen weisse Seiten (White Pages)
+- **Atomic Write** — keine korrupten Cache-Dateien moeglich
+- **Graceful Fallback** — bei ungueltigem Cache wird die Live-Seite geladen
 - Komplett unsichtbar für eingeloggte Kunden (diese sehen immer die Live-Seite)
 - Admin-Modul zur einfachen Konfiguration (TTL, max. Seiten, Ausschlussliste)
 - Cache-Status und "Cache leeren" Button direkt im Admin-Bereich
@@ -83,15 +98,25 @@ Löscht abgelaufene Cache-Dateien.
 
 *(Passen Sie den Pfad `/home/www/doc/28856/dcp288560004/mr-hanf.de/www` an Ihr System an!)*
 
-## Update von v6.0.0 auf v6.1.1
+## Update von v6.x auf v7.0.0
 
 Wenn das Modul bereits installiert ist, sind folgende Schritte nötig:
 
-1. **Dateien ersetzen:** `fpc_serve.php`, `fpc_preloader.php`, `fpc_flush.php`, `htaccess_fpc_rules.txt` und `admin_q9wKj6Ds/includes/modules/system/mrhanf_fpc.php` durch die neuen Versionen ersetzen.
-2. **`.htaccess` aktualisieren:** Den FPC-Block in der `.htaccess` durch den neuen Inhalt aus `htaccess_fpc_rules.txt` ersetzen.
-3. **Ausschlussliste im Admin aktualisieren:** Im Admin-Bereich unter **Module → System Module → Mr. Hanf Full Page Cache** die Einstellung **Ausgeschlossene Seiten** prüfen und `vergleich,wishlist` ergänzen (falls nicht bereits vorhanden).
-4. **Cache leeren:** Im Admin-Bereich auf "Cache leeren" klicken oder per SSH `php fpc_flush.php` ausführen, damit keine veralteten Vergleichsseiten-Caches mehr ausgeliefert werden.
-5. **Gecachte /vergleich-Datei löschen:** `php fpc_flush.php --url /vergleich`
+1. **Dateien ersetzen:** `fpc_serve.php`, `fpc_preloader.php` und `admin_q9wKj6Ds/includes/modules/system/mrhanf_fpc.php` durch die neuen v7.0 Versionen ersetzen.
+2. **Sprachdateien hochladen:** Die 4 Sprachdateien unter `lang/{german,english,french,spanish}/extra/admin/mrhanf_fpc.php` hochladen.
+3. **Cache komplett leeren:** Im Admin-Bereich auf "Cache leeren" klicken oder per SSH: `rm -rf cache/fpc/*.html cache/fpc/*/*.html` — Die alten Cache-Dateien enthalten keinen `<!-- FPC-VALID -->` Health-Marker und werden von v7.0 abgelehnt.
+4. **OpCache leeren:** `php -r "opcache_reset();"` oder im Admin-Bereich eine beliebige Seite aufrufen.
+5. **Preloader manuell testen:** `php fpc_preloader.php 2>&1 | head -30` — Prüfen ob die neuen Validierungen greifen.
+
+## Validierungsschichten (v7.0)
+
+| Schicht | Pruefung | Serve-Schwelle | Preloader-Schwelle |
+|---|---|---|---|
+| 1 | Mindestgroesse | 500 Bytes | 1000 Bytes |
+| 2 | Health-Marker | `<!-- FPC-VALID -->` | `<!-- FPC-VALID -->` |
+| 3 | TTL | 48h max (Notfall) | 24h (konfigurierbar) |
+| 4 | Closing-Tag | `</html>` oder `</body>` | `</html>` oder `</body>` |
+| 5 | PHP-Fehler | Kein `Fatal error` etc. | Kein `Fatal error` etc. |
 
 ## Cache manuell leeren
 Sie können den Cache auf drei Arten leeren:
@@ -123,6 +148,7 @@ Das Modul enthält einen separaten Fix für ein Bug im Produktvergleich-System:
 - Optional: Anmelden → gespeicherte Vergleichsliste aus DB wiederherstellen
 
 ## Fehlerbehebung
+- **Weisse Seiten (v7.0 sollte das verhindern):** Prüfen Sie `cache/fpc/preloader.log` auf Fehler. Wenn trotzdem weisse Seiten auftreten, prüfen Sie ob `fpc_serve.php` die v7.0 Version ist (`grep FPC-VALID fpc_serve.php`).
 - **Der Cache wird nicht aufgebaut:** Prüfen Sie, ob der Cron-Job korrekt läuft und ob das Verzeichnis `cache/fpc/` Schreibrechte (777) hat. Lesen Sie die Datei `cache/fpc/preloader.log`.
 - **Die Seiten laden nicht schneller:** Prüfen Sie, ob die `.htaccess` Regeln korrekt an den Anfang der Datei kopiert wurden. Testen Sie den Aufruf in einem Inkognito-Fenster (ohne Login).
 - **Vergleichs-Icons werden nicht aktualisiert:** Stellen Sie sicher, dass `/vergleich` in der Ausschlussliste steht und die `.htaccess`-Regeln aktualisiert wurden (v6.1.1). Leeren Sie anschließend den Cache.
