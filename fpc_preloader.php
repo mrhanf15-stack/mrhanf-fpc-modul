@@ -14,8 +14,8 @@
 //   - PHP-Fehler im HTML werden erkannt und uebersprungen
 //   - Detailliertes Logging fuer Fehleranalyse
 //
-// @version   7.0.0
-// @date      2026-03-20
+// @version   7.0.1
+// @date      2026-03-22
 
 // ============================================================
 // v7.0 KONFIGURATION
@@ -277,9 +277,17 @@ foreach ($filtered as $i => $url) {
     }
 
     // 3. PHP-Fehlermeldungen im HTML erkennen
-    if (stripos($html, 'Fatal error') !== false
-        || stripos($html, 'Parse error') !== false
-        || stripos($html, 'Smarty error') !== false) {
+    //    WICHTIG: Nur echte PHP-Fehler matchen, NICHT JavaScript-Code!
+    //    PHP gibt Fehler im Format: <b>Fatal error</b>: ... in <b>/pfad/datei.php</b>
+    //    JavaScript kann z.B. "parse error" in console.error() enthalten
+    $php_error_detected = false;
+    if (preg_match('/<b>(Fatal error|Parse error|Warning|Notice)<\/b>\s*:/i', $html)) {
+        $php_error_detected = true;
+    }
+    if (preg_match('/Smarty error:/i', $html)) {
+        $php_error_detected = true;
+    }
+    if ($php_error_detected) {
         $invalid++;
         if ($invalid <= 10) {
             echo '[FPC] UNGUELTIG (PHP/Smarty-Fehler im HTML): ' . $url . "\n";
