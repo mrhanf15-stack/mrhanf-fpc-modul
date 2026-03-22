@@ -1,12 +1,17 @@
 <?php
 //
-// Mr. Hanf Full Page Cache v7.0.0 - Cron Preloader (Ausfallsicher)
+// Mr. Hanf Full Page Cache v7.1.0 - Cron Preloader (Ausfallsicher + Rate-Limited)
 //
 // Cron-Job der Shop-Seiten abruft und als statische HTML-Dateien speichert.
 // Primaere URL-Quelle: sitemap.xml
 // Fallback: Aktive Produkte/Kategorien aus der DB
 //
-// CHANGELOG v7.0.0:
+// CHANGELOG v7.1.0:
+//   - NEU: Rate-Limiting (max 2 Requests/Sekunde, konfigurierbar)
+//   - NEU: Server-Load-Schutz (pausiert wenn Load > Schwellwert)
+//   - NEU: Adaptive Drosselung (verlangsamt bei hoher TTFB)
+//   - NEU: Batch-Pausen alle 100 Seiten (30s Erholung)
+//   - NEU: Maximale Laufzeit-Begrenzung (default 45 Min)
 //   - HTML-Validierung: Mindestgroesse + </html> Tag pruefen vor Speichern
 //   - Atomic Write: Erst .tmp schreiben, validieren, dann umbenennen
 //   - Health-Marker: <!-- FPC-VALID --> wird an jede Cache-Datei angehaengt
@@ -14,7 +19,7 @@
 //   - PHP-Fehler im HTML werden erkannt und uebersprungen
 //   - Detailliertes Logging fuer Fehleranalyse
 //
-// @version   7.0.1
+// @version   7.1.0
 // @date      2026-03-22
 
 // ============================================================
@@ -23,6 +28,20 @@
 $FPC_MIN_HTML_SIZE     = 1000;    // Mindestgroesse fuer gueltiges HTML in Bytes
 $FPC_HEALTH_MARKER     = '<!-- FPC-VALID -->';  // Pflicht-Marker fuer fpc_serve.php
 $FPC_REQUIRE_CLOSING   = true;   // Prueft ob </html> oder </body> vorhanden ist
+
+// ============================================================
+// v7.1 RATE-LIMITING & SERVER-SCHUTZ
+// ============================================================
+$FPC_REQUEST_DELAY_MS  = 500;    // Mindest-Pause zwischen Requests in Millisekunden
+$FPC_LOAD_THRESHOLD    = 3.0;    // Server-Load Schwellwert (pausiert wenn hoeher)
+$FPC_LOAD_PAUSE_SEC    = 30;     // Pause in Sekunden wenn Load zu hoch
+$FPC_BATCH_SIZE        = 100;    // Nach X Seiten eine laengere Pause einlegen
+$FPC_BATCH_PAUSE_SEC   = 30;     // Pause zwischen Batches in Sekunden
+$FPC_SLOW_THRESHOLD_MS = 3000;   // Ab dieser TTFB wird die Pause verdoppelt
+$FPC_MAX_RUNTIME_SEC   = 2700;   // Maximale Laufzeit (45 Minuten)
+$FPC_ADAPTIVE_ENABLED  = true;   // Adaptive Drosselung ein/aus
+
+$start_time = time();
 
 $shop_dir = __DIR__ . '/';
 if (!is_file($shop_dir . 'includes/configure.php')) {
@@ -84,6 +103,35 @@ echo '[FPC] Start: ' . date('Y-m-d H:i:s') . "\n";
 echo '[FPC] Shop-URL: ' . $shop_url . "\n";
 echo '[FPC] Cache-TTL: ' . $cache_ttl . 's | Max: ' . $max_pages . "\n";
 echo '[FPC] v7.0 Ausfallsicher: Min-Size=' . $FPC_MIN_HTML_SIZE . ' | Marker=' . $FPC_HEALTH_MARKER . "\n";
+echo '[FPC] v7.1 Rate-Limit: ' . $FPC_REQUEST_DELAY_MS . 'ms Pause | Load-Max: ' . $FPC_LOAD_THRESHOLD . ' | Batch: ' . $FPC_BATCH_SIZE . '/' . $FPC_BATCH_PAUSE_SEC . 's | Max-Runtime: ' . $FPC_MAX_RUNTIME_SEC . 's' . "\n";
+
+// ============================================================
+// HILFSFUNKTIONEN v7.1
+// ============================================================
+
+/**
+ * Server-Load pruefen (1-Minuten-Durchschnitt)
+ */
+function fpc_get_server_load() {
+    $load = sys_getloadavg();
+    return $load ? $load[0] : 0.0;
+}
+
+/**
+ * Warten bis Server-Load unter Schwellwert ist
+ */
+function fpc_wait_for_low_load($threshold, $pause_sec, $max_wait = 300) {
+    $waited = 0;
+    while (fpc_get_server_load() > $threshold && $waited < $max_wait) {
+        echo '[FPC] Server-Load ' . sprintf('%.2f', fpc_get_server_load()) . ' > ' . $threshold . ' - Pause ' . $pause_sec . 's...' . "\n";
+        sleep($pause_sec);
+        $waited += $pause_sec;
+    }
+    if ($waited > 0) {
+        echo '[FPC] Server-Load OK: ' . sprintf('%.2f', fpc_get_server_load()) . ' - Weiter...' . "\n";
+    }
+    return $waited;
+}
 
 // --- URLs sammeln ---
 $urls = array();
@@ -196,8 +244,14 @@ foreach ($urls as $url) {
 $filtered = array_slice($filtered, 0, $max_pages);
 echo '[FPC] ' . count($filtered) . ' URLs nach Filter (max ' . $max_pages . ')' . "\n";
 
-// --- Preloading ---
+// --- Preloading mit Rate-Limiting ---
 $cached = 0; $skipped = 0; $errors = 0; $invalid = 0;
+$load_pauses = 0; $total_ttfb = 0; $ttfb_count = 0;
+$current_delay = $FPC_REQUEST_DELAY_MS;
+$batch_count = 0;
+
+// v7.1: Vor dem Start Server-Load pruefen
+fpc_wait_for_low_load($FPC_LOAD_THRESHOLD, $FPC_LOAD_PAUSE_SEC);
 
 $ch = curl_init();
 curl_setopt_array($ch, array(
@@ -213,6 +267,13 @@ curl_setopt_array($ch, array(
 ));
 
 foreach ($filtered as $i => $url) {
+
+    // v7.1: Maximale Laufzeit pruefen
+    if ((time() - $start_time) > $FPC_MAX_RUNTIME_SEC) {
+        echo '[FPC] Maximale Laufzeit (' . $FPC_MAX_RUNTIME_SEC . 's) erreicht. Stoppe.' . "\n";
+        break;
+    }
+
     $parsed = parse_url($url);
     $path   = isset($parsed['path']) ? $parsed['path'] : '/';
     if ($path === '') $path = '/';
@@ -230,9 +291,43 @@ foreach ($filtered as $i => $url) {
         continue;
     }
 
+    // v7.1: Server-Load pruefen vor jedem Request
+    if ($batch_count > 0 && $batch_count % 10 == 0) {
+        $load = fpc_get_server_load();
+        if ($load > $FPC_LOAD_THRESHOLD) {
+            $load_pauses++;
+            fpc_wait_for_low_load($FPC_LOAD_THRESHOLD, $FPC_LOAD_PAUSE_SEC);
+        }
+    }
+
+    // v7.1: Batch-Pause alle X Seiten
+    if ($batch_count > 0 && $batch_count % $FPC_BATCH_SIZE == 0) {
+        echo '[FPC] Batch-Pause: ' . $FPC_BATCH_PAUSE_SEC . 's Erholung nach ' . $batch_count . ' Requests (Load: ' . sprintf('%.2f', fpc_get_server_load()) . ')' . "\n";
+        sleep($FPC_BATCH_PAUSE_SEC);
+    }
+
     curl_setopt($ch, CURLOPT_URL, $url);
     $html = curl_exec($ch);
     $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $ttfb = curl_getinfo($ch, CURLINFO_STARTTRANSFER_TIME);
+    $ttfb_ms = (int)($ttfb * 1000);
+
+    $batch_count++;
+
+    // v7.1: TTFB tracken fuer adaptive Drosselung
+    if ($ttfb_ms > 0) {
+        $total_ttfb += $ttfb_ms;
+        $ttfb_count++;
+    }
+
+    // v7.1: Adaptive Drosselung - wenn Server langsam antwortet, Pause erhoehen
+    if ($FPC_ADAPTIVE_ENABLED && $ttfb_ms > $FPC_SLOW_THRESHOLD_MS) {
+        $current_delay = min($current_delay * 2, 5000); // Max 5 Sekunden Pause
+        echo '[FPC] Langsame Antwort (' . $ttfb_ms . 'ms) - Pause erhoeht auf ' . $current_delay . 'ms' . "\n";
+    } elseif ($FPC_ADAPTIVE_ENABLED && $ttfb_ms < 1000 && $current_delay > $FPC_REQUEST_DELAY_MS) {
+        // Server ist wieder schnell - Pause zuruecksetzen
+        $current_delay = $FPC_REQUEST_DELAY_MS;
+    }
 
     // HTTP-Fehler oder cURL-Fehler
     if ($html === false || $code != 200) {
@@ -240,6 +335,8 @@ foreach ($filtered as $i => $url) {
         if ($errors <= 10) {
             echo '[FPC] FEHLER: ' . $url . ' (HTTP ' . $code . ')' . "\n";
         }
+        // v7.1: Bei Fehler laenger warten
+        usleep($current_delay * 2 * 1000);
         continue;
     }
 
@@ -260,7 +357,6 @@ foreach ($filtered as $i => $url) {
         if ($invalid <= 10) {
             echo '[FPC] UNGUELTIG (zu kurz: ' . strlen($html) . ' Bytes): ' . $url . "\n";
         }
-        // Bestehende gueltige Cache-Datei NICHT ueberschreiben!
         continue;
     }
 
@@ -277,9 +373,6 @@ foreach ($filtered as $i => $url) {
     }
 
     // 3. PHP-Fehlermeldungen im HTML erkennen
-    //    WICHTIG: Nur echte PHP-Fehler matchen, NICHT JavaScript-Code!
-    //    PHP gibt Fehler im Format: <b>Fatal error</b>: ... in <b>/pfad/datei.php</b>
-    //    JavaScript kann z.B. "parse error" in console.error() enthalten
     $php_error_detected = false;
     if (preg_match('/<b>(Fatal error|Parse error|Warning|Notice)<\/b>\s*:/i', $html)) {
         $php_error_detected = true;
@@ -302,22 +395,18 @@ foreach ($filtered as $i => $url) {
 
     // v7.0: Health-Marker und Cache-Kommentar anhaengen
     $html .= "\n" . $FPC_HEALTH_MARKER . "\n";
-    $html .= '<!-- FPC cached: ' . date('Y-m-d H:i:s') . ' | v7.0 -->' . "\n";
+    $html .= '<!-- FPC cached: ' . date('Y-m-d H:i:s') . ' | v7.1 -->' . "\n";
 
     // ==========================================================
     // v7.0: ATOMIC WRITE (Rename-Pattern)
-    // Verhindert dass eine halb-geschriebene Datei ausgeliefert wird
     // ==========================================================
     $dir = dirname($cache_file);
     if (!is_dir($dir)) { @mkdir($dir, 0777, true); }
 
-    // Erst in temporaere Datei schreiben (PID fuer Eindeutigkeit)
     $tmp_file = $cache_file . '.tmp.' . getmypid();
-
     $bytes_written = @file_put_contents($tmp_file, $html);
 
     if ($bytes_written === false || $bytes_written < $FPC_MIN_HTML_SIZE) {
-        // Schreiben fehlgeschlagen -> temporaere Datei loeschen
         @unlink($tmp_file);
         $errors++;
         if ($errors <= 10) {
@@ -326,7 +415,6 @@ foreach ($filtered as $i => $url) {
         continue;
     }
 
-    // Temporaere Datei atomar umbenennen
     if (!@rename($tmp_file, $cache_file)) {
         @unlink($tmp_file);
         $errors++;
@@ -337,18 +425,26 @@ foreach ($filtered as $i => $url) {
 
     // Fortschritt alle 50 Seiten
     if ($cached > 0 && $cached % 50 == 0) {
-        echo '[FPC] Fortschritt: ' . $cached . ' gecacht...' . "\n";
+        $avg_ttfb = $ttfb_count > 0 ? (int)($total_ttfb / $ttfb_count) : 0;
+        $runtime = time() - $start_time;
+        echo '[FPC] Fortschritt: ' . $cached . ' gecacht | Avg-TTFB: ' . $avg_ttfb . 'ms | Delay: ' . $current_delay . 'ms | Load: ' . sprintf('%.2f', fpc_get_server_load()) . ' | Runtime: ' . $runtime . 's' . "\n";
     }
 
-    usleep(50000); // 50ms Pause
+    // v7.1: Rate-Limiting Pause zwischen Requests
+    usleep($current_delay * 1000);
 }
 
 curl_close($ch);
 $db->close();
 
+$runtime = time() - $start_time;
+$avg_ttfb = $ttfb_count > 0 ? (int)($total_ttfb / $ttfb_count) : 0;
+
 $summary = '[FPC] Fertig: ' . date('Y-m-d H:i:s') . "\n"
-         . '[FPC] v7.0 | Gecacht: ' . $cached . ' | Uebersprungen: ' . $skipped
-         . ' | Ungueltig: ' . $invalid . ' | Fehler: ' . $errors . "\n";
+         . '[FPC] v7.1 | Gecacht: ' . $cached . ' | Uebersprungen: ' . $skipped
+         . ' | Ungueltig: ' . $invalid . ' | Fehler: ' . $errors . "\n"
+         . '[FPC] Laufzeit: ' . $runtime . 's | Avg-TTFB: ' . $avg_ttfb . 'ms | Load-Pausen: ' . $load_pauses
+         . ' | Requests: ' . $batch_count . "\n";
 echo $summary;
 
 // Log schreiben
