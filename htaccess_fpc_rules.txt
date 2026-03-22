@@ -1,5 +1,5 @@
 # ============================================================
-# Mr. Hanf Full Page Cache v6.1.1 - .htaccess Regeln
+# Mr. Hanf Full Page Cache v7.0.3 - .htaccess Regeln
 # ============================================================
 # Diese Regeln muessen am ANFANG der .htaccess eingefuegt werden,
 # VOR allen anderen RewriteRules des Shops.
@@ -12,38 +12,44 @@
 #   5. Wenn ja: leitet an fpc_serve.php weiter (TTFB < 10ms)
 #   6. Wenn nein: normaler Shop-Ablauf
 #
-# CHANGELOG v6.1.1:
-#   - /vergleich ausgeschlossen (sessionabhaengige Vergleichsseite)
-#   - /wishlist ausgeschlossen (Merkzettel)
-#   - password_double_opt, create_account ausgeschlossen
+# WICHTIG v7.0.3:
+#   In Apache gelten RewriteCond NUR fuer die DIREKT folgende RewriteRule!
+#   Deshalb muessen ALLE Bedingungen fuer BEIDE RewriteRules (Startseite
+#   und Unterseiten) SEPARAT wiederholt werden.
+#   Die alte Version hatte den Cookie-Check nur bei der Startseiten-Regel,
+#   was dazu fuehrte, dass angemeldete User an fpc_serve.php weitergeleitet
+#   wurden -> return false -> content-length:0 -> weisse Seite.
+#
+# CHANGELOG v7.0.3:
+#   - KRITISCHER FIX: Alle RewriteCond fuer beide RewriteRules wiederholt
+#   - Verhindert weisse Seiten fuer angemeldete Benutzer
 # ============================================================
 
 # --- FPC START ---
 <IfModule mod_rewrite.c>
 RewriteEngine On
 
-# Nur GET-Requests
+# === Startseite ===
 RewriteCond %{REQUEST_METHOD} =GET
-
-# Kein Session-Cookie (Gast-Besucher)
 RewriteCond %{HTTP_COOKIE} !MODsid [NC]
 RewriteCond %{HTTP_COOKIE} !PHPSESSID [NC]
-
-# Keine Admin-Seiten
 RewriteCond %{REQUEST_URI} !^/admin [NC]
+RewriteCond %{QUERY_STRING} !action= [NC]
+RewriteCond %{DOCUMENT_ROOT}/cache/fpc/index.html -f
+RewriteRule ^$ fpc_serve.php [L,QSA]
 
-# Keine statischen Dateien
+# === Unterseiten (ALLE Conds wiederholt!) ===
+RewriteCond %{REQUEST_METHOD} =GET
+RewriteCond %{HTTP_COOKIE} !MODsid [NC]
+RewriteCond %{HTTP_COOKIE} !PHPSESSID [NC]
+RewriteCond %{REQUEST_URI} !^/admin [NC]
 RewriteCond %{REQUEST_URI} !\.(css|js|jpg|jpeg|png|gif|svg|ico|woff|woff2|ttf|eot|pdf|zip)$ [NC]
-
-# Keine Checkout/Login/Warenkorb-Seiten
 RewriteCond %{QUERY_STRING} !action= [NC]
 RewriteCond %{REQUEST_URI} !checkout [NC]
 RewriteCond %{REQUEST_URI} !login [NC]
 RewriteCond %{REQUEST_URI} !account [NC]
 RewriteCond %{REQUEST_URI} !shopping_cart [NC]
 RewriteCond %{REQUEST_URI} !logoff [NC]
-
-# Keine sessionabhaengigen Seiten (Vergleich, Merkzettel)
 RewriteCond %{REQUEST_URI} !^/vergleich [NC]
 RewriteCond %{REQUEST_URI} !^/wishlist [NC]
 RewriteCond %{REQUEST_URI} !password_double_opt [NC]
@@ -51,12 +57,6 @@ RewriteCond %{REQUEST_URI} !create_account [NC]
 RewriteCond %{REQUEST_URI} !contact_us [NC]
 RewriteCond %{REQUEST_URI} !tell_a_friend [NC]
 RewriteCond %{REQUEST_URI} !product_reviews_write [NC]
-
-# Cache-Datei existiert? (Startseite)
-RewriteCond %{DOCUMENT_ROOT}/cache/fpc/index.html -f
-RewriteRule ^$ fpc_serve.php [L,QSA]
-
-# Cache-Datei existiert? (Unterseiten)
 RewriteCond %{DOCUMENT_ROOT}/cache/fpc/%{REQUEST_URI}/index.html -f
 RewriteRule ^(.+)$ fpc_serve.php [L,QSA]
 </IfModule>
