@@ -27,7 +27,7 @@ import requests
 from pathlib import Path
 
 # === Konfiguration ===
-BASE_URL = "https://www.mr-hanf.de"
+BASE_URL = "https://mr-hanf.de"
 MONITOR_DIR = Path("/home/ubuntu/guthaben/monitoring")
 RESULTS_DIR = MONITOR_DIR / "fpc_monitor_results"
 STATE_FILE = MONITOR_DIR / "fpc_monitor_state.json"
@@ -42,15 +42,16 @@ SYMLINK_RESULTS = Path("/home/ubuntu/fpc_monitor_results")
 # URLs zum Testen (Mix aus Startseite, Kategorien, Produktseiten)
 TEST_URLS = [
     "/",
-    "/Hanfsamen/",
-    "/Feminisierte-Hanfsamen/",
-    "/Autoflowering-Hanfsamen/",
-    "/CBD-Hanfsamen/",
-    "/Regulaere-Hanfsamen/",
-    "/Hanf-Stecklinge/",
-    "/Zubehoer/",
-    "/Blog/",
-    "/neue-produkte/",
+    "/samen-shop/",
+    "/samen-shop/autoflowering-samen/",
+    "/samen-shop/feminisierte-samen/",
+    "/samen-shop/regulaere-samen/",
+    "/cannabispflanzen/",
+    "/growshop/",
+    "/headshop/",
+    "/blog/",
+    "/angebote",
+    "/seedfinder",
 ]
 
 # Schwellenwerte
