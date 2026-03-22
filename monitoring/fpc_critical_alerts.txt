@@ -1,0 +1,42 @@
+# FPC Critical Alerts — Durchlauf #1
+# Zeitpunkt: 2026-03-22 14:17:50
+# Anzahl kritische Probleme: 10
+
+CRITICAL: / — HTTP 200 — 0B
+  → Weiße Seite! Body nur 0 Bytes (< 500)
+  → TTFB kritisch: 3.342s (> 3.0s)
+
+CRITICAL: /Hanfsamen/ — HTTP 404 — 89908B
+  → TTFB kritisch: 4.852s (> 3.0s)
+  → HTTP 404 Client Error
+
+CRITICAL: /Feminisierte-Hanfsamen/ — HTTP 404 — 89900B
+  → TTFB kritisch: 5.360s (> 3.0s)
+  → HTTP 404 Client Error
+
+CRITICAL: /Autoflowering-Hanfsamen/ — HTTP 404 — 89812B
+  → TTFB kritisch: 4.982s (> 3.0s)
+  → HTTP 404 Client Error
+
+CRITICAL: /CBD-Hanfsamen/ — HTTP 404 — 89822B
+  → TTFB kritisch: 4.306s (> 3.0s)
+  → HTTP 404 Client Error
+
+CRITICAL: /Regulaere-Hanfsamen/ — HTTP 404 — 89794B
+  → TTFB kritisch: 4.687s (> 3.0s)
+  → HTTP 404 Client Error
+
+CRITICAL: /Hanf-Stecklinge/ — HTTP 404 — 89932B
+  → TTFB kritisch: 4.332s (> 3.0s)
+  → HTTP 404 Client Error
+
+CRITICAL: /Zubehoer/ — HTTP 200 — 162217B
+  → TTFB kritisch: 3.720s (> 3.0s)
+
+CRITICAL: /Blog/ — HTTP 200 — 156027B
+  → TTFB kritisch: 3.911s (> 3.0s)
+
+CRITICAL: /neue-produkte/ — HTTP 404 — 89856B
+  → TTFB kritisch: 4.206s (> 3.0s)
+  → HTTP 404 Client Error
+
