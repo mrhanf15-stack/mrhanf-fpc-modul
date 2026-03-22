@@ -1,7 +1,0 @@
-# FPC Critical Alerts — Durchlauf #1
-# Zeitpunkt: 2026-03-22 14:52:20
-# Anzahl kritische Probleme: 1
-
-CRITICAL: /samen-shop/regulaere-samen/ — HTTP 200 — 211978B
-  → TTFB kritisch: 8.315s (> 3.0s)
-

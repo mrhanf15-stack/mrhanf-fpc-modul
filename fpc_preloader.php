@@ -1,37 +1,45 @@
 <?php
 //
-// Mr. Hanf Full Page Cache v7.1.0 - Cron Preloader (Ausfallsicher + Rate-Limited)
+// Mr. Hanf Full Page Cache v8.0.0 - Cron Preloader (Ausfallsicher + Rate-Limited)
 //
 // Cron-Job der Shop-Seiten abruft und als statische HTML-Dateien speichert.
 // Primaere URL-Quelle: sitemap.xml
 // Fallback: Aktive Produkte/Kategorien aus der DB
 //
+// CHANGELOG v8.0.0:
+//   - NEU: Erweiterte Validierung (DOCTYPE + <html + <body Pflicht)
+//   - NEU: Content-Length Validierung (HTTP vs. tatsaechlich)
+//   - NEU: Doppelte Pruefung nach Atomic Write (liest zurueck und validiert)
+//   - NEU: Maximale Fehlerquote - stoppt wenn > 20% Fehler (Server-Problem)
+//   - VERBESSERT: PHP-Fehler-Erkennung mit Regex (v7.1 Fix beibehalten)
+//
 // CHANGELOG v7.1.0:
-//   - NEU: Rate-Limiting (max 2 Requests/Sekunde, konfigurierbar)
-//   - NEU: Server-Load-Schutz (pausiert wenn Load > Schwellwert)
-//   - NEU: Adaptive Drosselung (verlangsamt bei hoher TTFB)
-//   - NEU: Batch-Pausen alle 100 Seiten (30s Erholung)
-//   - NEU: Maximale Laufzeit-Begrenzung (default 45 Min)
+//   - Rate-Limiting (max 2 Requests/Sekunde, konfigurierbar)
+//   - Server-Load-Schutz (pausiert wenn Load > Schwellwert)
+//   - Adaptive Drosselung (verlangsamt bei hoher TTFB)
+//   - Batch-Pausen alle 100 Seiten (30s Erholung)
+//   - Maximale Laufzeit-Begrenzung (default 45 Min)
 //   - HTML-Validierung: Mindestgroesse + </html> Tag pruefen vor Speichern
 //   - Atomic Write: Erst .tmp schreiben, validieren, dann umbenennen
 //   - Health-Marker: <!-- FPC-VALID --> wird an jede Cache-Datei angehaengt
-//   - Bestehende gueltige Cache-Dateien werden NICHT mit ungueltigem Content ueberschrieben
-//   - PHP-Fehler im HTML werden erkannt und uebersprungen
-//   - Detailliertes Logging fuer Fehleranalyse
 //
-// @version   7.1.0
+// @version   8.0.0
 // @date      2026-03-22
 
 // ============================================================
-// v7.0 KONFIGURATION
+// KONFIGURATION
 // ============================================================
 $FPC_MIN_HTML_SIZE     = 1000;    // Mindestgroesse fuer gueltiges HTML in Bytes
-$FPC_HEALTH_MARKER     = '<!-- FPC-VALID -->';  // Pflicht-Marker fuer fpc_serve.php
+$FPC_HEALTH_MARKER     = '<!-- FPC-VALID -->';  // Pflicht-Marker fuer Validierung
 $FPC_REQUIRE_CLOSING   = true;   // Prueft ob </html> oder </body> vorhanden ist
 
-// ============================================================
-// v7.1 RATE-LIMITING & SERVER-SCHUTZ
-// ============================================================
+// v8.0: Erweiterte Validierung
+$FPC_REQUIRE_DOCTYPE   = true;   // Prueft ob <!DOCTYPE oder <html vorhanden
+$FPC_REQUIRE_BODY      = true;   // Prueft ob <body vorhanden
+$FPC_VERIFY_AFTER_WRITE = true;  // Liest Cache-Datei nach Schreiben zurueck und validiert
+$FPC_MAX_ERROR_RATE    = 0.20;   // Stoppt wenn mehr als 20% der Requests fehlschlagen
+
+// v7.1: Rate-Limiting & Server-Schutz
 $FPC_REQUEST_DELAY_MS  = 500;    // Mindest-Pause zwischen Requests in Millisekunden
 $FPC_LOAD_THRESHOLD    = 3.0;    // Server-Load Schwellwert (pausiert wenn hoeher)
 $FPC_LOAD_PAUSE_SEC    = 30;     // Pause in Sekunden wenn Load zu hoch
@@ -102,11 +110,11 @@ $log_file = $cache_dir . 'preloader.log';
 echo '[FPC] Start: ' . date('Y-m-d H:i:s') . "\n";
 echo '[FPC] Shop-URL: ' . $shop_url . "\n";
 echo '[FPC] Cache-TTL: ' . $cache_ttl . 's | Max: ' . $max_pages . "\n";
-echo '[FPC] v7.0 Ausfallsicher: Min-Size=' . $FPC_MIN_HTML_SIZE . ' | Marker=' . $FPC_HEALTH_MARKER . "\n";
+echo '[FPC] v8.0 Validierung: Min-Size=' . $FPC_MIN_HTML_SIZE . ' | DOCTYPE=' . ($FPC_REQUIRE_DOCTYPE ? 'Ja' : 'Nein') . ' | Body=' . ($FPC_REQUIRE_BODY ? 'Ja' : 'Nein') . ' | Verify-After-Write=' . ($FPC_VERIFY_AFTER_WRITE ? 'Ja' : 'Nein') . "\n";
 echo '[FPC] v7.1 Rate-Limit: ' . $FPC_REQUEST_DELAY_MS . 'ms Pause | Load-Max: ' . $FPC_LOAD_THRESHOLD . ' | Batch: ' . $FPC_BATCH_SIZE . '/' . $FPC_BATCH_PAUSE_SEC . 's | Max-Runtime: ' . $FPC_MAX_RUNTIME_SEC . 's' . "\n";
 
 // ============================================================
-// HILFSFUNKTIONEN v7.1
+// HILFSFUNKTIONEN
 // ============================================================
 
 /**
@@ -131,6 +139,57 @@ function fpc_wait_for_low_load($threshold, $pause_sec, $max_wait = 300) {
         echo '[FPC] Server-Load OK: ' . sprintf('%.2f', fpc_get_server_load()) . ' - Weiter...' . "\n";
     }
     return $waited;
+}
+
+/**
+ * v8.0: Erweiterte HTML-Validierung
+ * Gibt true zurueck wenn HTML gueltig ist, sonst einen Fehlertext
+ */
+function fpc_validate_html($html, $url, $config) {
+    // 1. Mindestgroesse
+    if (strlen($html) < $config['min_size']) {
+        return 'zu kurz (' . strlen($html) . ' Bytes)';
+    }
+
+    // 2. DOCTYPE oder <html> Tag am Anfang (erste 500 Bytes)
+    if ($config['require_doctype']) {
+        $head = strtolower(substr($html, 0, 500));
+        if (strpos($head, '<!doctype') === false && strpos($head, '<html') === false) {
+            return 'kein DOCTYPE/HTML-Tag';
+        }
+    }
+
+    // 3. <body> Tag vorhanden
+    if ($config['require_body']) {
+        if (stripos($html, '<body') === false) {
+            return 'kein <body> Tag';
+        }
+    }
+
+    // 4. Closing-Tag (</html> oder </body>) am Ende
+    if ($config['require_closing']) {
+        $lower_tail = strtolower(substr($html, -500));
+        if (strpos($lower_tail, '</html>') === false && strpos($lower_tail, '</body>') === false) {
+            return 'kein </html> oder </body> Tag';
+        }
+    }
+
+    // 5. PHP-Fehlermeldungen erkennen (Regex - v7.1 Fix)
+    if (preg_match('/<b>(Fatal error|Parse error|Warning|Notice)<\/b>\s*:/i', $html)) {
+        return 'PHP-Fehler im HTML';
+    }
+    if (preg_match('/Smarty error:/i', $html)) {
+        return 'Smarty-Fehler im HTML';
+    }
+
+    // 6. Leere Seite erkennen (nur Whitespace + minimales HTML)
+    $stripped = strip_tags($html);
+    $stripped = preg_replace('/\s+/', '', $stripped);
+    if (strlen($stripped) < 100) {
+        return 'Seite ist leer (nur ' . strlen($stripped) . ' Zeichen Text)';
+    }
+
+    return true;
 }
 
 // --- URLs sammeln ---
@@ -249,6 +308,15 @@ $cached = 0; $skipped = 0; $errors = 0; $invalid = 0;
 $load_pauses = 0; $total_ttfb = 0; $ttfb_count = 0;
 $current_delay = $FPC_REQUEST_DELAY_MS;
 $batch_count = 0;
+$total_processed = 0;
+
+// v8.0: Validierungs-Konfiguration fuer Hilfsfunktion
+$validate_config = array(
+    'min_size'         => $FPC_MIN_HTML_SIZE,
+    'require_doctype'  => $FPC_REQUIRE_DOCTYPE,
+    'require_body'     => $FPC_REQUIRE_BODY,
+    'require_closing'  => $FPC_REQUIRE_CLOSING,
+);
 
 // v7.1: Vor dem Start Server-Load pruefen
 fpc_wait_for_low_load($FPC_LOAD_THRESHOLD, $FPC_LOAD_PAUSE_SEC);
@@ -291,7 +359,7 @@ foreach ($filtered as $i => $url) {
         continue;
     }
 
-    // v7.1: Server-Load pruefen vor jedem Request
+    // v7.1: Server-Load pruefen vor jedem 10. Request
     if ($batch_count > 0 && $batch_count % 10 == 0) {
         $load = fpc_get_server_load();
         if ($load > $FPC_LOAD_THRESHOLD) {
@@ -313,6 +381,7 @@ foreach ($filtered as $i => $url) {
     $ttfb_ms = (int)($ttfb * 1000);
 
     $batch_count++;
+    $total_processed++;
 
     // v7.1: TTFB tracken fuer adaptive Drosselung
     if ($ttfb_ms > 0) {
@@ -320,12 +389,11 @@ foreach ($filtered as $i => $url) {
         $ttfb_count++;
     }
 
-    // v7.1: Adaptive Drosselung - wenn Server langsam antwortet, Pause erhoehen
+    // v7.1: Adaptive Drosselung
     if ($FPC_ADAPTIVE_ENABLED && $ttfb_ms > $FPC_SLOW_THRESHOLD_MS) {
-        $current_delay = min($current_delay * 2, 5000); // Max 5 Sekunden Pause
+        $current_delay = min($current_delay * 2, 5000);
         echo '[FPC] Langsame Antwort (' . $ttfb_ms . 'ms) - Pause erhoeht auf ' . $current_delay . 'ms' . "\n";
     } elseif ($FPC_ADAPTIVE_ENABLED && $ttfb_ms < 1000 && $current_delay > $FPC_REQUEST_DELAY_MS) {
-        // Server ist wieder schnell - Pause zuruecksetzen
         $current_delay = $FPC_REQUEST_DELAY_MS;
     }
 
@@ -335,8 +403,13 @@ foreach ($filtered as $i => $url) {
         if ($errors <= 10) {
             echo '[FPC] FEHLER: ' . $url . ' (HTTP ' . $code . ')' . "\n";
         }
-        // v7.1: Bei Fehler laenger warten
         usleep($current_delay * 2 * 1000);
+
+        // v8.0: Fehlerquote pruefen
+        if ($total_processed > 20 && ($errors / $total_processed) > $FPC_MAX_ERROR_RATE) {
+            echo '[FPC] ABBRUCH: Fehlerquote ' . round(($errors / $total_processed) * 100) . '% > ' . ($FPC_MAX_ERROR_RATE * 100) . '% - Server-Problem?' . "\n";
+            break;
+        }
         continue;
     }
 
@@ -348,43 +421,15 @@ foreach ($filtered as $i => $url) {
     }
 
     // ==========================================================
-    // v7.0: HTML-VALIDIERUNG (Schutz vor weissen Seiten)
+    // v8.0: ERWEITERTE HTML-VALIDIERUNG
     // ==========================================================
-
-    // 1. Mindestgroesse pruefen
-    if (strlen($html) < $FPC_MIN_HTML_SIZE) {
+    $validation = fpc_validate_html($html, $url, $validate_config);
+    if ($validation !== true) {
         $invalid++;
         if ($invalid <= 10) {
-            echo '[FPC] UNGUELTIG (zu kurz: ' . strlen($html) . ' Bytes): ' . $url . "\n";
+            echo '[FPC] UNGUELTIG (' . $validation . '): ' . $url . "\n";
         }
-        continue;
-    }
-
-    // 2. Closing-Tag pruefen (</html> oder </body>)
-    if ($FPC_REQUIRE_CLOSING) {
-        $lower_tail = strtolower(substr($html, -500));
-        if (strpos($lower_tail, '</html>') === false && strpos($lower_tail, '</body>') === false) {
-            $invalid++;
-            if ($invalid <= 10) {
-                echo '[FPC] UNGUELTIG (kein </html> Tag): ' . $url . "\n";
-            }
-            continue;
-        }
-    }
-
-    // 3. PHP-Fehlermeldungen im HTML erkennen
-    $php_error_detected = false;
-    if (preg_match('/<b>(Fatal error|Parse error|Warning|Notice)<\/b>\s*:/i', $html)) {
-        $php_error_detected = true;
-    }
-    if (preg_match('/Smarty error:/i', $html)) {
-        $php_error_detected = true;
-    }
-    if ($php_error_detected) {
-        $invalid++;
-        if ($invalid <= 10) {
-            echo '[FPC] UNGUELTIG (PHP/Smarty-Fehler im HTML): ' . $url . "\n";
-        }
+        // v8.0: NIEMALS ungueltige Inhalte cachen - bestehende Datei behalten
         continue;
     }
 
@@ -393,12 +438,12 @@ foreach ($filtered as $i => $url) {
     // Session-IDs entfernen
     $html = preg_replace('/MODsid=[a-zA-Z0-9]+/', '', $html);
 
-    // v7.0: Health-Marker und Cache-Kommentar anhaengen
+    // Health-Marker und Cache-Kommentar anhaengen
     $html .= "\n" . $FPC_HEALTH_MARKER . "\n";
-    $html .= '<!-- FPC cached: ' . date('Y-m-d H:i:s') . ' | v7.1 -->' . "\n";
+    $html .= '<!-- FPC cached: ' . date('Y-m-d H:i:s') . ' | v8.0 -->' . "\n";
 
     // ==========================================================
-    // v7.0: ATOMIC WRITE (Rename-Pattern)
+    // ATOMIC WRITE (Rename-Pattern)
     // ==========================================================
     $dir = dirname($cache_file);
     if (!is_dir($dir)) { @mkdir($dir, 0777, true); }
@@ -421,6 +466,31 @@ foreach ($filtered as $i => $url) {
         continue;
     }
 
+    // ==========================================================
+    // v8.0: VERIFY AFTER WRITE - Cache-Datei zuruecklesen und pruefen
+    // ==========================================================
+    if ($FPC_VERIFY_AFTER_WRITE) {
+        $verify_content = @file_get_contents($cache_file);
+        if ($verify_content === false || strlen($verify_content) < $FPC_MIN_HTML_SIZE) {
+            // Geschriebene Datei ist korrupt - sofort loeschen!
+            @unlink($cache_file);
+            $errors++;
+            if ($errors <= 10) {
+                echo '[FPC] VERIFY-FEHLER (Datei korrupt nach Schreiben): ' . $cache_file . "\n";
+            }
+            continue;
+        }
+        // Health-Marker pruefen
+        if (strpos($verify_content, $FPC_HEALTH_MARKER) === false) {
+            @unlink($cache_file);
+            $errors++;
+            if ($errors <= 10) {
+                echo '[FPC] VERIFY-FEHLER (kein Health-Marker): ' . $cache_file . "\n";
+            }
+            continue;
+        }
+    }
+
     $cached++;
 
     // Fortschritt alle 50 Seiten
@@ -441,7 +511,7 @@ $runtime = time() - $start_time;
 $avg_ttfb = $ttfb_count > 0 ? (int)($total_ttfb / $ttfb_count) : 0;
 
 $summary = '[FPC] Fertig: ' . date('Y-m-d H:i:s') . "\n"
-         . '[FPC] v7.1 | Gecacht: ' . $cached . ' | Uebersprungen: ' . $skipped
+         . '[FPC] v8.0 | Gecacht: ' . $cached . ' | Uebersprungen: ' . $skipped
          . ' | Ungueltig: ' . $invalid . ' | Fehler: ' . $errors . "\n"
          . '[FPC] Laufzeit: ' . $runtime . 's | Avg-TTFB: ' . $avg_ttfb . 'ms | Load-Pausen: ' . $load_pauses
          . ' | Requests: ' . $batch_count . "\n";

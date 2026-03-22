@@ -1,154 +1,200 @@
-# Mr. Hanf Full Page Cache (FPC) v7.0.0
+# Mr. Hanf Full Page Cache (FPC) v8.0.0
 
-Ein extrem schnelles, Cron-basiertes Full Page Cache System für modified eCommerce (v2.0.7.2).
-Speziell entwickelt, um Reverse-Proxies (wie bei Artfiles) zu umgehen, indem statische HTML-Dateien generiert und per `.htaccess` ausgeliefert werden.
+**Cron-basiertes Full Page Cache System fuer modified eCommerce (xt:Commerce Fork)**
 
-## Changelog
+## Ueberblick
 
-### v7.0.0 (2026-03-21) — Ausfallsicher / Failsafe
-- **NEU: 5 Schutzschichten gegen weisse Seiten (White Pages)**
-  1. **Mindestgroesse-Validierung** — Serve: 500 Bytes, Preloader: 1000 Bytes
-  2. **Health-Marker-Pruefung** — Jede gecachte Datei muss `<!-- FPC-VALID -->` enthalten
-  3. **TTL-Validierung** — Maximales Alter 48 Stunden (Notfall-TTL)
-  4. **Closing-Tag-Pruefung** — `</html>` oder `</body>` muss vorhanden sein
-  5. **PHP-Fehler-Erkennung** — Keine `Fatal error`, `Warning`, `Parse error` im Cache
-- **NEU: Atomic Write Operations** — Preloader schreibt in `.tmp`-Datei, validiert, dann `rename()` (verhindert korrupte Cache-Dateien)
-- **NEU: Graceful Fallback** — Bei ungueltigem Cache wird die Seite live vom Shop geladen (kein White Page)
-- **Bugfix:** `process()` Methode im Admin-Modul hinzugefuegt (verhindert weisse Seite beim Speichern der Einstellungen)
-- **Bugfix:** Sprachdateien fuer alle 4 Sprachen (DE, EN, FR, ES) hinzugefuegt
+Das FPC-Modul generiert statische HTML-Dateien fuer alle Shop-Seiten und laesst Apache diese **direkt** ausliefern — ohne PHP-Worker. Das Ergebnis: Ladezeiten unter 100ms fuer Gastbesucher bei minimaler Serverbelastung.
 
-### v6.1.1 (2026-03-20)
-- **Bugfix:** `/vergleich` (Produktvergleichsseite) aus dem Cache ausgeschlossen — die Seite ist sessionabhängig und darf nicht gecacht werden
-- **Bugfix:** `/wishlist` (Merkzettel) aus dem Cache ausgeschlossen
-- Zweite Sicherheitsstufe in `fpc_serve.php`: URL-basierte Ausschlussliste verhindert Auslieferung von sessionabhängigen Seiten, auch wenn `.htaccess`-Regeln sie durchlassen sollten
-- Standard-Ausschlussliste im Admin-Modul um `vergleich` und `wishlist` erweitert
+## Architektur v8.0
 
-### v6.0.0
-- Initiale Version mit Cron-basiertem Preloading und `.htaccess`-Auslieferung
+```
+Gast-Besucher  → Apache → cache/fpc/{url}/index.html → HTML direkt (kein PHP!)
+Eingeloggter   → Apache → index.php → modified eCommerce → dynamische Seite
+```
 
-## Warum v7.0? (Ausfallsicher / Failsafe)
+### Vorher (v7.x)
+```
+Gast → Apache → fpc_serve.php (PHP-Worker) → readfile() → HTML
+```
 
-**Das Problem:** In v6.x konnte es vorkommen, dass der Cache leere oder fehlerhafte HTML-Dateien enthielt (z.B. durch PHP-Fehler, Timeout beim Preloading, oder korrupte Schreibvorgaenge). Wenn `fpc_serve.php` solche Dateien auslieferte, sah der Besucher eine **weisse Seite** statt des Shops.
+### Jetzt (v8.0)
+```
+Gast → Apache → HTML-Datei direkt (0 PHP-Worker belegt)
+```
 
-**Die Loesung in v7.0:** Jede Cache-Datei wird vor der Auslieferung durch 5 unabhaengige Pruefungen validiert. Faellt auch nur eine Pruefung durch, wird die Datei **nicht** ausgeliefert und der normale Shop-Ablauf greift. Zusaetzlich schreibt der Preloader Dateien atomar (erst `.tmp`, dann `rename()`), sodass nie eine halb geschriebene Datei im Cache landet.
+## Dateien
 
-## Features
-- **TTFB unter 0.1 Sekunden** für Gäste
-- **5-fache Validierung** gegen weisse Seiten (White Pages)
-- **Atomic Write** — keine korrupten Cache-Dateien moeglich
-- **Graceful Fallback** — bei ungueltigem Cache wird die Live-Seite geladen
-- Komplett unsichtbar für eingeloggte Kunden (diese sehen immer die Live-Seite)
-- Admin-Modul zur einfachen Konfiguration (TTL, max. Seiten, Ausschlussliste)
-- Cache-Status und "Cache leeren" Button direkt im Admin-Bereich
-- Völlig unabhängig von `application_top` Hooks
-- **Doppelte Sicherheit:** Sessionabhängige Seiten werden sowohl per `.htaccess` als auch per PHP-Ausschlussliste in `fpc_serve.php` ausgesperrt
+| Datei | Zweck |
+|-------|-------|
+| `htaccess_fpc_rules.txt` | Apache RewriteRules — in .htaccess einfuegen |
+| `fpc_preloader.php` | Cron-Job: Baut Cache auf (Rate-Limited, Load-geschuetzt) |
+| `fpc_serve.php` | Fallback: PHP-basierte Auslieferung (nur bei Bedarf) |
+| `fpc_flush.php` | CLI: Cache leeren (komplett, einzeln, oder abgelaufen) |
+| `admin_q9wKj6Ds/.../mrhanf_fpc.php` | Admin-Modul fuer Konfiguration |
+| `lang/{de,en,fr,es}/.../mrhanf_fpc.php` | Sprachdateien (4 Sprachen) |
+| `DEPLOY_v8.sh` | Automatisches Deployment-Script |
+
+## Installation
+
+### 1. Deployment ausfuehren
+
+```bash
+bash DEPLOY_v8.sh
+```
+
+Oder manuell:
+
+```bash
+SHOP="/home/www/doc/28856/dcp288560004/mr-hanf.de/www"
+cp fpc_serve.php fpc_preloader.php fpc_flush.php "$SHOP/"
+cp admin_q9wKj6Ds/includes/modules/system/mrhanf_fpc.php \
+   "$SHOP/admin_q9wKj6Ds/includes/modules/system/"
+for LANG in german english french spanish; do
+  mkdir -p "$SHOP/lang/$LANG/modules/system"
+  cp "lang/$LANG/modules/system/mrhanf_fpc.php" \
+     "$SHOP/lang/$LANG/modules/system/"
+done
+mkdir -p "$SHOP/cache/fpc"
+```
+
+### 2. .htaccess aktualisieren
+
+Den Inhalt von `htaccess_fpc_rules.txt` am **Anfang** der `.htaccess` einfuegen, **vor** allen anderen RewriteRules. Die alten FPC-Regeln (v7.x) muessen entfernt werden.
+
+### 3. Admin-Modul aktivieren
+
+Im Shop-Admin unter **Module → System-Module** das Modul "Mr. Hanf Full Page Cache" installieren (falls noch nicht geschehen).
+
+### 4. Cron-Job einrichten
+
+```bash
+# Preloader (alle 2 Stunden)
+0 */2 * * * cd /pfad/zum/shop && /usr/local/bin/php fpc_preloader.php >> cache/fpc/preloader.log 2>&1
+
+# Cache-Bereinigung (taeglich 3 Uhr)
+0 3 * * * cd /pfad/zum/shop && /usr/local/bin/php fpc_flush.php --expired >> cache/fpc/flush.log 2>&1
+```
+
+## Konfiguration (Admin)
+
+| Einstellung | Standard | Beschreibung |
+|-------------|----------|--------------|
+| Status | True | Modul aktivieren/deaktivieren |
+| Cache-Lebensdauer | 86400 | TTL in Sekunden (24 Stunden) |
+| Ausgeschlossene Seiten | checkout,login,... | Kommagetrennte URL-Teile |
+| Max. Seiten pro Cron | 500 | Limit pro Preloader-Durchlauf |
+
+## Cache leeren
+
+```bash
+php fpc_flush.php              # Komplett
+php fpc_flush.php --url /pfad/ # Einzelne Seite
+php fpc_flush.php --expired    # Nur abgelaufene
+```
+
+Oder im Admin-Bereich ueber den "Cache leeren" Button.
 
 ## Ausgeschlossene Seiten (Standard)
 
-Die folgenden Seiten werden **niemals** gecacht, da sie sessionabhängige oder benutzerspezifische Inhalte enthalten:
+Folgende Seiten werden **niemals** gecacht (sessionabhaengig):
 
 | Seite | Grund |
-|---|---|
-| `/vergleich` | Produktvergleich — zeigt Produkte aus der Session des Benutzers |
-| `/wishlist` | Merkzettel — benutzerspezifisch |
+|-------|-------|
+| `/vergleich` | Produktvergleich (Session) |
+| `/wishlist` | Merkzettel (benutzerspezifisch) |
 | `/checkout` | Bestellprozess |
 | `/login` | Login-Seite |
 | `/account` | Kundenkonto |
 | `/shopping_cart` | Warenkorb |
 | `/logoff` | Abmelden |
-| `/password_double_opt` | Passwort-Opt-In |
-| `/create_account` | Registrierung |
-| `/contact_us` | Kontaktformular |
-| `/tell_a_friend` | Weiterempfehlen |
-| `/product_reviews_write` | Bewertung schreiben |
 | `/admin` | Admin-Bereich |
 
-Weitere Seiten können im Admin-Bereich unter **Module → System Module → Mr. Hanf Full Page Cache** in der Einstellung **Ausgeschlossene Seiten** hinzugefügt werden (kommagetrennt).
+## Sicherheitsfeatures
 
-## Installation
+### Session-Erkennung
+Eingeloggte User (MODsid/PHPSESSID Cookie) bekommen **immer** die dynamische Seite.
 
-### 1. Dateien hochladen
-Kopieren Sie alle Dateien aus diesem Repository in das Hauptverzeichnis Ihres Shops.
-*(Die Ordnerstruktur ist bereits korrekt angelegt. Achten Sie darauf, den Ordner `admin_q9wKj6Ds` entsprechend Ihres tatsächlichen Admin-Verzeichnisses umzubenennen!)*
+### HTML-Validierung (v8.0 — 7 Schichten)
 
-### 2. Modul im Admin-Bereich installieren
-1. Loggen Sie sich in Ihren modified eCommerce Admin-Bereich ein.
-2. Gehen Sie zu **Module** -> **System Module**.
-3. Suchen Sie nach **Mr. Hanf Full Page Cache** und klicken Sie auf **Installieren**.
-4. Passen Sie die Konfiguration nach Ihren Wünschen an (z.B. Cache Lebensdauer, ausgeschlossene Seiten).
+| Schicht | Pruefung | Beschreibung |
+|---------|----------|--------------|
+| 1 | Mindestgroesse | Min. 1000 Bytes |
+| 2 | DOCTYPE/HTML | `<!DOCTYPE` oder `<html>` am Anfang |
+| 3 | BODY-Tag | `<body>` muss vorhanden sein |
+| 4 | Closing-Tag | `</html>` oder `</body>` am Ende |
+| 5 | PHP-Fehler | Kein `Fatal error`, `Warning` etc. |
+| 6 | Leere-Seiten | strip_tags() muss > 100 Zeichen ergeben |
+| 7 | Verify-After-Write | Cache-Datei wird nach Schreiben zurueckgelesen |
 
-### 3. .htaccess anpassen (WICHTIG!)
-Öffnen Sie die `.htaccess` Datei im Hauptverzeichnis Ihres Shops.
-Kopieren Sie den Inhalt der Datei `htaccess_fpc_rules.txt` und fügen Sie ihn **ganz oben** in Ihre `.htaccess` ein, noch **VOR** den regulären RewriteRules des Shops.
+### Weitere Schutzmechanismen
+- **Health-Marker**: `<!-- FPC-VALID -->` in jeder Cache-Datei
+- **Atomic Write**: tmp-Datei → rename() (keine Partial Reads)
+- **Fehlerquoten-Schutz**: Stoppt bei > 20% Fehlern (Server-Problem)
 
-### 4. Cron-Jobs einrichten
-Richten Sie in Ihrem Hosting-Control-Panel (oder per SSH) folgende Cron-Jobs ein:
+## Rate-Limiting (Preloader)
 
-**Preloader (z.B. alle 30 Minuten):**
-Besucht den Shop und generiert die HTML-Dateien.
-```bash
-*/30 * * * * cd /home/www/doc/28856/dcp288560004/mr-hanf.de/www && /usr/local/bin/php fpc_preloader.php >> cache/fpc/preloader.log 2>&1
+| Parameter | Wert | Beschreibung |
+|-----------|------|--------------|
+| Request-Pause | 500ms | Zwischen jedem Request |
+| Load-Schwelle | 3.0 | Pausiert bei hoher Last |
+| Load-Pause | 30s | Wartezeit bei hoher Last |
+| Batch-Groesse | 100 | Seiten pro Batch |
+| Batch-Pause | 30s | Erholung zwischen Batches |
+| Slow-Threshold | 3000ms | Ab hier Pause verdoppeln |
+| Max. Laufzeit | 45min | Harter Abbruch |
+
+## Fallback auf PHP-Auslieferung
+
+Falls die direkte Apache-Auslieferung Probleme macht, kann auf die PHP-basierte Auslieferung (v7.x Modus) zurueckgeschaltet werden:
+
+In `.htaccess` aendern:
+```apache
+# v8.0 (direkt):
+RewriteRule ^(.+)$ cache/fpc/$1/index.html [L,T=text/html]
+
+# Fallback (PHP):
+RewriteRule ^(.+)$ fpc_serve.php [L,QSA]
 ```
 
-**Cache-Bereinigung (z.B. 1x täglich nachts):**
-Löscht abgelaufene Cache-Dateien.
-```bash
-0 3 * * * cd /home/www/doc/28856/dcp288560004/mr-hanf.de/www && /usr/local/bin/php fpc_flush.php --expired >> cache/fpc/flush.log 2>&1
-```
+## Changelog
 
-*(Passen Sie den Pfad `/home/www/doc/28856/dcp288560004/mr-hanf.de/www` an Ihr System an!)*
+### v8.0.0 (2026-03-22)
+- **NEU**: Direkte Apache-Auslieferung (kein PHP-Worker fuer gecachte Seiten)
+- **NEU**: Erweiterte HTML-Validierung (DOCTYPE, BODY, Leere-Seiten-Erkennung)
+- **NEU**: Verify-After-Write (Cache-Datei wird nach Schreiben zurueckgelesen)
+- **NEU**: Fehlerquoten-Schutz (stoppt bei > 20% Fehlern)
+- **AUFGERAEUMT**: Nur noch FPC-relevante Dateien im Repository
 
-## Update von v6.x auf v7.0.0
+### v7.1.0 (2026-03-22)
+- Rate-Limiting fuer Preloader
+- Server-Load-Schutz und adaptive Drosselung
+- Batch-Pausen und maximale Laufzeit
 
-Wenn das Modul bereits installiert ist, sind folgende Schritte nötig:
+### v7.0.3 (2026-03-22)
+- Fix: 304 Not Modified entfernt (verursachte weisse Seiten auf Artfiles)
+- Fix: Alle RewriteCond fuer beide RewriteRules wiederholt
+- Fix: PHP-Fehler-Erkennung mit Regex statt strpos
 
-1. **Dateien ersetzen:** `fpc_serve.php`, `fpc_preloader.php` und `admin_q9wKj6Ds/includes/modules/system/mrhanf_fpc.php` durch die neuen v7.0 Versionen ersetzen.
-2. **Sprachdateien hochladen:** Die 4 Sprachdateien unter `lang/{german,english,french,spanish}/extra/admin/mrhanf_fpc.php` hochladen.
-3. **Cache komplett leeren:** Im Admin-Bereich auf "Cache leeren" klicken oder per SSH: `rm -rf cache/fpc/*.html cache/fpc/*/*.html` — Die alten Cache-Dateien enthalten keinen `<!-- FPC-VALID -->` Health-Marker und werden von v7.0 abgelehnt.
-4. **OpCache leeren:** `php -r "opcache_reset();"` oder im Admin-Bereich eine beliebige Seite aufrufen.
-5. **Preloader manuell testen:** `php fpc_preloader.php 2>&1 | head -30` — Prüfen ob die neuen Validierungen greifen.
+### v7.0.0 (2026-03-22)
+- Erste ausfallsichere Version mit 5-facher Validierung
+- Atomic Write Pattern und Health-Marker System
 
-## Validierungsschichten (v7.0)
+### v6.1.1 (2026-03-20)
+- Produktvergleich und Merkzettel aus Cache ausgeschlossen
 
-| Schicht | Pruefung | Serve-Schwelle | Preloader-Schwelle |
-|---|---|---|---|
-| 1 | Mindestgroesse | 500 Bytes | 1000 Bytes |
-| 2 | Health-Marker | `<!-- FPC-VALID -->` | `<!-- FPC-VALID -->` |
-| 3 | TTL | 48h max (Notfall) | 24h (konfigurierbar) |
-| 4 | Closing-Tag | `</html>` oder `</body>` | `</html>` oder `</body>` |
-| 5 | PHP-Fehler | Kein `Fatal error` etc. | Kein `Fatal error` etc. |
-
-## Cache manuell leeren
-Sie können den Cache auf drei Arten leeren:
-1. Im Admin-Bereich unter **Module** -> **System Module** -> **Mr. Hanf Full Page Cache** auf "Cache leeren" klicken.
-2. Per SSH: `php fpc_flush.php`
-3. Per SSH für eine einzelne URL: `php fpc_flush.php --url /vergleich`
-
-## Produktvergleich Cookie-Fix (v6.1.1)
-
-Das Modul enthält einen separaten Fix für ein Bug im Produktvergleich-System:
-
-**Problem:** Wenn ein angemeldeter Kunde Produkte in den Vergleich legt, sich abmeldet und dann den Vergleich leert, bleibt das Vergleichs-Icon trotzdem befüllt. Nach einem Refresh erscheinen die Produkte sogar wieder im Vergleich — weil der `pc_compare_ids`-Cookie beim Abmelden nicht gelöscht wird und der `cookieRestore`-Mechanismus die Produkte erneut in die Server-Session schreibt.
-
-**Lösung:** Zwei PHP-Dateien im `includes/extra/`-System von modified:
-
-| Datei | Funktion |
-|---|---|
-| `includes/extra/application_top/mrhanf_compare_fix.php` | Löscht beim Logoff den `pc_compare_ids`-Cookie serverseitig |
-| `includes/extra/application_bottom/mrhanf_compare_fix_js.php` | Löscht beim Logoff den Cookie auch clientseitig per JavaScript |
-
-**Installation:**
-1. Beide Dateien in die entsprechenden Verzeichnisse des Shops hochladen
-2. Die Dateien werden von modified automatisch eingebunden — kein weiterer Eingriff nötig
-3. Optional: `sql/mrhanf_compare_saved.sql` ausführen, wenn die Vergleichsliste nach dem Login wiederhergestellt werden soll
-
-**Gewünschtes Verhalten nach dem Fix:**
-- Abmelden → Vergleichs-Icon sofort auf 0, Cookie gelöscht
-- Anmelden → leere Vergleichsliste (sauberer Start)
-- Optional: Anmelden → gespeicherte Vergleichsliste aus DB wiederherstellen
+### v6.0.0
+- Initiale Version
 
 ## Fehlerbehebung
-- **Weisse Seiten (v7.0 sollte das verhindern):** Prüfen Sie `cache/fpc/preloader.log` auf Fehler. Wenn trotzdem weisse Seiten auftreten, prüfen Sie ob `fpc_serve.php` die v7.0 Version ist (`grep FPC-VALID fpc_serve.php`).
-- **Der Cache wird nicht aufgebaut:** Prüfen Sie, ob der Cron-Job korrekt läuft und ob das Verzeichnis `cache/fpc/` Schreibrechte (777) hat. Lesen Sie die Datei `cache/fpc/preloader.log`.
-- **Die Seiten laden nicht schneller:** Prüfen Sie, ob die `.htaccess` Regeln korrekt an den Anfang der Datei kopiert wurden. Testen Sie den Aufruf in einem Inkognito-Fenster (ohne Login).
-- **Vergleichs-Icons werden nicht aktualisiert:** Stellen Sie sicher, dass `/vergleich` in der Ausschlussliste steht und die `.htaccess`-Regeln aktualisiert wurden (v6.1.1). Leeren Sie anschließend den Cache.
+
+| Problem | Loesung |
+|---------|---------|
+| Weisse Seiten | Cache leeren: `php fpc_flush.php` |
+| Cache wird nicht aufgebaut | `cache/fpc/` Schreibrechte (777) pruefen, `preloader.log` lesen |
+| Seiten nicht schneller | .htaccess pruefen, Inkognito-Fenster testen |
+| Eingeloggte User langsam | FPC greift nur fuer Gaeste — das ist normal |
+
+## Lizenz
+
+Proprietaer — Mr. Hanf / mrhanf15-stack

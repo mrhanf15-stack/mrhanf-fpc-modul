@@ -1,9 +1,9 @@
 <?php
 /**
- * Mr. Hanf Full Page Cache v7.0.0 - Archivo de idioma espanol
+ * Mr. Hanf Full Page Cache v8.0.0 - Archivo de idioma espanol
  */
 define('MODULE_MRHANF_FPC_TITLE', 'Mr. Hanf Full Page Cache');
-define('MODULE_MRHANF_FPC_DESC', 'Sistema de precarga basado en cron. Genera archivos HTML estaticos para tiempos de carga extremadamente rapidos.');
+define('MODULE_MRHANF_FPC_DESC', 'Sistema de precarga basado en cron. Apache sirve las paginas en cache directamente como archivos HTML estaticos - sin worker PHP.');
 define('MODULE_MRHANF_FPC_STATUS_TITLE', 'Activar modulo');
 define('MODULE_MRHANF_FPC_STATUS_DESC', 'Debe activarse el cache de pagina completa?');
 define('MODULE_MRHANF_FPC_CACHE_TIME_TITLE', 'Tiempo de vida del cache (segundos)');

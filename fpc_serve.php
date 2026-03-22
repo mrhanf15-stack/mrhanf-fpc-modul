@@ -1,35 +1,21 @@
 <?php
 /**
- * Mr. Hanf Full Page Cache v7.0.0 - Statischer Cache-Handler (Ausfallsicher)
+ * Mr. Hanf Full Page Cache v8.0.0 - Fallback Cache-Handler
  *
- * Dieses Script wird von .htaccess aufgerufen, wenn eine gecachte
- * Version einer Seite existiert. Es liefert die statische HTML-Datei
- * direkt aus, ohne den modified eCommerce Kern zu laden.
+ * HINWEIS v8.0: Dieses Script wird im Normalbetrieb NICHT mehr aufgerufen!
+ * Apache liefert gecachte Seiten direkt als statische HTML-Dateien aus.
  *
- * WICHTIG: Dieses Script darf KEINE externen Abhaengigkeiten haben!
- * Es muss so schnell wie moeglich ausfuehren (Ziel: < 10ms).
+ * Dieses Script bleibt als Fallback erhalten fuer den Fall, dass:
+ *   - mod_headers nicht verfuegbar ist
+ *   - Die direkte Auslieferung Probleme macht
+ *   - Zusaetzliche Validierung zur Laufzeit benoetigt wird
  *
- * .htaccess leitet hierher weiter wenn:
- *   1. Kein Cookie 'MODsid' gesetzt ist (= Gast-Besucher)
- *   2. REQUEST_METHOD = GET
- *   3. Eine Cache-Datei unter cache/fpc/ existiert
+ * Um auf den Fallback umzuschalten, aendern Sie in .htaccess:
+ *   RewriteRule ^(.+)$ cache/fpc/$1/index.html [L,T=text/html]
+ * zu:
+ *   RewriteRule ^(.+)$ fpc_serve.php [L,QSA]
  *
- * CHANGELOG v7.0.0:
- *   - Validierung: Leere/korrupte Cache-Dateien werden NICHT ausgeliefert
- *   - Mindestgroesse: Dateien < 500 Bytes werden uebersprungen
- *   - Health-Marker: Prueft auf <!-- FPC-VALID --> Marker
- *   - TTL-Check: Abgelaufene Dateien werden nicht ausgeliefert
- *   - Auto-Cleanup: Korrupte/abgelaufene Dateien werden automatisch geloescht
- *   - Fallback: Bei ungueltigem Cache -> return false -> normaler Shop-Ablauf
- *
- * CHANGELOG v7.0.3:
- *   - 304 Not Modified / ETag / Last-Modified ENTFERNT
- *   - Diese Header verursachten weisse Seiten beim Browser-Refresh
- *   - Der Artfiles-Proxy/Apache hat bei 304 content-length:0 gesendet
- *   - Cache wird jetzt IMMER vollstaendig ausgeliefert (sicherer)
- *   - Cache-Control: no-store verhindert Browser-Caching der FPC-Antwort
- *
- * @version   7.0.3
+ * @version   8.0.0
  * @date      2026-03-22
  */
 
@@ -37,7 +23,7 @@
 // KONFIGURATION
 // ============================================================
 $FPC_MIN_FILESIZE  = 500;      // Mindestgroesse in Bytes
-$FPC_MAX_AGE       = 172800;   // Max. Alter in Sekunden (48h Fallback, falls DB nicht erreichbar)
+$FPC_MAX_AGE       = 172800;   // Max. Alter in Sekunden (48h Fallback)
 $FPC_HEALTH_MARKER = '<!-- FPC-VALID -->';  // Pflicht-Marker im HTML
 $FPC_AUTO_DELETE   = true;     // Korrupte Dateien automatisch loeschen
 
@@ -121,13 +107,12 @@ if ($real_file === false || strpos($real_file, $real_cache) !== 0) {
 }
 
 // ============================================================
-// NEU v7.0: VALIDIERUNG VOR AUSLIEFERUNG
+// VALIDIERUNG VOR AUSLIEFERUNG
 // ============================================================
 
 // 1. Dateigroesse pruefen (leere/korrupte Dateien abfangen)
 $filesize = filesize($cache_file);
 if ($filesize === false || $filesize < $FPC_MIN_FILESIZE) {
-    // Korrupte Datei -> loeschen und Fallback zum normalen Shop
     if ($FPC_AUTO_DELETE) {
         @unlink($cache_file);
     }
@@ -138,7 +123,6 @@ if ($filesize === false || $filesize < $FPC_MIN_FILESIZE) {
 $mtime = filemtime($cache_file);
 $age = time() - $mtime;
 if ($age > $FPC_MAX_AGE) {
-    // Abgelaufene Datei -> loeschen und Fallback zum normalen Shop
     if ($FPC_AUTO_DELETE) {
         @unlink($cache_file);
     }
@@ -156,7 +140,6 @@ $tail = fread($fp, 200);
 fclose($fp);
 
 if (strpos($tail, $FPC_HEALTH_MARKER) === false) {
-    // Kein Health-Marker -> Datei ist korrupt oder unvollstaendig
     if ($FPC_AUTO_DELETE) {
         @unlink($cache_file);
     }
@@ -167,20 +150,13 @@ if (strpos($tail, $FPC_HEALTH_MARKER) === false) {
 // CACHE-DATEI AUSLIEFERN (validiert!)
 // ============================================================
 
-// HTTP-Header setzen
-// WICHTIG: Kein Last-Modified, kein ETag, kein 304!
-// Diese verursachten weisse Seiten beim Browser-Refresh auf Artfiles-Servern.
-// Der FPC liefert IMMER den vollstaendigen HTML-Inhalt aus.
 header('Content-Type: text/html; charset=utf-8');
 header('X-FPC-Cache: HIT');
-header('X-FPC-Version: 7.0.3');
+header('X-FPC-Version: 8.0.0-fallback');
 header('X-FPC-Cached-At: ' . gmdate('D, d M Y H:i:s', $mtime) . ' GMT');
-
-// Browser soll die FPC-Antwort NICHT cachen (verhindert 304-Probleme)
 header('Cache-Control: no-store, no-cache, must-revalidate');
 header('Pragma: no-cache');
 header('Expires: 0');
 
-// Datei ausgeben
 readfile($cache_file);
 exit;

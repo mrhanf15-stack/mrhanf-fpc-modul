@@ -1,9 +1,9 @@
 <?php
 /**
- * Mr. Hanf Full Page Cache v7.0.0 - Deutsche Sprachdatei
+ * Mr. Hanf Full Page Cache v8.0.0 - Deutsche Sprachdatei
  */
 define('MODULE_MRHANF_FPC_TITLE', 'Mr. Hanf Full Page Cache');
-define('MODULE_MRHANF_FPC_DESC', 'Cron-basiertes Preloading-System. Generiert statische HTML-Dateien f&uuml;r extrem schnelle Ladezeiten.');
+define('MODULE_MRHANF_FPC_DESC', 'Cron-basiertes Preloading-System. Apache liefert gecachte Seiten direkt als statische HTML-Dateien aus - ohne PHP-Worker.');
 define('MODULE_MRHANF_FPC_STATUS_TITLE', 'Modul aktivieren');
 define('MODULE_MRHANF_FPC_STATUS_DESC', 'Soll der Full Page Cache aktiviert werden?');
 define('MODULE_MRHANF_FPC_CACHE_TIME_TITLE', 'Cache Lebensdauer (Sekunden)');

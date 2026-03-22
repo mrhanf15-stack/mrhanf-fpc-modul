@@ -1,15 +1,18 @@
 <?php
 /**
- * Mr. Hanf Full Page Cache v7.0.3 - System-Modul fuer modified eCommerce
+ * Mr. Hanf Full Page Cache v8.0.0 - System-Modul fuer modified eCommerce
  *
  * Cron-basiertes Preloading-System:
  *   - Ein Cron-Job (fpc_preloader.php) ruft Shop-Seiten ab und speichert
  *     sie als statische HTML-Dateien unter cache/fpc/
- *   - Die .htaccess prueft ob eine statische Version existiert und liefert
- *     sie direkt aus (TTFB < 0.1s)
+ *   - Apache liefert gecachte Seiten DIREKT als statische Dateien aus
+ *     (kein PHP-Worker noetig!)
  *   - Dieses Admin-Modul verwaltet Konfiguration, Cache-Status und Flush
  *
  * Kompatibel mit modified eCommerce v2.0.7.2 rev 14622
+ *
+ * @version   8.0.0
+ * @date      2026-03-22
  */
 defined('_VALID_XTC') or die('Direct Access to this location is not allowed.');
 
@@ -24,16 +27,14 @@ class mrhanf_fpc
 
     public function __construct()
     {
-        // v7.0.3: Im Frontend darf dieses Modul NICHTS tun!
-        // Der FPC wird komplett ueber .htaccess + fpc_serve.php gesteuert.
-        // Das Admin-Modul ist NUR fuer Konfiguration im Admin-Bereich.
+        // Im Frontend darf dieses Modul NICHTS tun!
+        // Der FPC wird komplett ueber .htaccess gesteuert (v8.0: ohne PHP).
         if (!$this->_isAdmin()) {
-            // Frontend: Nur Minimal-Setup, KEINE Datei-Operationen
             $this->title       = 'Mr. Hanf Full Page Cache';
             $this->description = '';
             $this->sort_order  = 0;
-            $this->enabled     = false;  // Im Frontend DEAKTIVIERT
-            return;  // SOFORT BEENDEN
+            $this->enabled     = false;
+            return;
         }
 
         // === Ab hier NUR im Admin-Bereich ===
@@ -57,19 +58,15 @@ class mrhanf_fpc
 
     /**
      * Pruefen ob wir im Admin-Bereich sind
-     * Verhindert schwere Operationen im Frontend
      */
     private function _isAdmin()
     {
-        // modified eCommerce definiert IS_ADMIN_FILE im Admin-Bereich
         if (defined('IS_ADMIN_FILE') && IS_ADMIN_FILE === true) {
             return true;
         }
-        // Fallback: Pruefen ob Admin-Pfad in REQUEST_URI
         if (isset($_SERVER['REQUEST_URI']) && strpos($_SERVER['REQUEST_URI'], '/admin') !== false) {
             return true;
         }
-        // Fallback: Pruefen ob FILENAME_MODULE_EXPORT definiert ist (nur im Admin)
         if (defined('FILENAME_MODULE_EXPORT')) {
             return true;
         }
@@ -100,22 +97,22 @@ class mrhanf_fpc
             if (preg_match('/\[FPC\] Fertig: (\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})/', $last_lines, $m)) {
                 $last_run = $m[1];
             }
-            // Letzte Statistik
-            if (preg_match('/\[FPC\] Gecacht: (\d+) \| Uebersprungen: (\d+) \| Fehler: (\d+)/', $last_lines, $m2)) {
+            if (preg_match('/Gecacht: (\d+) \| Uebersprungen: (\d+).*Fehler: (\d+)/', $last_lines, $m2)) {
                 $last_run .= ' (Neu: ' . $m2[1] . ', Uebersprungen: ' . $m2[2] . ', Fehler: ' . $m2[3] . ')';
             }
         }
 
         $html  = '<br /><br />';
         $html .= '<table border="0" cellpadding="4" cellspacing="0" style="background:#f8f8f8; border:1px solid #ccc; margin-top:8px;">';
-        $html .= '<tr><td colspan="2" style="background:#4a90d9; color:#fff; font-weight:bold; padding:6px;">Cache-Status (v7.0.0)</td></tr>';
+        $html .= '<tr><td colspan="2" style="background:#4a90d9; color:#fff; font-weight:bold; padding:6px;">Cache-Status (v8.0.0 - Direkte Apache-Auslieferung)</td></tr>';
         $html .= '<tr><td><b>Gecachte Seiten:</b></td><td>' . $files . '</td></tr>';
         $html .= '<tr><td><b>Cache-Groesse:</b></td><td>' . $this->_formatBytes($size) . '</td></tr>';
         $html .= '<tr><td><b>Letzter Cron-Lauf:</b></td><td>' . $last_run . '</td></tr>';
         $html .= '<tr><td><b>Cache-Verzeichnis:</b></td><td><code>cache/fpc/</code></td></tr>';
+        $html .= '<tr><td><b>Auslieferung:</b></td><td>Apache direkt (kein PHP-Worker)</td></tr>';
         $html .= '</table>';
 
-        // Flush-Button (per GET-Parameter)
+        // Flush-Button
         if (isset($_GET['fpc_action']) && $_GET['fpc_action'] === 'flush') {
             $this->_flushCache($cache_dir);
             $html .= '<br /><div style="background:#d4edda; border:1px solid #c3e6cb; padding:8px; color:#155724;">Cache wurde erfolgreich geleert!</div>';
@@ -129,9 +126,6 @@ class mrhanf_fpc
         return $html;
     }
 
-    /**
-     * Alle HTML-Dateien im Cache-Verzeichnis zaehlen
-     */
     private function _countCacheFiles($dir)
     {
         $count = 0;
@@ -146,9 +140,6 @@ class mrhanf_fpc
         return $count;
     }
 
-    /**
-     * Gesamtgroesse des Cache-Verzeichnisses
-     */
     private function _getCacheDirSize($dir)
     {
         $size = 0;
@@ -163,9 +154,6 @@ class mrhanf_fpc
         return $size;
     }
 
-    /**
-     * Letzte N Zeilen einer Datei lesen
-     */
     private function _tailFile($file, $lines = 5)
     {
         $data = file_get_contents($file);
@@ -174,9 +162,6 @@ class mrhanf_fpc
         return implode("\n", array_slice($arr, -$lines));
     }
 
-    /**
-     * Bytes formatieren
-     */
     private function _formatBytes($bytes)
     {
         if ($bytes >= 1073741824) return round($bytes / 1073741824, 2) . ' GB';
@@ -185,9 +170,6 @@ class mrhanf_fpc
         return $bytes . ' Bytes';
     }
 
-    /**
-     * Cache leeren
-     */
     private function _flushCache($dir)
     {
         $iter = new RecursiveIteratorIterator(
@@ -297,8 +279,6 @@ class mrhanf_fpc
         if (!is_dir($cache_dir)) {
             @mkdir($cache_dir, 0777, true);
         }
-
-        // .gitkeep erstellen
         if (!is_file($cache_dir . '.gitkeep')) {
             @file_put_contents($cache_dir . '.gitkeep', '');
         }
@@ -311,7 +291,6 @@ class mrhanf_fpc
           . " WHERE configuration_key LIKE 'MODULE_MRHANF_FPC_%'"
         );
 
-        // Optional: Cache-Verzeichnis leeren (nicht loeschen)
         $base = defined('DIR_FS_DOCUMENT_ROOT') ? DIR_FS_DOCUMENT_ROOT : (defined('DIR_FS_CATALOG') ? DIR_FS_CATALOG : '');
         $cache_dir = $base . 'cache/fpc/';
         if (is_dir($cache_dir)) {
@@ -336,7 +315,6 @@ class mrhanf_fpc
     public function process($file)
     {
         // Wird von modified eCommerce beim Speichern aufgerufen
-        // Die eigentliche Speicherung uebernimmt das Framework
     }
 
     public function display()

@@ -1,31 +1,30 @@
 # ============================================================
-# Mr. Hanf Full Page Cache v7.0.3 - .htaccess Regeln
+# Mr. Hanf Full Page Cache v8.0.0 - .htaccess Regeln
 # ============================================================
-# Diese Regeln muessen am ANFANG der .htaccess eingefuegt werden,
-# VOR allen anderen RewriteRules des Shops.
+# WICHTIG v8.0: Apache liefert gecachte Seiten DIREKT als
+# statische HTML-Dateien aus - OHNE PHP-Worker!
 #
-# Funktionsweise:
-#   1. Prueft ob die Anfrage ein GET-Request ist
-#   2. Prueft ob KEIN Session-Cookie gesetzt ist (= Gast)
-#   3. Prueft ob die URL nicht ausgeschlossen ist
-#   4. Prueft ob eine gecachte HTML-Datei existiert
-#   5. Wenn ja: leitet an fpc_serve.php weiter (TTFB < 10ms)
-#   6. Wenn nein: normaler Shop-Ablauf
+# Vorher (v7.x): Request -> fpc_serve.php (PHP) -> readfile()
+# Jetzt  (v8.0): Request -> Apache liefert index.html direkt
 #
-# WICHTIG v7.0.3:
-#   In Apache gelten RewriteCond NUR fuer die DIREKT folgende RewriteRule!
-#   Deshalb muessen ALLE Bedingungen fuer BEIDE RewriteRules (Startseite
-#   und Unterseiten) SEPARAT wiederholt werden.
-#   Die alte Version hatte den Cookie-Check nur bei der Startseiten-Regel,
-#   was dazu fuehrte, dass angemeldete User an fpc_serve.php weitergeleitet
-#   wurden -> return false -> content-length:0 -> weisse Seite.
+# Vorteile:
+#   - Kein PHP-Worker belegt -> Server kann mehr Besucher bedienen
+#   - Schneller als PHP (kein PHP-Startup, kein readfile())
+#   - Weniger Worker-Spikes bei hohem Traffic
 #
-# CHANGELOG v7.0.3:
-#   - KRITISCHER FIX: Alle RewriteCond fuer beide RewriteRules wiederholt
-#   - Verhindert weisse Seiten fuer angemeldete Benutzer
+# Sicherheit:
+#   - Validierung findet NUR beim SCHREIBEN statt (fpc_preloader.php)
+#   - fpc_serve.php bleibt als Fallback-Option erhalten
+#   - Cache-Dateien haben FPC-VALID Marker + Mindestgroesse
+#
+# CHANGELOG v8.0.0:
+#   - NEU: Direkte Apache-Auslieferung (kein PHP fuer gecachte Seiten)
+#   - NEU: Content-Type Header via AddType
+#   - NEU: Cache-Control Header via mod_headers
+#   - ENTFERNT: Weiterleitung an fpc_serve.php
 # ============================================================
 
-# --- FPC START ---
+# --- FPC START v8.0 ---
 <IfModule mod_rewrite.c>
 RewriteEngine On
 
@@ -34,9 +33,9 @@ RewriteCond %{REQUEST_METHOD} =GET
 RewriteCond %{HTTP_COOKIE} !MODsid [NC]
 RewriteCond %{HTTP_COOKIE} !PHPSESSID [NC]
 RewriteCond %{REQUEST_URI} !^/admin [NC]
-RewriteCond %{QUERY_STRING} !action= [NC]
+RewriteCond %{QUERY_STRING} ^$
 RewriteCond %{DOCUMENT_ROOT}/cache/fpc/index.html -f
-RewriteRule ^$ fpc_serve.php [L,QSA]
+RewriteRule ^$ cache/fpc/index.html [L,T=text/html]
 
 # === Unterseiten (ALLE Conds wiederholt!) ===
 RewriteCond %{REQUEST_METHOD} =GET
@@ -44,7 +43,7 @@ RewriteCond %{HTTP_COOKIE} !MODsid [NC]
 RewriteCond %{HTTP_COOKIE} !PHPSESSID [NC]
 RewriteCond %{REQUEST_URI} !^/admin [NC]
 RewriteCond %{REQUEST_URI} !\.(css|js|jpg|jpeg|png|gif|svg|ico|woff|woff2|ttf|eot|pdf|zip)$ [NC]
-RewriteCond %{QUERY_STRING} !action= [NC]
+RewriteCond %{QUERY_STRING} ^$
 RewriteCond %{REQUEST_URI} !checkout [NC]
 RewriteCond %{REQUEST_URI} !login [NC]
 RewriteCond %{REQUEST_URI} !account [NC]
@@ -58,6 +57,16 @@ RewriteCond %{REQUEST_URI} !contact_us [NC]
 RewriteCond %{REQUEST_URI} !tell_a_friend [NC]
 RewriteCond %{REQUEST_URI} !product_reviews_write [NC]
 RewriteCond %{DOCUMENT_ROOT}/cache/fpc/%{REQUEST_URI}/index.html -f
-RewriteRule ^(.+)$ fpc_serve.php [L,QSA]
+RewriteRule ^(.+)$ cache/fpc/$1/index.html [L,T=text/html]
 </IfModule>
-# --- FPC ENDE ---
+
+# === FPC Cache-Control Header ===
+<IfModule mod_headers.c>
+<FilesMatch "^cache/fpc/.+\.html$">
+    Header set X-FPC-Cache "HIT"
+    Header set X-FPC-Version "8.0.0"
+    Header set Cache-Control "no-store, no-cache, must-revalidate"
+    Header set Pragma "no-cache"
+</FilesMatch>
+</IfModule>
+# --- FPC ENDE v8.0 ---

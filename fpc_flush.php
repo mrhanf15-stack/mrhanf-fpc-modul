@@ -1,6 +1,6 @@
 <?php
 /**
- * Mr. Hanf Full Page Cache v6.1.1 - Cache Flush Script
+ * Mr. Hanf Full Page Cache v8.0.0 - Cache Flush Script
  *
  * Leert den gesamten FPC-Cache oder einzelne Seiten.
  *
@@ -8,6 +8,9 @@
  *   /usr/local/bin/php fpc_flush.php              # Gesamten Cache leeren
  *   /usr/local/bin/php fpc_flush.php --url /samen-shop/  # Einzelne Seite
  *   /usr/local/bin/php fpc_flush.php --expired     # Nur abgelaufene Dateien
+ *
+ * @version   8.0.0
+ * @date      2026-03-22
  */
 
 $cache_dir = __DIR__ . '/cache/fpc/';
@@ -28,6 +31,7 @@ if (isset($argv[1])) {
         $mode = 'single';
         $target_url = $argv[2];
     } elseif ($argv[1] === '--help') {
+        echo "Mr. Hanf FPC v8.0.0 - Cache Flush\n";
         echo "Verwendung:\n";
         echo "  php fpc_flush.php              Gesamten Cache leeren\n";
         echo "  php fpc_flush.php --expired    Nur abgelaufene Dateien loeschen\n";
@@ -39,7 +43,6 @@ if (isset($argv[1])) {
 $deleted = 0;
 
 if ($mode === 'single') {
-    // Einzelne Seite loeschen
     $clean = trim($target_url, '/');
     if ($clean === '') {
         $file = $cache_dir . 'index.html';
@@ -54,7 +57,6 @@ if ($mode === 'single') {
         echo '[FPC-Flush] Datei nicht gefunden: ' . $file . "\n";
     }
 } elseif ($mode === 'expired') {
-    // Cache-TTL aus DB laden
     define('_VALID_XTC', true);
     if (is_file(__DIR__ . '/includes/configure.php')) {
         require_once(__DIR__ . '/includes/configure.php');
@@ -83,7 +85,6 @@ if ($mode === 'single') {
     }
     echo '[FPC-Flush] ' . $deleted . ' abgelaufene Dateien geloescht.' . "\n";
 } else {
-    // Alles loeschen
     $iter = new RecursiveIteratorIterator(
         new RecursiveDirectoryIterator($cache_dir, RecursiveDirectoryIterator::SKIP_DOTS),
         RecursiveIteratorIterator::CHILD_FIRST
