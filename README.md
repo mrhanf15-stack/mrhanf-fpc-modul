@@ -1,4 +1,4 @@
-# Mr. Hanf Full Page Cache (FPC) v8.0.0
+# Mr. Hanf Full Page Cache (FPC) v8.0.1
 
 **Cron-basiertes Full Page Cache System fuer modified eCommerce (xt:Commerce Fork)**
 
@@ -13,7 +13,7 @@ Gast-Besucher  → Apache → cache/fpc/{url}/index.html → HTML direkt (kein P
 Eingeloggter   → Apache → index.php → modified eCommerce → dynamische Seite
 ```
 
-### Vorher (v7.x)
+### Vorher (v6.x/v7.x)
 ```
 Gast → Apache → fpc_serve.php (PHP-Worker) → readfile() → HTML
 ```
@@ -60,7 +60,7 @@ mkdir -p "$SHOP/cache/fpc"
 
 ### 2. .htaccess aktualisieren
 
-Den Inhalt von `htaccess_fpc_rules.txt` am **Anfang** der `.htaccess` einfuegen, **vor** allen anderen RewriteRules. Die alten FPC-Regeln (v7.x) muessen entfernt werden.
+Den Inhalt von `htaccess_fpc_rules.txt` am **Anfang** der `.htaccess` einfuegen, **vor** allen anderen RewriteRules. Die alten FPC-Regeln (v6.x/v7.x) muessen entfernt werden.
 
 ### 3. Admin-Modul aktivieren
 
@@ -101,12 +101,14 @@ Folgende Seiten werden **niemals** gecacht (sessionabhaengig):
 
 | Seite | Grund |
 |-------|-------|
-| `/vergleich` | Produktvergleich (Session) |
-| `/wishlist` | Merkzettel (benutzerspezifisch) |
-| `/checkout` | Bestellprozess |
+| `/checkout` | Bestellprozess (alte URL) |
+| `/kasse` | Kasse/Checkout (SEO-URL) — v8.0.1 |
 | `/login` | Login-Seite |
 | `/account` | Kundenkonto |
-| `/shopping_cart` | Warenkorb |
+| `/shopping_cart` | Warenkorb (alte URL) |
+| `/warenkorb` | Warenkorb (SEO-URL) — v8.0.1 |
+| `/vergleich` | Produktvergleich (Session) |
+| `/wishlist` | Merkzettel (benutzerspezifisch) |
 | `/logoff` | Abmelden |
 | `/admin` | Admin-Bereich |
 
@@ -159,6 +161,11 @@ RewriteRule ^(.+)$ fpc_serve.php [L,QSA]
 
 ## Changelog
 
+### v8.0.1 (2026-03-23)
+- **NEU**: /kasse zur Ausschlussliste (SEO-URL fuer Checkout/Payment)
+- **NEU**: /warenkorb zur Ausschlussliste (SEO-URL fuer Warenkorb)
+- Praeventive Absicherung fuer Kreditkarten-/Payment-Seiten
+
 ### v8.0.0 (2026-03-22)
 - **NEU**: Direkte Apache-Auslieferung (kein PHP-Worker fuer gecachte Seiten)
 - **NEU**: Erweiterte HTML-Validierung (DOCTYPE, BODY, Leere-Seiten-Erkennung)
@@ -194,6 +201,7 @@ RewriteRule ^(.+)$ fpc_serve.php [L,QSA]
 | Cache wird nicht aufgebaut | `cache/fpc/` Schreibrechte (777) pruefen, `preloader.log` lesen |
 | Seiten nicht schneller | .htaccess pruefen, Inkognito-Fenster testen |
 | Eingeloggte User langsam | FPC greift nur fuer Gaeste — das ist normal |
+| Startseite 403 | DirectoryIndex pruefen, index.php Berechtigungen pruefen |
 
 ## Lizenz
 
