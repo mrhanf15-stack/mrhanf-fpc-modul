@@ -1,5 +1,5 @@
 # ============================================================
-# Mr. Hanf Full Page Cache v8.0.0 - .htaccess Regeln
+# Mr. Hanf Full Page Cache v8.0.1 - .htaccess Regeln
 # ============================================================
 # WICHTIG v8.0: Apache liefert gecachte Seiten DIREKT als
 # statische HTML-Dateien aus - OHNE PHP-Worker!
@@ -16,6 +16,11 @@
 #   - Validierung findet NUR beim SCHREIBEN statt (fpc_preloader.php)
 #   - fpc_serve.php bleibt als Fallback-Option erhalten
 #   - Cache-Dateien haben FPC-VALID Marker + Mindestgroesse
+#
+# CHANGELOG v8.0.1:
+#   - NEU: /kasse zur Ausschlussliste (SEO-URL fuer Checkout/Payment)
+#   - NEU: /warenkorb zur Ausschlussliste (SEO-URL fuer Warenkorb)
+#   - Praeventive Absicherung: Kreditkarten-/Payment-Seiten explizit geschuetzt
 #
 # CHANGELOG v8.0.0:
 #   - NEU: Direkte Apache-Auslieferung (kein PHP fuer gecachte Seiten)
@@ -45,9 +50,11 @@ RewriteCond %{REQUEST_URI} !^/admin [NC]
 RewriteCond %{REQUEST_URI} !\.(css|js|jpg|jpeg|png|gif|svg|ico|woff|woff2|ttf|eot|pdf|zip)$ [NC]
 RewriteCond %{QUERY_STRING} ^$
 RewriteCond %{REQUEST_URI} !checkout [NC]
+RewriteCond %{REQUEST_URI} !^/kasse [NC]
 RewriteCond %{REQUEST_URI} !login [NC]
 RewriteCond %{REQUEST_URI} !account [NC]
 RewriteCond %{REQUEST_URI} !shopping_cart [NC]
+RewriteCond %{REQUEST_URI} !^/warenkorb [NC]
 RewriteCond %{REQUEST_URI} !logoff [NC]
 RewriteCond %{REQUEST_URI} !^/vergleich [NC]
 RewriteCond %{REQUEST_URI} !^/wishlist [NC]
@@ -64,7 +71,7 @@ RewriteRule ^(.+)$ cache/fpc/$1/index.html [L,T=text/html]
 <IfModule mod_headers.c>
 <FilesMatch "^cache/fpc/.+\.html$">
     Header set X-FPC-Cache "HIT"
-    Header set X-FPC-Version "8.0.0"
+    Header set X-FPC-Version "8.0.1"
     Header set Cache-Control "no-store, no-cache, must-revalidate"
     Header set Pragma "no-cache"
 </FilesMatch>

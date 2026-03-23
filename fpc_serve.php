@@ -15,7 +15,7 @@
  * zu:
  *   RewriteRule ^(.+)$ fpc_serve.php [L,QSA]
  *
- * @version   8.0.0
+ * @version   8.0.1
  * @date      2026-03-22
  */
 
@@ -61,9 +61,11 @@ $excluded_paths = array(
     '/vergleich',           // Produktvergleich (sessionabhaengig)
     '/wishlist',            // Merkzettel (sessionabhaengig)
     '/checkout',            // Bestellprozess
+    '/kasse',               // Kasse/Checkout (SEO-URL) - v8.0.1
     '/login',               // Login-Seite
     '/account',             // Kundenkonto
-    '/shopping_cart',       // Warenkorb
+    '/shopping_cart',       // Warenkorb (alt)
+    '/warenkorb',           // Warenkorb (SEO-URL) - v8.0.1
     '/logoff',              // Abmelden
     '/password_double_opt', // Passwort-Opt-In
     '/create_account',      // Registrierung
