@@ -1,13 +1,14 @@
 <?php
 /**
- * Mr. Hanf Full Page Cache v8.0.3 - Fallback Cache-Handler
+ * Mr. Hanf Full Page Cache v8.0.4 - Cache-Handler
  *
- * HINWEIS v8.0: Dieses Script wird im Normalbetrieb NICHT mehr aufgerufen!
- * Apache liefert gecachte Seiten direkt als statische HTML-Dateien aus.
+ * Dieses Script wird von Apache via RewriteRule [END] aufgerufen
+ * und liefert gecachte HTML-Dateien per readfile() aus.
  *
- * Dieses Script bleibt als Fallback erhalten fuer den Fall, dass:
- *   - mod_headers nicht verfuegbar ist
- *   - Die direkte Auslieferung Probleme macht
+ * Warum PHP statt direkter Apache-Auslieferung?
+ *   - Artfiles cache/.htaccess blockiert .html mit 403
+ *   - Direkte Auslieferung verursacht Redirect-Loop mit CLEAN SEO URL
+ *   - PHP-Overhead: ~5ms (validiert + readfile + exit)
  *   - Zusaetzliche Validierung zur Laufzeit benoetigt wird
  *
  * Um auf den Fallback umzuschalten, aendern Sie in .htaccess:
@@ -15,7 +16,7 @@
  * zu:
  *   RewriteRule ^(.+)$ fpc_serve.php [L,QSA]
  *
- * @version   8.0.3
+ * @version   8.0.4
  * @date      2026-03-22
  */
 
@@ -154,7 +155,7 @@ if (strpos($tail, $FPC_HEALTH_MARKER) === false) {
 
 header('Content-Type: text/html; charset=utf-8');
 header('X-FPC-Cache: HIT');
-header('X-FPC-Version: 8.0.3-fallback');
+header('X-FPC-Version: 8.0.4');
 header('X-FPC-Cached-At: ' . gmdate('D, d M Y H:i:s', $mtime) . ' GMT');
 header('Cache-Control: no-store, no-cache, must-revalidate');
 header('Pragma: no-cache');

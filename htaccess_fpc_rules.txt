@@ -1,50 +1,57 @@
 # ============================================================
-# Mr. Hanf Full Page Cache v8.0.3 - .htaccess Regeln
+# Mr. Hanf Full Page Cache v8.0.4 - .htaccess Regeln
 # ============================================================
-# WICHTIG v8.0: Apache liefert gecachte Seiten DIREKT als
-# statische HTML-Dateien aus - OHNE PHP-Worker!
+# Architektur: Request -> fpc_serve.php (PHP) -> readfile()
 #
-# Vorher (v7.x): Request -> fpc_serve.php (PHP) -> readfile()
-# Jetzt  (v8.0): Request -> Apache liefert index.html direkt
+# HINWEIS: Die direkte Apache-Auslieferung (cache/fpc/index.html)
+# verursacht auf Artfiles Shared Hosting einen Redirect-Loop,
+# weil die CLEAN SEO URL Regel (-f Pruefung + [PT]) die
+# umgeschriebene URL erneut verarbeitet. Deshalb wird
+# fpc_serve.php als Handler verwendet, das die Cache-Datei
+# per readfile() ausliefert und mit exit beendet.
 #
-# Vorteile:
-#   - Kein PHP-Worker belegt -> Server kann mehr Besucher bedienen
-#   - Schneller als PHP (kein PHP-Startup, kein readfile())
-#   - Weniger Worker-Spikes bei hohem Traffic
+# fpc_serve.php Overhead: ~5ms (validiert + readfile + exit)
+# Ohne FPC: 500-5000ms (PHP-Backend generiert Seite live)
 #
 # Sicherheit:
-#   - Validierung findet NUR beim SCHREIBEN statt (fpc_preloader.php)
-#   - fpc_serve.php bleibt als Fallback-Option erhalten
+#   - fpc_serve.php validiert: Dateigroesse, TTL, Health-Marker
+#   - Kein Directory Traversal moeglich (realpath-Check)
+#   - Korrupte/leere Dateien werden automatisch geloescht
 #   - Cache-Dateien haben FPC-VALID Marker + Mindestgroesse
 #
+# CHANGELOG v8.0.4:
+#   - FIX: Redirect-Loop endgueltig behoben!
+#     Ursache: Apache [L] Flag startet Regelverarbeitung neu,
+#     CLEAN SEO URL (-f Pruefung + [PT]) erkennt fpc_serve.php
+#     als existierende Datei und leitet erneut weiter -> Loop.
+#     Loesung: [END] statt [L] stoppt Regelverarbeitung komplett.
+#   - CHANGE: Zurueck zu fpc_serve.php statt direkter HTML-Auslieferung
+#     (Artfiles cache/.htaccess blockiert .html mit 403 + Redirect-Loop)
+#   - WICHTIG: In CLEAN SEO URL muessen diese Ausschluesse stehen:
+#     1. RewriteCond %{REQUEST_URI} !^/cache/fpc/ [NC]
+#        (vor der index.html Redirect-Regel)
+#     2. RewriteCond %{REQUEST_URI} !^/cache/fpc/ [NC]
+#        RewriteCond %{REQUEST_URI} !^/fpc_serve\.php [NC]
+#        (vor der -f/-d Pruefung)
+#
 # CHANGELOG v8.0.3:
-#   - FIX: Cache-Control Header-Konflikt behoben
-#     Shop-Regel (FilesMatch .html -> max-age=1) ueberschrieb FPC-Header.
-#     Jetzt: "Header always set" statt "Header set" -> gewinnt immer
+#   - FIX: Cache-Control Header-Konflikt behoben (always set)
 #   - NEU: Preloader cached jetzt auch Kategorie-Seiten (aus DB)
-#   - WICHTIG: In CLEAN SEO URL muss RewriteCond !^/cache/fpc/ vor
-#     der index.html Redirect-Regel stehen (sonst Redirect-Loop!)
 #
 # CHANGELOG v8.0.2:
-#   - FIX: FPC-Header werden jetzt per RewriteRule gesetzt (env-Variable)
-#     statt FilesMatch (das nur auf Dateinamen matcht, nicht auf Pfade)
+#   - FIX: FPC-Header per env-Variable statt FilesMatch
 #
 # CHANGELOG v8.0.1:
-#   - NEU: /kasse zur Ausschlussliste (SEO-URL fuer Checkout/Payment)
-#   - NEU: /warenkorb zur Ausschlussliste (SEO-URL fuer Warenkorb)
-#   - Praeventive Absicherung: Kreditkarten-/Payment-Seiten explizit geschuetzt
+#   - NEU: /kasse und /warenkorb zur Ausschlussliste
 #
 # CHANGELOG v8.0.0:
-#   - NEU: Direkte Apache-Auslieferung (kein PHP fuer gecachte Seiten)
-#   - NEU: Content-Type Header via AddType
-#   - NEU: Cache-Control Header via mod_headers
-#   - ENTFERNT: Weiterleitung an fpc_serve.php
+#   - Erste v8.0 Version
 #
 # INSTALLATION:
 #   1. Diesen Block am ANFANG der .htaccess einfuegen (vor allem anderen)
-#   2. In cache/fpc/.htaccess muss "Require all granted" fuer .html stehen
-#   3. In CLEAN SEO URL muss vor der index.html-Regel stehen:
-#      RewriteCond %{REQUEST_URI} !^/cache/fpc/ [NC]
+#   2. In CLEAN SEO URL die Ausschluesse einfuegen (siehe oben)
+#   3. fpc_serve.php ins Shop-Root kopieren
+#   4. cache/fpc/ Verzeichnis anlegen (chmod 777)
 # ============================================================
 
 # --- FPC START v8.0 ---
@@ -58,7 +65,7 @@ RewriteCond %{HTTP_COOKIE} !PHPSESSID [NC]
 RewriteCond %{REQUEST_URI} !^/admin [NC]
 RewriteCond %{QUERY_STRING} ^$
 RewriteCond %{DOCUMENT_ROOT}/cache/fpc/index.html -f
-RewriteRule ^$ cache/fpc/index.html [L,T=text/html,E=FPC_HIT:1]
+RewriteRule ^$ fpc_serve.php [END,QSA,E=FPC_HIT:1]
 
 # === Unterseiten (ALLE Conds wiederholt!) ===
 RewriteCond %{REQUEST_METHOD} =GET
@@ -82,15 +89,18 @@ RewriteCond %{REQUEST_URI} !contact_us [NC]
 RewriteCond %{REQUEST_URI} !tell_a_friend [NC]
 RewriteCond %{REQUEST_URI} !product_reviews_write [NC]
 RewriteCond %{DOCUMENT_ROOT}/cache/fpc/%{REQUEST_URI}/index.html -f
-RewriteRule ^(.+)$ cache/fpc/$1/index.html [L,T=text/html,E=FPC_HIT:1]
+RewriteRule ^(.+)$ fpc_serve.php [END,QSA,E=FPC_HIT:1]
 </IfModule>
 
 # === FPC Cache-Control Header (via Environment-Variable) ===
 # "always set" statt "set" damit der FPC-Header NACH dem Shop-Header
 # gesetzt wird und den FilesMatch .html -> max-age=1 ueberschreibt.
+# HINWEIS: Bei [END] wird REDIRECT_FPC_HIT moeglicherweise nicht gesetzt.
+# fpc_serve.php setzt die Header selbst per PHP header() Funktion.
+# Diese Regeln hier sind ein zusaetzlicher Fallback.
 <IfModule mod_headers.c>
     Header always set X-FPC-Cache "HIT" env=REDIRECT_FPC_HIT
-    Header always set X-FPC-Version "8.0.3" env=REDIRECT_FPC_HIT
+    Header always set X-FPC-Version "8.0.4" env=REDIRECT_FPC_HIT
     Header always set Cache-Control "no-store, no-cache, must-revalidate" env=REDIRECT_FPC_HIT
     Header always set Pragma "no-cache" env=REDIRECT_FPC_HIT
 </IfModule>
