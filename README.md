@@ -1,4 +1,4 @@
-# Mr. Hanf Full Page Cache (FPC) v8.0.1
+# Mr. Hanf Full Page Cache (FPC) v8.0.3
 
 **Cron-basiertes Full Page Cache System fuer modified eCommerce (xt:Commerce Fork)**
 
@@ -13,37 +13,20 @@ Gast-Besucher  → Apache → cache/fpc/{url}/index.html → HTML direkt (kein P
 Eingeloggter   → Apache → index.php → modified eCommerce → dynamische Seite
 ```
 
-### Vorher (v6.x/v7.x)
-```
-Gast → Apache → fpc_serve.php (PHP-Worker) → readfile() → HTML
-```
-
-### Jetzt (v8.0)
-```
-Gast → Apache → HTML-Datei direkt (0 PHP-Worker belegt)
-```
-
 ## Dateien
 
 | Datei | Zweck |
 |-------|-------|
 | `htaccess_fpc_rules.txt` | Apache RewriteRules — in .htaccess einfuegen |
-| `fpc_preloader.php` | Cron-Job: Baut Cache auf (Rate-Limited, Load-geschuetzt) |
+| `fpc_preloader.php` | Cron-Job: Baut Cache auf (Sitemap + DB-Kategorien) |
 | `fpc_serve.php` | Fallback: PHP-basierte Auslieferung (nur bei Bedarf) |
 | `fpc_flush.php` | CLI: Cache leeren (komplett, einzeln, oder abgelaufen) |
 | `admin_q9wKj6Ds/.../mrhanf_fpc.php` | Admin-Modul fuer Konfiguration |
 | `lang/{de,en,fr,es}/.../mrhanf_fpc.php` | Sprachdateien (4 Sprachen) |
-| `DEPLOY_v8.sh` | Automatisches Deployment-Script |
 
 ## Installation
 
-### 1. Deployment ausfuehren
-
-```bash
-bash DEPLOY_v8.sh
-```
-
-Oder manuell:
+### 1. Dateien auf den Server kopieren
 
 ```bash
 SHOP="/home/www/doc/28856/dcp288560004/mr-hanf.de/www"
@@ -60,11 +43,32 @@ mkdir -p "$SHOP/cache/fpc"
 
 ### 2. .htaccess aktualisieren
 
-Den Inhalt von `htaccess_fpc_rules.txt` am **Anfang** der `.htaccess` einfuegen, **vor** allen anderen RewriteRules. Die alten FPC-Regeln (v6.x/v7.x) muessen entfernt werden.
+Den Inhalt von `htaccess_fpc_rules.txt` am **Anfang** der `.htaccess` einfuegen, **vor** allen anderen RewriteRules.
+
+**WICHTIG v8.0.3:** Zusaetzlich muessen zwei Anpassungen in der bestehenden .htaccess gemacht werden:
+
+**a) cache/fpc/.htaccess erstellen** (erlaubt Apache den Zugriff auf HTML-Dateien):
+```apache
+<FilesMatch "\.html$">
+  <IfModule mod_authz_core.c>
+    Require all granted
+  </IfModule>
+  <IfModule !mod_authz_core.c>
+    Order Allow,Deny
+    Allow from all
+  </IfModule>
+</FilesMatch>
+```
+
+**b) CLEAN SEO URL Block:** Vor der `index.html`-Redirect-Regel einfuegen:
+```apache
+  RewriteCond %{REQUEST_URI} !^/cache/fpc/ [NC]
+  RewriteRule ^(.+)/index\.(htm|html|php)$ /$1/ [r=301,L]
+```
 
 ### 3. Admin-Modul aktivieren
 
-Im Shop-Admin unter **Module → System-Module** das Modul "Mr. Hanf Full Page Cache" installieren (falls noch nicht geschehen).
+Im Shop-Admin unter **Module → System-Module** das Modul "Mr. Hanf Full Page Cache" installieren.
 
 ### 4. Cron-Job einrichten
 
@@ -93,31 +97,24 @@ php fpc_flush.php --url /pfad/ # Einzelne Seite
 php fpc_flush.php --expired    # Nur abgelaufene
 ```
 
-Oder im Admin-Bereich ueber den "Cache leeren" Button.
-
-## Ausgeschlossene Seiten (Standard)
-
-Folgende Seiten werden **niemals** gecacht (sessionabhaengig):
+## Ausgeschlossene Seiten
 
 | Seite | Grund |
 |-------|-------|
 | `/checkout` | Bestellprozess (alte URL) |
-| `/kasse` | Kasse/Checkout (SEO-URL) — v8.0.1 |
+| `/kasse` | Kasse/Checkout (SEO-URL) |
 | `/login` | Login-Seite |
 | `/account` | Kundenkonto |
 | `/shopping_cart` | Warenkorb (alte URL) |
-| `/warenkorb` | Warenkorb (SEO-URL) — v8.0.1 |
+| `/warenkorb` | Warenkorb (SEO-URL) |
 | `/vergleich` | Produktvergleich (Session) |
-| `/wishlist` | Merkzettel (benutzerspezifisch) |
+| `/wishlist` | Merkzettel |
 | `/logoff` | Abmelden |
 | `/admin` | Admin-Bereich |
 
 ## Sicherheitsfeatures
 
-### Session-Erkennung
-Eingeloggte User (MODsid/PHPSESSID Cookie) bekommen **immer** die dynamische Seite.
-
-### HTML-Validierung (v8.0 — 7 Schichten)
+### HTML-Validierung (7 Schichten)
 
 | Schicht | Pruefung | Beschreibung |
 |---------|----------|--------------|
@@ -129,79 +126,35 @@ Eingeloggte User (MODsid/PHPSESSID Cookie) bekommen **immer** die dynamische Sei
 | 6 | Leere-Seiten | strip_tags() muss > 100 Zeichen ergeben |
 | 7 | Verify-After-Write | Cache-Datei wird nach Schreiben zurueckgelesen |
 
-### Weitere Schutzmechanismen
-- **Health-Marker**: `<!-- FPC-VALID -->` in jeder Cache-Datei
-- **Atomic Write**: tmp-Datei → rename() (keine Partial Reads)
-- **Fehlerquoten-Schutz**: Stoppt bei > 20% Fehlern (Server-Problem)
-
-## Rate-Limiting (Preloader)
-
-| Parameter | Wert | Beschreibung |
-|-----------|------|--------------|
-| Request-Pause | 500ms | Zwischen jedem Request |
-| Load-Schwelle | 3.0 | Pausiert bei hoher Last |
-| Load-Pause | 30s | Wartezeit bei hoher Last |
-| Batch-Groesse | 100 | Seiten pro Batch |
-| Batch-Pause | 30s | Erholung zwischen Batches |
-| Slow-Threshold | 3000ms | Ab hier Pause verdoppeln |
-| Max. Laufzeit | 45min | Harter Abbruch |
-
-## Fallback auf PHP-Auslieferung
-
-Falls die direkte Apache-Auslieferung Probleme macht, kann auf die PHP-basierte Auslieferung (v7.x Modus) zurueckgeschaltet werden:
-
-In `.htaccess` aendern:
-```apache
-# v8.0 (direkt):
-RewriteRule ^(.+)$ cache/fpc/$1/index.html [L,T=text/html]
-
-# Fallback (PHP):
-RewriteRule ^(.+)$ fpc_serve.php [L,QSA]
-```
-
 ## Changelog
 
+### v8.0.3 (2026-03-23)
+- **FIX**: Cache-Control Header-Konflikt behoben (`Header always set` statt `Header set`)
+- **FIX**: Preloader cached jetzt auch Kategorie-Seiten (aus DB priorisiert)
+- **FIX**: Startseite + statische Seiten werden immer zuerst gecacht
+- **FIX**: `cache/.htaccess` blockierte HTML-Zugriff (Require all denied)
+- **FIX**: CLEAN SEO URL `index.html`-Redirect verursachte Loop mit FPC
+- **AUFGERAEUMT**: Debug-Dateien und Backups entfernt
+
+### v8.0.2 (2026-03-23)
+- **FIX**: FPC-Header per env-Variable statt FilesMatch
+
 ### v8.0.1 (2026-03-23)
-- **NEU**: /kasse zur Ausschlussliste (SEO-URL fuer Checkout/Payment)
-- **NEU**: /warenkorb zur Ausschlussliste (SEO-URL fuer Warenkorb)
-- Praeventive Absicherung fuer Kreditkarten-/Payment-Seiten
+- **NEU**: /kasse und /warenkorb zur Ausschlussliste
 
 ### v8.0.0 (2026-03-22)
-- **NEU**: Direkte Apache-Auslieferung (kein PHP-Worker fuer gecachte Seiten)
-- **NEU**: Erweiterte HTML-Validierung (DOCTYPE, BODY, Leere-Seiten-Erkennung)
-- **NEU**: Verify-After-Write (Cache-Datei wird nach Schreiben zurueckgelesen)
-- **NEU**: Fehlerquoten-Schutz (stoppt bei > 20% Fehlern)
-- **AUFGERAEUMT**: Nur noch FPC-relevante Dateien im Repository
+- **NEU**: Direkte Apache-Auslieferung (kein PHP-Worker)
+- **NEU**: Erweiterte HTML-Validierung (7 Schichten)
+- **NEU**: Verify-After-Write und Fehlerquoten-Schutz
 
-### v7.1.0 (2026-03-22)
-- Rate-Limiting fuer Preloader
-- Server-Load-Schutz und adaptive Drosselung
-- Batch-Pausen und maximale Laufzeit
+### v7.1.0
+- Rate-Limiting, Server-Load-Schutz, adaptive Drosselung
 
-### v7.0.3 (2026-03-22)
-- Fix: 304 Not Modified entfernt (verursachte weisse Seiten auf Artfiles)
-- Fix: Alle RewriteCond fuer beide RewriteRules wiederholt
-- Fix: PHP-Fehler-Erkennung mit Regex statt strpos
+### v7.0.3
+- Fix: 304 Not Modified, RewriteCond-Wiederholung, PHP-Fehler-Regex
 
-### v7.0.0 (2026-03-22)
+### v7.0.0
 - Erste ausfallsichere Version mit 5-facher Validierung
-- Atomic Write Pattern und Health-Marker System
-
-### v6.1.1 (2026-03-20)
-- Produktvergleich und Merkzettel aus Cache ausgeschlossen
-
-### v6.0.0
-- Initiale Version
-
-## Fehlerbehebung
-
-| Problem | Loesung |
-|---------|---------|
-| Weisse Seiten | Cache leeren: `php fpc_flush.php` |
-| Cache wird nicht aufgebaut | `cache/fpc/` Schreibrechte (777) pruefen, `preloader.log` lesen |
-| Seiten nicht schneller | .htaccess pruefen, Inkognito-Fenster testen |
-| Eingeloggte User langsam | FPC greift nur fuer Gaeste — das ist normal |
-| Startseite 403 | DirectoryIndex pruefen, index.php Berechtigungen pruefen |
 
 ## Lizenz
 

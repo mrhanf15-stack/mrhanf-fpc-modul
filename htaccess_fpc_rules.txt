@@ -1,5 +1,5 @@
 # ============================================================
-# Mr. Hanf Full Page Cache v8.0.2 - .htaccess Regeln
+# Mr. Hanf Full Page Cache v8.0.3 - .htaccess Regeln
 # ============================================================
 # WICHTIG v8.0: Apache liefert gecachte Seiten DIREKT als
 # statische HTML-Dateien aus - OHNE PHP-Worker!
@@ -17,11 +17,17 @@
 #   - fpc_serve.php bleibt als Fallback-Option erhalten
 #   - Cache-Dateien haben FPC-VALID Marker + Mindestgroesse
 #
+# CHANGELOG v8.0.3:
+#   - FIX: Cache-Control Header-Konflikt behoben
+#     Shop-Regel (FilesMatch .html -> max-age=1) ueberschrieb FPC-Header.
+#     Jetzt: "Header always set" statt "Header set" -> gewinnt immer
+#   - NEU: Preloader cached jetzt auch Kategorie-Seiten (aus DB)
+#   - WICHTIG: In CLEAN SEO URL muss RewriteCond !^/cache/fpc/ vor
+#     der index.html Redirect-Regel stehen (sonst Redirect-Loop!)
+#
 # CHANGELOG v8.0.2:
 #   - FIX: FPC-Header werden jetzt per RewriteRule gesetzt (env-Variable)
 #     statt FilesMatch (das nur auf Dateinamen matcht, nicht auf Pfade)
-#   - FIX: Kein Konflikt mehr mit dem Shop-eigenen Cache-Control Header
-#     (Zeile 134: .html -> max-age=1 ueberschrieb den FPC-Header)
 #
 # CHANGELOG v8.0.1:
 #   - NEU: /kasse zur Ausschlussliste (SEO-URL fuer Checkout/Payment)
@@ -33,6 +39,12 @@
 #   - NEU: Content-Type Header via AddType
 #   - NEU: Cache-Control Header via mod_headers
 #   - ENTFERNT: Weiterleitung an fpc_serve.php
+#
+# INSTALLATION:
+#   1. Diesen Block am ANFANG der .htaccess einfuegen (vor allem anderen)
+#   2. In cache/fpc/.htaccess muss "Require all granted" fuer .html stehen
+#   3. In CLEAN SEO URL muss vor der index.html-Regel stehen:
+#      RewriteCond %{REQUEST_URI} !^/cache/fpc/ [NC]
 # ============================================================
 
 # --- FPC START v8.0 ---
@@ -74,13 +86,12 @@ RewriteRule ^(.+)$ cache/fpc/$1/index.html [L,T=text/html,E=FPC_HIT:1]
 </IfModule>
 
 # === FPC Cache-Control Header (via Environment-Variable) ===
-# HINWEIS: FilesMatch matcht nur auf Dateinamen (z.B. "index.html"),
-# NICHT auf Pfade. Deshalb verwenden wir die env-Variable FPC_HIT,
-# die von der RewriteRule gesetzt wird.
+# "always set" statt "set" damit der FPC-Header NACH dem Shop-Header
+# gesetzt wird und den FilesMatch .html -> max-age=1 ueberschreibt.
 <IfModule mod_headers.c>
-    Header set X-FPC-Cache "HIT" env=REDIRECT_FPC_HIT
-    Header set X-FPC-Version "8.0.2" env=REDIRECT_FPC_HIT
-    Header set Cache-Control "no-store, no-cache, must-revalidate" env=REDIRECT_FPC_HIT
-    Header set Pragma "no-cache" env=REDIRECT_FPC_HIT
+    Header always set X-FPC-Cache "HIT" env=REDIRECT_FPC_HIT
+    Header always set X-FPC-Version "8.0.3" env=REDIRECT_FPC_HIT
+    Header always set Cache-Control "no-store, no-cache, must-revalidate" env=REDIRECT_FPC_HIT
+    Header always set Pragma "no-cache" env=REDIRECT_FPC_HIT
 </IfModule>
 # --- FPC ENDE v8.0 ---

@@ -1,6 +1,6 @@
 <?php
 /**
- * Mr. Hanf Full Page Cache v8.0.0 - Fallback Cache-Handler
+ * Mr. Hanf Full Page Cache v8.0.3 - Fallback Cache-Handler
  *
  * HINWEIS v8.0: Dieses Script wird im Normalbetrieb NICHT mehr aufgerufen!
  * Apache liefert gecachte Seiten direkt als statische HTML-Dateien aus.
@@ -15,7 +15,7 @@
  * zu:
  *   RewriteRule ^(.+)$ fpc_serve.php [L,QSA]
  *
- * @version   8.0.1
+ * @version   8.0.3
  * @date      2026-03-22
  */
 
@@ -154,7 +154,7 @@ if (strpos($tail, $FPC_HEALTH_MARKER) === false) {
 
 header('Content-Type: text/html; charset=utf-8');
 header('X-FPC-Cache: HIT');
-header('X-FPC-Version: 8.0.0-fallback');
+header('X-FPC-Version: 8.0.3-fallback');
 header('X-FPC-Cached-At: ' . gmdate('D, d M Y H:i:s', $mtime) . ' GMT');
 header('Cache-Control: no-store, no-cache, must-revalidate');
 header('Pragma: no-cache');

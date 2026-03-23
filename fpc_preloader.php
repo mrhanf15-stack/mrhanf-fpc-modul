@@ -1,10 +1,15 @@
 <?php
 //
-// Mr. Hanf Full Page Cache v8.0.0 - Cron Preloader (Ausfallsicher + Rate-Limited)
+// Mr. Hanf Full Page Cache v8.0.3 - Cron Preloader (Ausfallsicher + Rate-Limited)
 //
 // Cron-Job der Shop-Seiten abruft und als statische HTML-Dateien speichert.
 // Primaere URL-Quelle: sitemap.xml
 // Fallback: Aktive Produkte/Kategorien aus der DB
+//
+// CHANGELOG v8.0.3:
+//   - NEU: Kategorie-URLs werden aus DB geladen und priorisiert
+//   - NEU: Startseite + statische Seiten werden immer zuerst gecacht
+//   - FIX: Kategorien fehlten im Cache weil Sitemap nur Produkte enthaelt
 //
 // CHANGELOG v8.0.0:
 //   - NEU: Erweiterte Validierung (DOCTYPE + <html + <body Pflicht)
@@ -23,7 +28,7 @@
 //   - Atomic Write: Erst .tmp schreiben, validieren, dann umbenennen
 //   - Health-Marker: <!-- FPC-VALID --> wird an jede Cache-Datei angehaengt
 //
-// @version   8.0.0
+// @version   8.0.3
 // @date      2026-03-22
 
 // ============================================================
@@ -289,6 +294,54 @@ if (empty($urls)) {
     echo '[FPC] ' . count($urls) . ' URLs aus DB' . "\n";
 }
 
+// ============================================================
+// v8.0.3: KATEGORIE-URLs AUS DB PRIORISIEREN
+// Die Sitemap enthaelt primaer Produkt-URLs. Kategorie-Seiten
+// werden hier aus der DB geladen und VOR die Sitemap-URLs gesetzt,
+// damit sie immer gecacht werden (auch wenn das Limit greift).
+// ============================================================
+$priority_urls = array();
+
+// Startseite immer zuerst
+$priority_urls[] = $shop_url . '/';
+
+// Alle aktiven Sprachen ermitteln
+$languages = array();
+$r_lang = $db->query("SELECT languages_id, code FROM languages WHERE status = 1 ORDER BY sort_order");
+if ($r_lang) {
+    while ($row = $r_lang->fetch_assoc()) {
+        $languages[] = $row;
+    }
+}
+
+// Kategorie-URLs fuer alle Sprachen laden
+foreach ($languages as $lang) {
+    $r_cat = $db->query("
+        SELECT DISTINCT c.url_text
+        FROM clean_seo_url c
+        INNER JOIN categories cat ON c.id = cat.categories_id AND c.type = 'categories'
+        WHERE cat.categories_status = 1
+          AND c.url_text != ''
+          AND c.language_id = " . (int)$lang['languages_id'] . "
+        ORDER BY cat.sort_order, cat.categories_id
+    ");
+    if ($r_cat) {
+        while ($row = $r_cat->fetch_assoc()) {
+            $priority_urls[] = $shop_url . '/' . ltrim($row['url_text'], '/');
+        }
+    }
+}
+
+// Statische Seiten (Info-Seiten, Blog, etc.)
+$static_pages = array('/angebote', '/blog/', '/info/kontakt');
+foreach ($static_pages as $sp) {
+    $priority_urls[] = $shop_url . $sp;
+}
+
+echo '[FPC] v8.0.3: ' . count($priority_urls) . ' priorisierte URLs (Startseite + Kategorien + Statisch)' . "\n";
+
+// Priority-URLs VOR Sitemap-URLs setzen, dann deduplizieren
+$urls = array_merge($priority_urls, $urls);
 $urls = array_unique($urls);
 
 // Filtern (ausgeschlossene Seiten)
