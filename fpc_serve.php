@@ -16,7 +16,7 @@
  * zu:
  *   RewriteRule ^(.+)$ fpc_serve.php [L,QSA]
  *
- * @version   8.0.5
+ * @version   8.0.6
  * @date      2026-03-25
  */
 
@@ -37,10 +37,12 @@ if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
     return false;
 }
 
-// Eingeloggte Benutzer nicht cachen (Session-Cookie vorhanden)
-if (isset($_COOKIE['MODsid']) || isset($_COOKIE['PHPSESSID'])) {
-    return false;
-}
+// HINWEIS v8.0.6: Cookie-Check entfernt.
+// modified-Shop setzt bei JEDEM Besucher (auch Gaeste) sofort ein MODsid-Cookie.
+// Dadurch wurde der FPC fuer alle Besucher blockiert.
+// Schutz erfolgt jetzt ausschliesslich ueber die URL-basierte Ausschlussliste
+// (siehe $excluded_paths weiter unten). Eingeloggte Benutzer landen auf
+// /account, /checkout etc. und werden dort korrekt ausgeschlossen.
 
 // Request-URI bereinigen
 $uri = $_SERVER['REQUEST_URI'];
@@ -155,7 +157,7 @@ if (strpos($tail, $FPC_HEALTH_MARKER) === false) {
 
 header('Content-Type: text/html; charset=utf-8');
 header('X-FPC-Cache: HIT');
-header('X-FPC-Version: 8.0.5');
+header('X-FPC-Version: 8.0.6');
 header('X-FPC-Cached-At: ' . gmdate('D, d M Y H:i:s', $mtime) . ' GMT');
 header('Cache-Control: no-store, no-cache, must-revalidate');
 header('Pragma: no-cache');

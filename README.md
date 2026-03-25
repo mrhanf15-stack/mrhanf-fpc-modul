@@ -1,4 +1,4 @@
-# Mr. Hanf Full Page Cache (FPC) v8.0.5
+# Mr. Hanf Full Page Cache (FPC) v8.0.6
 
 **Cron-basiertes Full Page Cache System fuer modified eCommerce (xt:Commerce Fork)**
 
@@ -9,7 +9,7 @@ Das FPC-Modul generiert statische HTML-Dateien fuer alle Shop-Seiten und laesst 
 ## Architektur v8.0
 
 ```
-Gast-Besucher  → Apache → cache/fpc/{url}/index.html → HTML direkt (kein PHP!)
+Gast-Besucher  → Apache → fpc_serve.php → readfile(cache/fpc/{url}/index.html) → ~77ms
 Eingeloggter   → Apache → index.php → modified eCommerce → dynamische Seite
 ```
 
@@ -127,6 +127,17 @@ php fpc_flush.php --expired    # Nur abgelaufene
 | 7 | Verify-After-Write | Cache-Datei wird nach Schreiben zurueckgelesen |
 
 ## Changelog
+
+### v8.0.6 (2026-03-25)
+- **FIX**: Cookie-Check (MODsid/PHPSESSID) aus .htaccess UND fpc_serve.php entfernt!
+  modified-Shop setzt bei JEDEM Besucher (auch Gaeste) sofort ein MODsid-Cookie.
+  Dadurch wurde der FPC fuer ALLE Besucher blockiert.
+  Schutz erfolgt jetzt ueber URL-basierte Ausschlussliste in fpc_serve.php.
+- **FIX**: `%{DOCUMENT_ROOT}` durch absoluten Pfad ersetzt.
+  Artfiles liefert Symlink-Pfad statt realen Pfad, `-f` Check schlug fehl.
+- **FIX**: `[END]` durch `[L]` ersetzt (bessere Kompatibilitaet mit Artfiles Apache)
+- **FIX**: `RewriteRule ^$` durch `^/?$` ersetzt (robuster fuer Startseite)
+- **WICHTIG**: .htaccess muss komplett aktualisiert werden (siehe htaccess_fpc_rules.txt)
 
 ### v8.0.5 (2026-03-25)
 - **FIX**: Verzeichnis-Schutz: `cache/fpc/` wird automatisch neu erstellt wenn es fehlt
