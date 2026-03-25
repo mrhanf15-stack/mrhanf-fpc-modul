@@ -16,8 +16,8 @@
  * zu:
  *   RewriteRule ^(.+)$ fpc_serve.php [L,QSA]
  *
- * @version   8.0.4
- * @date      2026-03-22
+ * @version   8.0.5
+ * @date      2026-03-25
  */
 
 // ============================================================
@@ -155,7 +155,7 @@ if (strpos($tail, $FPC_HEALTH_MARKER) === false) {
 
 header('Content-Type: text/html; charset=utf-8');
 header('X-FPC-Cache: HIT');
-header('X-FPC-Version: 8.0.4');
+header('X-FPC-Version: 8.0.5');
 header('X-FPC-Cached-At: ' . gmdate('D, d M Y H:i:s', $mtime) . ' GMT');
 header('Cache-Control: no-store, no-cache, must-revalidate');
 header('Pragma: no-cache');

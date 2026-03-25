@@ -9,8 +9,13 @@
  *   /usr/local/bin/php fpc_flush.php --url /samen-shop/  # Einzelne Seite
  *   /usr/local/bin/php fpc_flush.php --expired     # Nur abgelaufene Dateien
  *
- * @version   8.0.0
- * @date      2026-03-22
+ * @version   8.0.5
+ * @date      2026-03-25
+ *
+ * CHANGELOG v8.0.5:
+ *   - FIX: Verzeichnis-Schutz - cache/fpc/ wird nach Flush automatisch
+ *     neu erstellt (verhindert dass der Cronjob still fehlschlaegt)
+ *   - FIX: .gitkeep und preloader.log werden beim Flush beibehalten
  */
 
 $cache_dir = __DIR__ . '/cache/fpc/';
@@ -100,4 +105,15 @@ if ($mode === 'single') {
         }
     }
     echo '[FPC-Flush] Gesamter Cache geleert. ' . $deleted . ' Dateien geloescht.' . "\n";
+}
+
+// === v8.0.5: Verzeichnis-Schutz ===
+// Sicherstellen dass cache/fpc/ nach dem Flush existiert,
+// damit der Cronjob nicht still fehlschlaegt.
+if (!is_dir($cache_dir)) {
+    @mkdir($cache_dir, 0777, true);
+    echo '[FPC-Flush] Verzeichnis cache/fpc/ neu erstellt.' . "\n";
+}
+if (!is_file($cache_dir . '.gitkeep')) {
+    @file_put_contents($cache_dir . '.gitkeep', '');
 }

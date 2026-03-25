@@ -11,8 +11,8 @@
  *
  * Kompatibel mit modified eCommerce v2.0.7.2 rev 14622
  *
- * @version   8.0.0
- * @date      2026-03-22
+ * @version   8.0.5
+ * @date      2026-03-25
  */
 defined('_VALID_XTC') or die('Direct Access to this location is not allowed.');
 
@@ -170,8 +170,18 @@ class mrhanf_fpc
         return $bytes . ' Bytes';
     }
 
+    /**
+     * v8.0.5: Cache leeren OHNE das Verzeichnis zu loeschen.
+     * Loescht alle HTML-Dateien und Unterverzeichnisse,
+     * behaelt aber cache/fpc/ selbst, .gitkeep und preloader.log.
+     * Erstellt das Verzeichnis neu falls es fehlt.
+     */
     private function _flushCache($dir)
     {
+        if (!is_dir($dir)) {
+            @mkdir($dir, 0777, true);
+            return;
+        }
         $iter = new RecursiveIteratorIterator(
             new RecursiveDirectoryIterator($dir, RecursiveDirectoryIterator::SKIP_DOTS),
             RecursiveIteratorIterator::CHILD_FIRST
@@ -182,6 +192,13 @@ class mrhanf_fpc
             } elseif ($item->getFilename() !== '.gitkeep' && $item->getFilename() !== 'preloader.log') {
                 @unlink($item->getRealPath());
             }
+        }
+        // v8.0.5: Sicherstellen dass Verzeichnis + .gitkeep existieren
+        if (!is_dir($dir)) {
+            @mkdir($dir, 0777, true);
+        }
+        if (!is_file($dir . '.gitkeep')) {
+            @file_put_contents($dir . '.gitkeep', '');
         }
     }
 

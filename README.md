@@ -1,4 +1,4 @@
-# Mr. Hanf Full Page Cache (FPC) v8.0.3
+# Mr. Hanf Full Page Cache (FPC) v8.0.5
 
 **Cron-basiertes Full Page Cache System fuer modified eCommerce (xt:Commerce Fork)**
 
@@ -73,11 +73,11 @@ Im Shop-Admin unter **Module → System-Module** das Modul "Mr. Hanf Full Page C
 ### 4. Cron-Job einrichten
 
 ```bash
-# Preloader (alle 2 Stunden)
-0 */2 * * * cd /pfad/zum/shop && /usr/local/bin/php fpc_preloader.php >> cache/fpc/preloader.log 2>&1
+# Preloader (alle 2 Stunden) - v8.0.5: mkdir -p als Absicherung
+0 */2 * * * cd /pfad/zum/shop && mkdir -p cache/fpc && /usr/local/bin/php fpc_preloader.php >> cache/fpc/preloader.log 2>&1
 
-# Cache-Bereinigung (taeglich 3 Uhr)
-0 3 * * * cd /pfad/zum/shop && /usr/local/bin/php fpc_flush.php --expired >> cache/fpc/flush.log 2>&1
+# Cache-Bereinigung (taeglich 3 Uhr) - v8.0.5: mkdir -p als Absicherung
+0 3 * * * cd /pfad/zum/shop && mkdir -p cache/fpc && /usr/local/bin/php fpc_flush.php --expired >> cache/fpc/flush.log 2>&1
 ```
 
 ## Konfiguration (Admin)
@@ -127,6 +127,13 @@ php fpc_flush.php --expired    # Nur abgelaufene
 | 7 | Verify-After-Write | Cache-Datei wird nach Schreiben zurueckgelesen |
 
 ## Changelog
+
+### v8.0.5 (2026-03-25)
+- **FIX**: Verzeichnis-Schutz: `cache/fpc/` wird automatisch neu erstellt wenn es fehlt
+- **FIX**: Admin "Cache leeren" loescht nur Inhalt, nicht das Verzeichnis selbst
+- **FIX**: `fpc_flush.php` erstellt `cache/fpc/` + `.gitkeep` nach Flush automatisch
+- **FIX**: Cronjob-Empfehlung: `mkdir -p cache/fpc` vor PHP-Aufruf
+- **HINWEIS**: Cronjob muss aktualisiert werden (siehe Installation)
 
 ### v8.0.3 (2026-03-23)
 - **FIX**: Cache-Control Header-Konflikt behoben (`Header always set` statt `Header set`)

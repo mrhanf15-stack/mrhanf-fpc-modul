@@ -1,10 +1,14 @@
 <?php
 //
-// Mr. Hanf Full Page Cache v8.0.3 - Cron Preloader (Ausfallsicher + Rate-Limited)
+// Mr. Hanf Full Page Cache v8.0.5 - Cron Preloader (Ausfallsicher + Rate-Limited)
 //
 // Cron-Job der Shop-Seiten abruft und als statische HTML-Dateien speichert.
 // Primaere URL-Quelle: sitemap.xml
 // Fallback: Aktive Produkte/Kategorien aus der DB
+//
+// CHANGELOG v8.0.5:
+//   - FIX: Verzeichnis-Schutz - erstellt cache/fpc/ + .gitkeep automatisch
+//   - FIX: Cronjob-Absicherung gegen fehlendes Verzeichnis
 //
 // CHANGELOG v8.0.3:
 //   - NEU: Kategorie-URLs werden aus DB geladen und priorisiert
@@ -28,7 +32,7 @@
 //   - Atomic Write: Erst .tmp schreiben, validieren, dann umbenennen
 //   - Health-Marker: <!-- FPC-VALID --> wird an jede Cache-Datei angehaengt
 //
-// @version   8.0.3
+// @version   8.0.5
 // @date      2026-03-22
 
 // ============================================================
@@ -103,10 +107,16 @@ if (empty($shop_url)) {
 }
 $shop_url = str_replace('http://', 'https://', $shop_url);
 
-// Cache-Verzeichnis
+// Cache-Verzeichnis (v8.0.5: Verzeichnis-Schutz)
 $cache_dir = $shop_dir . 'cache/fpc/';
 if (!is_dir($cache_dir)) {
-    mkdir($cache_dir, 0777, true);
+    if (!@mkdir($cache_dir, 0777, true)) {
+        die('[FPC] FEHLER: Konnte cache/fpc/ nicht erstellen: ' . $cache_dir . "\n");
+    }
+    echo '[FPC] Verzeichnis cache/fpc/ neu erstellt.' . "\n";
+}
+if (!is_file($cache_dir . '.gitkeep')) {
+    @file_put_contents($cache_dir . '.gitkeep', '');
 }
 
 // Log-Datei
