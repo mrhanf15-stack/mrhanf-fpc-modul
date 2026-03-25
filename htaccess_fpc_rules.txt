@@ -1,5 +1,5 @@
 # ============================================================
-# Mr. Hanf Full Page Cache v8.0.6 - .htaccess Regeln
+# Mr. Hanf Full Page Cache v8.0.7 - .htaccess Regeln
 # ============================================================
 # Architektur: Request -> fpc_serve.php (PHP) -> readfile()
 #
@@ -18,6 +18,13 @@
 #   - Kein Directory Traversal moeglich (realpath-Check)
 #   - Korrupte/leere Dateien werden automatisch geloescht
 #   - Cache-Dateien haben FPC-VALID Marker + Mindestgroesse
+#
+# CHANGELOG v8.0.7:
+#   - NEU: fpc_bypass Cookie-System fuer Warenkorb/Login
+#     Autoinclude 95_fpc_bypass_cookie.php setzt "fpc_bypass=1" wenn
+#     der Warenkorb gefuellt ist oder der Benutzer eingeloggt ist.
+#     .htaccess und fpc_serve.php pruefen dieses Cookie.
+#     Gastbesucher ohne Warenkorb bekommen weiterhin den FPC-Cache.
 #
 # CHANGELOG v8.0.6:
 #   - FIX: Cookie-Check (MODsid/PHPSESSID) aus .htaccess UND fpc_serve.php entfernt!
@@ -60,14 +67,15 @@
 #   5. cache/fpc/ Verzeichnis anlegen (chmod 777)
 # ============================================================
 
-# --- FPC START v8.0.6 ---
+# --- FPC START v8.0.7 ---
 <IfModule mod_rewrite.c>
 RewriteEngine On
 
 # === Startseite ===
-# HINWEIS v8.0.6: Cookie-Check entfernt (modified setzt MODsid bei jedem Gast).
-# Schutz erfolgt in fpc_serve.php ueber URL-Ausschlussliste.
+# v8.0.7: fpc_bypass Cookie statt MODsid pruefen.
+# 95_fpc_bypass_cookie.php setzt "fpc_bypass=1" bei Warenkorb/Login.
 RewriteCond %{REQUEST_METHOD} =GET
+RewriteCond %{HTTP_COOKIE} !fpc_bypass [NC]
 RewriteCond %{REQUEST_URI} !^/admin [NC]
 RewriteCond %{QUERY_STRING} ^$
 RewriteCond /home/www/doc/28856/dcp288560004/mr-hanf.de/www/cache/fpc/index.html -f
@@ -75,6 +83,7 @@ RewriteRule ^/?$ fpc_serve.php [L,QSA,E=FPC_HIT:1]
 
 # === Unterseiten (ALLE Conds wiederholt!) ===
 RewriteCond %{REQUEST_METHOD} =GET
+RewriteCond %{HTTP_COOKIE} !fpc_bypass [NC]
 RewriteCond %{REQUEST_URI} !^/admin [NC]
 RewriteCond %{REQUEST_URI} !\.(css|js|jpg|jpeg|png|gif|svg|ico|woff|woff2|ttf|eot|pdf|zip)$ [NC]
 RewriteCond %{QUERY_STRING} ^$
@@ -101,8 +110,8 @@ RewriteRule ^(.+)$ fpc_serve.php [L,QSA,E=FPC_HIT:1]
 # Diese Regeln hier sind ein zusaetzlicher Fallback.
 <IfModule mod_headers.c>
     Header always set X-FPC-Cache "HIT" env=REDIRECT_FPC_HIT
-    Header always set X-FPC-Version "8.0.6" env=REDIRECT_FPC_HIT
+    Header always set X-FPC-Version "8.0.7" env=REDIRECT_FPC_HIT
     Header always set Cache-Control "no-store, no-cache, must-revalidate" env=REDIRECT_FPC_HIT
     Header always set Pragma "no-cache" env=REDIRECT_FPC_HIT
 </IfModule>
-# --- FPC ENDE v8.0.6 ---
+# --- FPC ENDE v8.0.7 ---

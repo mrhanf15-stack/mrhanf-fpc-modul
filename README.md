@@ -1,4 +1,4 @@
-# Mr. Hanf Full Page Cache (FPC) v8.0.6
+# Mr. Hanf Full Page Cache (FPC) v8.0.7
 
 **Cron-basiertes Full Page Cache System fuer modified eCommerce (xt:Commerce Fork)**
 
@@ -127,6 +127,14 @@ php fpc_flush.php --expired    # Nur abgelaufene
 | 7 | Verify-After-Write | Cache-Datei wird nach Schreiben zurueckgelesen |
 
 ## Changelog
+
+### v8.0.7 (2026-03-25)
+- **NEU**: `fpc_bypass` Cookie-System fuer Warenkorb und Login
+  - Autoinclude `95_fpc_bypass_cookie.php` setzt `fpc_bypass=1` wenn Warenkorb gefuellt oder Benutzer eingeloggt
+  - `.htaccess` und `fpc_serve.php` pruefen dieses Cookie
+  - Gastbesucher ohne Warenkorb bekommen weiterhin den FPC-Cache
+  - Cookie wird automatisch geloescht wenn Warenkorb leer und Benutzer ausgeloggt
+- **NEU**: Datei `shoproot/includes/extra/application_top/application_top_end/95_fpc_bypass_cookie.php`
 
 ### v8.0.6 (2026-03-25)
 - **FIX**: Cookie-Check (MODsid/PHPSESSID) aus .htaccess UND fpc_serve.php entfernt!
