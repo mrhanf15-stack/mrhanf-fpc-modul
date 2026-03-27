@@ -1,6 +1,6 @@
 <?php
 /**
- * Mr. Hanf FPC Schaltzentrale v8.3.0
+ * Mr. Hanf FPC Schaltzentrale v8.3.1
  *
  * Vollstaendiges Dashboard fuer das Full Page Cache System.
  * Wird als eigenstaendige Admin-Seite unter Statistiken eingebunden.
@@ -15,7 +15,7 @@
  *   7. Statistik     - Besucherstatistik, Absprungrate, Verweildauer, Geraete
  *   8. Fehler-Log    - PHP-Error-Log, FPC-Fehler, Severity-Filter
  *
- * @version   8.3.0
+ * @version   8.3.1
  * @date      2026-03-27
  */
 
@@ -172,6 +172,21 @@ if (isset($_GET['ajax'])) {
         case 'validate_htaccess':
             echo json_encode(fpc_validate_htaccess($base_dir));
             exit;
+
+        // --- v8.3.1: Rebuild-Fortschritt abfragen ---
+        case 'rebuild_progress':
+            echo json_encode(fpc_get_rebuild_progress($cache_dir, $pid_file, $rebuild_log));
+            exit;
+
+        // --- v8.3.1: Einzelne URL neu cachen (aus URL-Liste) ---
+        case 'recache_url':
+            $path = isset($_POST['path']) ? trim($_POST['path']) : '';
+            if (empty($path)) { echo json_encode(array('ok' => false, 'msg' => 'Kein Pfad angegeben')); exit; }
+            // Erst aus Cache entfernen, dann neu cachen
+            fpc_remove_cached_url($cache_dir, $path);
+            $url = 'https://mr-hanf.de' . $path;
+            echo json_encode(fpc_cache_single_url($url, $cache_dir, $base_dir));
+            exit;
     }
     exit;
 }
@@ -317,8 +332,10 @@ function fpc_cache_single_url($url, $cache_dir, $base_dir) {
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_FOLLOWLOCATION => true,
         CURLOPT_TIMEOUT => 30,
-        CURLOPT_USERAGENT => 'FPC-Preloader/8.3 (Manual)',
+        CURLOPT_USERAGENT => 'Mozilla/5.0 (compatible; FPC-Preloader/8.3; +https://mr-hanf.de)',
         CURLOPT_SSL_VERIFYPEER => false,
+        CURLOPT_COOKIE => 'fpc_bypass=1',
+        CURLOPT_HTTPHEADER => array('Accept: text/html,application/xhtml+xml', 'Accept-Language: de-DE,de;q=0.9'),
     ));
     $html = curl_exec($ch);
     $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
@@ -695,8 +712,9 @@ function fpc_validate_htaccess($base_dir) {
         'ok' => (bool)preg_match('/RewriteCond.*QUERY_STRING.*\^\$/', $content),
     );
     $checks[] = array(
-        'name' => 'MODsid Cookie Bypass',
-        'ok' => strpos($content, 'MODsid') !== false,
+        'name' => 'FPC-Bypass Cookie (fpc_bypass)',
+        'ok' => strpos($content, 'fpc_bypass') !== false,
+        'info' => 'Ersetzt MODsid-Bypass (v8.2.0+)',
     );
     $checks[] = array(
         'name' => 'Cache-Datei Existenz-Check',
@@ -719,6 +737,74 @@ function fpc_validate_htaccess($base_dir) {
         'msg' => $passed . '/' . $total . ' Checks bestanden',
         'checks' => $checks,
         'score' => round(($passed / $total) * 100),
+    );
+}
+
+// --- v8.3.1: Rebuild-Fortschritt ---
+function fpc_get_rebuild_progress($cache_dir, $pid_file, $rebuild_log) {
+    $running = false;
+    $pid = 0;
+    $started = null;
+    if (is_file($pid_file)) {
+        $content = file_get_contents($pid_file);
+        $lines = explode("\n", trim($content));
+        $pid = (int)$lines[0];
+        $started = isset($lines[1]) ? $lines[1] : null;
+        if ($pid > 0) {
+            $running = function_exists('posix_kill') ? posix_kill($pid, 0) : is_dir('/proc/' . $pid);
+            if (!$running) { @unlink($pid_file); $pid = 0; }
+        }
+    }
+
+    $total = 0; $done = 0; $errors = 0; $skipped = 0; $current_url = '';
+    $last_lines = array();
+    if (is_file($rebuild_log)) {
+        $fp = @fopen($rebuild_log, 'r');
+        if ($fp) {
+            // Erste Zeile: "Starte Preloader: X URLs"
+            while (($line = fgets($fp)) !== false) {
+                $line = trim($line);
+                if (preg_match('/Starte Preloader:\s*(\d+)\s*URLs/', $line, $m)) {
+                    $total = (int)$m[1];
+                }
+                if (preg_match('/^\[(\d+)\/(\d+)\]/', $line, $m)) {
+                    $done = (int)$m[1];
+                    if ((int)$m[2] > $total) $total = (int)$m[2];
+                    $current_url = $line;
+                }
+                if (strpos($line, 'FEHLER') !== false || strpos($line, 'Error') !== false) $errors++;
+                if (strpos($line, 'Uebersprungen') !== false || strpos($line, 'Skip') !== false) $skipped++;
+                $last_lines[] = $line;
+                if (count($last_lines) > 5) array_shift($last_lines);
+            }
+            fclose($fp);
+        }
+    }
+
+    // Fallback: Wenn kein Total aus Log, zaehle Cache-Dateien
+    if ($total === 0 && $done === 0) {
+        $done = 0;
+        if (is_dir($cache_dir)) {
+            $iter = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($cache_dir, RecursiveDirectoryIterator::SKIP_DOTS));
+            foreach ($iter as $f) {
+                if ($f->isFile() && $f->getExtension() === 'html') $done++;
+            }
+        }
+    }
+
+    $percent = ($total > 0) ? min(100, round(($done / $total) * 100, 1)) : 0;
+
+    return array(
+        'running'     => $running,
+        'pid'         => $pid,
+        'started'     => $started,
+        'total'       => $total,
+        'done'        => $done,
+        'errors'      => $errors,
+        'skipped'     => $skipped,
+        'percent'     => $percent,
+        'current_url' => $current_url,
+        'last_lines'  => $last_lines,
     );
 }
 
@@ -856,6 +942,15 @@ body { background: var(--fpc-bg); color: var(--fpc-text); font-family: -apple-sy
 .sev-ok { color: #000; background: var(--fpc-green); padding: 2px 8px; border-radius: 4px; font-size: 11px; }
 .sev-info { color: var(--fpc-text2); font-size: 11px; }
 
+/* Progress Bar */
+.fpc-progress-wrap { background: var(--fpc-bg); border-radius: 10px; padding: 20px; margin-bottom: 20px; border: 1px solid var(--fpc-border); display: none; }
+.fpc-progress-wrap.active { display: block; }
+.fpc-progress-bar-outer { background: #1a2736; border-radius: 8px; height: 28px; overflow: hidden; position: relative; margin: 12px 0; }
+.fpc-progress-bar-inner { background: linear-gradient(90deg, var(--fpc-teal), var(--fpc-green)); height: 100%; border-radius: 8px; transition: width 0.5s ease; min-width: 0; }
+.fpc-progress-bar-text { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 13px; font-weight: 700; color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,0.5); }
+.fpc-progress-info { display: flex; justify-content: space-between; color: var(--fpc-text2); font-size: 12px; margin-top: 8px; }
+.fpc-progress-log { background: #0a1018; border-radius: 6px; padding: 10px; font-family: monospace; font-size: 11px; color: var(--fpc-text2); max-height: 80px; overflow-y: auto; margin-top: 10px; white-space: pre-wrap; }
+
 /* Responsive */
 @media (max-width: 768px) {
     .fpc-kpis { grid-template-columns: repeat(2, 1fr); }
@@ -878,7 +973,7 @@ body { background: var(--fpc-bg); color: var(--fpc-text); font-family: -apple-sy
             <button class="fpc-quick-btn" onclick="fpcExportUrls()" title="URLs als CSV exportieren">&#128190; Export</button>
         </div>
         <span id="fpc-clock"></span>
-        <span class="fpc-version">v8.3.0</span>
+        <span class="fpc-version">v8.3.1</span>
     </div>
 </div>
 
@@ -969,6 +1064,24 @@ body { background: var(--fpc-bg); color: var(--fpc-text); font-family: -apple-sy
         <button class="fpc-btn orange" onclick="fpcStopRebuild()" id="btn-stop" style="display:none;">&#9632; Rebuild stoppen</button>
         <button class="fpc-btn red" onclick="fpcFlush()">&#128465; Gesamten Cache leeren</button>
     </div>
+    <!-- v8.3.1: Live-Rebuild-Fortschritt -->
+    <div class="fpc-progress-wrap" id="rebuild-progress">
+        <div style="display:flex;justify-content:space-between;align-items:center;">
+            <div class="fpc-section-title" style="margin:0;border:none;">&#9654; Cache-Rebuild Fortschritt</div>
+            <span id="rebuild-progress-status" style="color:var(--fpc-green);font-weight:700;">Laeuft...</span>
+        </div>
+        <div class="fpc-progress-bar-outer">
+            <div class="fpc-progress-bar-inner" id="rebuild-progress-bar" style="width:0%;"></div>
+            <div class="fpc-progress-bar-text" id="rebuild-progress-pct">0%</div>
+        </div>
+        <div class="fpc-progress-info">
+            <span id="rebuild-progress-done">0 / 0 URLs</span>
+            <span id="rebuild-progress-errors">0 Fehler</span>
+            <span id="rebuild-progress-time">Gestartet: --</span>
+        </div>
+        <div class="fpc-progress-log" id="rebuild-progress-log"></div>
+    </div>
+
     <div class="fpc-section-title" style="margin-top:30px;">&#128279; Einzelne URL cachen</div>
     <p style="color:var(--fpc-text2); font-size:13px; margin-bottom:12px;">
         Geben Sie eine URL oder einen Pfad ein (z.B. <code>/samen-shop/autoflowering-samen/</code>), um diese Seite sofort in den Cache aufzunehmen.
@@ -1284,16 +1397,70 @@ document.addEventListener('DOMContentLoaded', function() {
     // ============================================================
     // STEUERUNG
     // ============================================================
+    var rebuildPollInterval = null;
+
     window.fpcRebuild = async function() {
         if (!confirm('Cache neu aufbauen? Dies kann einige Minuten dauern.')) return;
         var r = await fpcGet({ ajax: 'rebuild' });
         fpcToast(r.msg, !r.ok);
+        if (r.ok) fpcStartProgressPolling();
         fpcLoadStatus();
     };
+
+    // v8.3.1: Live-Rebuild-Fortschritt
+    function fpcStartProgressPolling() {
+        var wrap = document.getElementById('rebuild-progress');
+        wrap.classList.add('active');
+        if (rebuildPollInterval) clearInterval(rebuildPollInterval);
+        rebuildPollInterval = setInterval(fpcPollProgress, 2000);
+        fpcPollProgress();
+    }
+
+    function fpcStopProgressPolling() {
+        if (rebuildPollInterval) { clearInterval(rebuildPollInterval); rebuildPollInterval = null; }
+    }
+
+    async function fpcPollProgress() {
+        try {
+            var d = await fpcGet({ ajax: 'rebuild_progress' });
+            var wrap = document.getElementById('rebuild-progress');
+            document.getElementById('rebuild-progress-bar').style.width = d.percent + '%';
+            document.getElementById('rebuild-progress-pct').textContent = d.percent + '%';
+            document.getElementById('rebuild-progress-done').textContent = d.done + ' / ' + d.total + ' URLs';
+            document.getElementById('rebuild-progress-errors').textContent = d.errors + ' Fehler, ' + d.skipped + ' uebersprungen';
+            document.getElementById('rebuild-progress-time').textContent = 'Gestartet: ' + (d.started || '--');
+
+            if (d.last_lines && d.last_lines.length > 0) {
+                var logEl = document.getElementById('rebuild-progress-log');
+                logEl.textContent = d.last_lines.join('\n');
+                logEl.scrollTop = logEl.scrollHeight;
+            }
+
+            if (!d.running) {
+                document.getElementById('rebuild-progress-status').textContent = 'Fertig!';
+                document.getElementById('rebuild-progress-status').style.color = 'var(--fpc-teal)';
+                document.getElementById('rebuild-progress-bar').style.width = '100%';
+                document.getElementById('rebuild-progress-pct').textContent = '100%';
+                fpcStopProgressPolling();
+                fpcLoadStatus();
+                fpcToast('Cache-Rebuild abgeschlossen!', false);
+                // Progress-Bar nach 10s ausblenden
+                setTimeout(function() { wrap.classList.remove('active'); }, 10000);
+            } else {
+                document.getElementById('rebuild-progress-status').textContent = 'Laeuft...';
+                document.getElementById('rebuild-progress-status').style.color = 'var(--fpc-green)';
+                wrap.classList.add('active');
+            }
+        } catch (e) {
+            console.error('Progress-Poll-Fehler:', e);
+        }
+    }
 
     window.fpcStopRebuild = async function() {
         var r = await fpcGet({ ajax: 'stop' });
         fpcToast(r.msg, !r.ok);
+        fpcStopProgressPolling();
+        document.getElementById('rebuild-progress').classList.remove('active');
         fpcLoadStatus();
     };
 
@@ -1356,7 +1523,8 @@ document.addEventListener('DOMContentLoaded', function() {
         html += (r.ok ? '&#10004; ' : '&#9888; ') + r.msg + ' (Score: ' + r.score + '%)</p>';
         html += '<table class="fpc-table" style="margin-top:12px;"><thead><tr><th>Check</th><th>Status</th></tr></thead><tbody>';
         r.checks.forEach(function(c) {
-            html += '<tr><td>' + c.name + '</td><td>' + (c.ok ? '<span class="sev-ok">OK</span>' : '<span class="sev-error">FEHLT</span>') + '</td></tr>';
+            var infoText = c.info ? ' <span style="color:var(--fpc-text2);font-size:11px;">(' + c.info + ')</span>' : '';
+            html += '<tr><td>' + c.name + infoText + '</td><td>' + (c.ok ? '<span class="sev-ok">OK</span>' : '<span class="sev-error">FEHLT</span>') + '</td></tr>';
         });
         html += '</tbody></table></div>';
         el.innerHTML = html;
@@ -1379,7 +1547,8 @@ document.addEventListener('DOMContentLoaded', function() {
             html += '<td>' + (u.size / 1024).toFixed(1) + ' KB</td>';
             html += '<td>' + u.cached + '</td>';
             html += '<td style="color:' + ageColor + ';">' + u.age_h + 'h</td>';
-            html += '<td><button class="fpc-btn red" style="padding:3px 8px;font-size:11px;" onclick="fpcRemoveUrl(\'' + u.path + '\')">&#128465;</button></td>';
+            html += '<td><button class="fpc-btn teal" style="padding:3px 8px;font-size:11px;margin-right:4px;" onclick="fpcRecacheUrl(\'' + u.path + '\')" title="Neu cachen">&#8635;</button>';
+            html += '<button class="fpc-btn red" style="padding:3px 8px;font-size:11px;" onclick="fpcRemoveUrl(\'' + u.path + '\')" title="Entfernen">&#128465;</button></td>';
             html += '</tr>';
         });
         html += '</tbody></table>';
@@ -1395,6 +1564,14 @@ document.addEventListener('DOMContentLoaded', function() {
 
     window.fpcRemoveUrl = async function(path) {
         var r = await fpcPost({ ajax: 'remove_url' }, { path: path });
+        fpcToast(r.msg, !r.ok);
+        fpcLoadUrls(currentUrlPage);
+    };
+
+    // v8.3.1: Einzelne URL neu cachen
+    window.fpcRecacheUrl = async function(path) {
+        fpcToast('Caching: ' + path + '...', false);
+        var r = await fpcPost({ ajax: 'recache_url' }, { path: path });
         fpcToast(r.msg, !r.ok);
         fpcLoadUrls(currentUrlPage);
     };
@@ -1807,6 +1984,14 @@ document.addEventListener('DOMContentLoaded', function() {
         if (activeTab === 'healthcheck') fpcLoadHealthcheck();
         if (activeTab === 'statistik') fpcLoadVisitorStats(30);
         if (activeTab === 'fehlerlog') fpcLoadErrorLog('');
+
+        // v8.3.1: Pruefen ob Rebuild laeuft und Progress-Bar anzeigen
+        (async function() {
+            try {
+                var prog = await fpcGet({ ajax: 'rebuild_progress' });
+                if (prog.running) fpcStartProgressPolling();
+            } catch(e) {}
+        })();
     } catch (initErr) {
         console.error('FPC Dashboard Init-Fehler:', initErr);
     }
