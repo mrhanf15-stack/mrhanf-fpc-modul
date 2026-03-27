@@ -6,7 +6,7 @@
 
 Das FPC-Modul generiert statische HTML-Dateien fuer alle Shop-Seiten und laesst Apache diese **direkt** ausliefern — ohne PHP-Worker. Das Ergebnis: Ladezeiten unter 100ms fuer Gastbesucher bei minimaler Serverbelastung.
 
-## Architektur v8.0
+## Architektur v8.2
 
 ```
 Gast-Besucher  → Apache → fpc_serve.php → readfile(cache/fpc/{url}/index.html) → ~77ms
@@ -132,6 +132,17 @@ php fpc_flush.php --expired    # Nur abgelaufene
 | 7 | Verify-After-Write | Cache-Datei wird nach Schreiben zurueckgelesen |
 
 ## Changelog
+
+### v8.2.0 (2026-03-27)
+- **NEU**: AJAX-Warenkorb fuer gecachte Seiten
+  - Formular-Submit wird per JavaScript abgefangen und per AJAX gesendet
+  - Mini-Warenkorb wird ohne Seitenreload aktualisiert (Badge + Dropdown)
+  - `fpc_bypass` Cookie wird per JavaScript gesetzt
+  - Free Shipping Bar wird automatisch getriggert
+  - Button-Animation: Spinner → Haekchen → Original
+  - Toast-Benachrichtigung bei Erfolg/Fehler
+  - Session-Initializer integriert (wartet auf Session bevor POST)
+  - Kein Seitenreload mehr noetig!
 
 ### v8.1.0 (2026-03-27)
 - **KRITISCHER FIX**: Warenkorb funktioniert jetzt beim ersten Klick!
