@@ -1,6 +1,6 @@
 <?php
 /**
- * Mr. Hanf FPC Control Center v9.0.7
+ * Mr. Hanf FPC Control Center v9.0.8
  *
  * Enterprise-Level Dashboard for the Full Page Cache System.
  *
@@ -18,6 +18,12 @@
  *   11. Statistics   - Visitors, Bounce Rate, Duration, Devices
  *   12. Alerts       - Thresholds, Notifications, History
  *   13. Settings     - All FPC configuration in one place
+ *
+ * v9.0.8 FIXES:
+ *   - FIX: Health Check tab now renders actual healthcheck.json structure
+ *     (latest.results[] array instead of non-existent latest.checks object)
+ *   - NEW: Health Check shows SSL info, KPI summary, sortable results table
+ *   - FIX: Correct field names (total_cached, errors, hit_rate, avg_ttfb)
  *
  * v9.0.7 FIXES:
  *   - CRITICAL FIX: JavaScript syntax errors in health-check section
@@ -1049,7 +1055,7 @@ $page_title = 'FPC Control Center';
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title><?php echo $page_title; ?> v9.0.7</title>
+<title><?php echo $page_title; ?> v9.0.8</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4" defer></script>
 <style>
 :root { --fpc-bg:#0d1b2a; --fpc-card:#1b2838; --fpc-border:#2a3a4a; --fpc-text:#e0e6ed; --fpc-text2:#8899aa; --fpc-teal:#00d4aa; --fpc-green:#00e676; --fpc-red:#ff4757; --fpc-orange:#ffa502; --fpc-yellow:#ffd32a; --fpc-blue:#00a8ff; }
@@ -1134,7 +1140,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 
 <!-- HEADER -->
 <div class="fpc-header">
-    <h1>FPC Control Center <span>v9.0.7</span></h1>
+    <h1>FPC Control Center <span>v9.0.8</span></h1>
     <div class="fpc-quick-actions">
         <button class="fpc-quick-btn" onclick="fpcFlush()" title="Flush Cache">&#128465; Flush</button>
         <button class="fpc-quick-btn" onclick="fpcRebuild()" title="Rebuild Cache">&#8635; Rebuild</button>
@@ -1142,7 +1148,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
     </div>
     <div>
         <span id="fpc-clock" style="color:var(--fpc-text2);font-size:12px;"></span>
-        <span class="fpc-version">v9.0.7</span>
+        <span class="fpc-version">v9.0.8</span>
     </div>
 </div>
 
@@ -1418,7 +1424,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 
 <script>
 // ============================================================
-// JAVASCRIPT v9.0.7
+// JAVASCRIPT v9.0.8
 // ============================================================
 var BASE = '<?php echo basename(__FILE__); ?>';
 var chartInstances = {};
@@ -1918,19 +1924,56 @@ function fpcLoadHealth() {
         html += '<div style="font-size:64px;font-weight:900;color:' + color + '">' + grade + '</div>';
         html += '<div><div style="font-size:24px;font-weight:700;color:' + color + '">' + score + ' / 100</div>';
         html += '<div style="color:var(--fpc-text2)">Checked: ' + (summary.timestamp || '-') + '</div>';
-        html += '<div style="color:var(--fpc-text2)">Cached Pages: '+ (summary.cached_pages || '-') + ' | Errors: ' + (summary.total_errors || 0) + '</div>';
+        html += '<div style="color:var(--fpc-text2)">Tested: ' + (summary.tested || 0) + ' / ' + (summary.total_cached || '-') + ' cached pages</div>';
+        html += '<div style="color:var(--fpc-text2)">Hit Rate: ' + (summary.hit_rate || 0) + '% | Avg TTFB: ' + (summary.avg_ttfb || 0) + 'ms | Errors: ' + (summary.errors || 0) + '</div>';
         html += '</div></div>';
-        document.getElementById('health-score-box').innerHTML = html;
-        // Details
-        var checks = latest.checks || {};
-        var html = '<table class="fpc-table"><thead><tr><th>Check</th><th>Status</th><th>Details</th></tr></thead><tbody>';
-        for (var check in checks) {
-            var c = checks[check];
-            var ok = c.ok || c.status === 'ok' || c.passed;
-            html += '<tr><td>' + check + '</td><td><span class="sev-' + (ok ? 'ok' : 'error') + '">' + (ok ? 'OK' : 'ERROR') + '</span></td><td>' + (c.msg || c.detail || '-') + '</td></tr>';
+        // SSL Info
+        if (summary.ssl) {
+            var ssl = summary.ssl;
+            var sslColor = ssl.valid ? 'var(--fpc-green)' : 'var(--fpc-red)';
+            html += '<div style="margin-top:12px;padding:12px 16px;background:var(--fpc-card);border-radius:8px;border:1px solid var(--fpc-border);display:flex;gap:20px;align-items:center;">';
+            html += '<span style="color:' + sslColor + ';font-weight:700;">SSL ' + (ssl.valid ? 'OK' : 'ERROR') + '</span>';
+            html += '<span style="color:var(--fpc-text2)">Issuer: ' + (ssl.issuer || '-') + '</span>';
+            html += '<span style="color:var(--fpc-text2)">Expires: ' + (ssl.expires || '-') + ' (' + (ssl.days_left || 0) + ' days left)</span>';
+            html += '</div>';
         }
-        html += '</tbody></table>';
-        document.getElementById('health-details').innerHTML = html;
+        document.getElementById('health-score-box').innerHTML = html;
+        // Summary KPIs
+        var kpiHtml = '<div class="fpc-kpis" style="margin-bottom:16px;">';
+        kpiHtml += '<div class="fpc-kpi"><div class="fpc-kpi-label">TESTED</div><div class="fpc-kpi-value">' + (summary.tested || 0) + '</div></div>';
+        kpiHtml += '<div class="fpc-kpi"><div class="fpc-kpi-label">OK</div><div class="fpc-kpi-value" style="color:var(--fpc-green)">' + (summary.ok || 0) + '</div></div>';
+        kpiHtml += '<div class="fpc-kpi"><div class="fpc-kpi-label">ERRORS</div><div class="fpc-kpi-value" style="color:' + ((summary.errors || 0) > 0 ? 'var(--fpc-red)' : 'var(--fpc-green)') + '">' + (summary.errors || 0) + '</div></div>';
+        kpiHtml += '<div class="fpc-kpi"><div class="fpc-kpi-label">REDIRECTS</div><div class="fpc-kpi-value" style="color:var(--fpc-orange)">' + (summary.redirects || 0) + '</div></div>';
+        kpiHtml += '<div class="fpc-kpi"><div class="fpc-kpi-label">SLOW (>2s)</div><div class="fpc-kpi-value">' + (summary.slow_count || 0) + '</div></div>';
+        kpiHtml += '<div class="fpc-kpi"><div class="fpc-kpi-label">STALE (>24h)</div><div class="fpc-kpi-value">' + (summary.stale_count || 0) + '</div></div>';
+        kpiHtml += '<div class="fpc-kpi"><div class="fpc-kpi-label">AVG TTFB</div><div class="fpc-kpi-value">' + (summary.avg_ttfb || 0) + 'ms</div></div>';
+        kpiHtml += '<div class="fpc-kpi"><div class="fpc-kpi-label">TTFB RANGE</div><div class="fpc-kpi-value">' + (summary.ttfb_min || 0) + '-' + (summary.ttfb_max || 0) + 'ms</div></div>';
+        kpiHtml += '</div>';
+        // Details table from results array
+        var results = latest.results || [];
+        var detailHtml = kpiHtml;
+        if (results.length === 0) {
+            detailHtml += '<p style="color:var(--fpc-text2)">No detailed results available.</p>';
+        } else {
+            // Show errors/warnings first, then OK
+            var sorted = results.slice().sort(function(a,b) {
+                var sevOrder = {critical:0, error:1, warning:2, ok:3};
+                return (sevOrder[a.severity]||3) - (sevOrder[b.severity]||3);
+            });
+            detailHtml += '<table class="fpc-table"><thead><tr><th>URL</th><th>HTTP</th><th>FPC</th><th>TTFB</th><th>Status</th><th>Issues</th></tr></thead><tbody>';
+            sorted.forEach(function(r) {
+                var sevClass = r.severity === 'ok' ? 'ok' : (r.severity === 'warning' ? 'warn' : 'error');
+                var issues = (r.issues && r.issues.length > 0) ? r.issues.join('; ') : '-';
+                detailHtml += '<tr><td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + r.path + '">' + r.path + '</td>';
+                detailHtml += '<td>' + r.http + '</td>';
+                detailHtml += '<td><span class="sev-' + (r.fpc === 'HIT' ? 'ok' : 'error') + '">' + r.fpc + '</span></td>';
+                detailHtml += '<td>' + r.ttfb + 'ms</td>';
+                detailHtml += '<td><span class="sev-' + sevClass + '">' + r.severity.toUpperCase() + '</span></td>';
+                detailHtml += '<td style="color:var(--fpc-text2);font-size:12px;">' + issues + '</td></tr>';
+            });
+            detailHtml += '</tbody></table>';
+        }
+        document.getElementById('health-details').innerHTML = detailHtml;
     });
     // htaccess Validator
     fpcAjax('ajax=validate_htaccess', function(d) {
