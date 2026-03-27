@@ -1,6 +1,6 @@
 <?php
 //
-// Mr. Hanf Full Page Cache v8.0.5 - Cron Preloader (Ausfallsicher + Rate-Limited)
+// Mr. Hanf Full Page Cache v8.0.9 - Cron Preloader (Ausfallsicher + Rate-Limited)
 //
 // Cron-Job der Shop-Seiten abruft und als statische HTML-Dateien speichert.
 // Primaere URL-Quelle: sitemap.xml
@@ -442,6 +442,30 @@ foreach ($filtered as $i => $url) {
     $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
     $ttfb = curl_getinfo($ch, CURLINFO_STARTTRANSFER_TIME);
     $ttfb_ms = (int)($ttfb * 1000);
+
+    // ==========================================================
+    // v8.0.9: REDIRECT-ERKENNUNG
+    // Wenn der Server einen Redirect macht (301/302), cached der Preloader
+    // die Seite unter der FINALEN URL statt der Original-URL.
+    // Ohne diesen Fix wird Content unter einer URL gespeichert die
+    // eigentlich redirected werden sollte -> Redirect-Loop fuer Besucher!
+    // ==========================================================
+    $redirect_count = curl_getinfo($ch, CURLINFO_REDIRECT_COUNT);
+    if ($redirect_count > 0) {
+        $final_url = curl_getinfo($ch, CURLINFO_EFFECTIVE_URL);
+        $final_parsed = parse_url($final_url);
+        $final_path = isset($final_parsed['path']) ? $final_parsed['path'] : '/';
+        if ($final_path === '') $final_path = '/';
+
+        $final_clean = trim($final_path, '/');
+        if ($final_clean === '') {
+            $cache_file = $cache_dir . 'index.html';
+        } else {
+            $cache_file = $cache_dir . $final_clean . '/index.html';
+        }
+
+        echo '[FPC] REDIRECT: ' . $url . ' -> ' . $final_url . ' (Cache unter finaler URL)' . "\n";
+    }
 
     $batch_count++;
     $total_processed++;

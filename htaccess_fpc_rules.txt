@@ -1,5 +1,5 @@
 # ============================================================
-# Mr. Hanf Full Page Cache v8.0.7 - .htaccess Regeln
+# Mr. Hanf Full Page Cache v8.0.9 - .htaccess Regeln
 # ============================================================
 # Architektur: Request -> fpc_serve.php (PHP) -> readfile()
 #
@@ -18,6 +18,14 @@
 #   - Kein Directory Traversal moeglich (realpath-Check)
 #   - Korrupte/leere Dateien werden automatisch geloescht
 #   - Cache-Dateien haben FPC-VALID Marker + Mindestgroesse
+#
+# CHANGELOG v8.0.9:
+#   - FIX: Redirect-Loop bei Warenkorb-Aktionen behoben
+#     Ursache 1: fpc_bypass Cookie hatte leere Domain (Browser sendete
+#     Cookie nicht zuverlaessig bei Redirects)
+#     Ursache 2: Preloader cachte Seiten unter Redirect-URLs statt finaler URL
+#     Fix: Cookie-Domain auf .mr-hanf.de, SameSite=Lax, Preloader Redirect-Erkennung
+#   - htaccess-Regeln selbst sind unveraendert (POST wird korrekt ausgeschlossen)
 #
 # CHANGELOG v8.0.7:
 #   - NEU: fpc_bypass Cookie-System fuer Warenkorb/Login
@@ -67,7 +75,7 @@
 #   5. cache/fpc/ Verzeichnis anlegen (chmod 777)
 # ============================================================
 
-# --- FPC START v8.0.7 ---
+# --- FPC START v8.0.9 ---
 <IfModule mod_rewrite.c>
 RewriteEngine On
 
@@ -110,8 +118,8 @@ RewriteRule ^(.+)$ fpc_serve.php [L,QSA,E=FPC_HIT:1]
 # Diese Regeln hier sind ein zusaetzlicher Fallback.
 <IfModule mod_headers.c>
     Header always set X-FPC-Cache "HIT" env=REDIRECT_FPC_HIT
-    Header always set X-FPC-Version "8.0.7" env=REDIRECT_FPC_HIT
+    Header always set X-FPC-Version "8.0.9" env=REDIRECT_FPC_HIT
     Header always set Cache-Control "no-store, no-cache, must-revalidate" env=REDIRECT_FPC_HIT
     Header always set Pragma "no-cache" env=REDIRECT_FPC_HIT
 </IfModule>
-# --- FPC ENDE v8.0.7 ---
+# --- FPC ENDE v8.0.9 ---

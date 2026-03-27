@@ -16,8 +16,14 @@
  * zu:
  *   RewriteRule ^(.+)$ fpc_serve.php [L,QSA]
  *
- * @version   8.0.7
- * @date      2026-03-25
+ * @version   8.0.9
+ * @date      2026-03-27
+ *
+ * CHANGELOG v8.0.9:
+ *   - FIX: Redirect-Loop bei Warenkorb-Aktionen behoben
+ *     Ursache: fpc_bypass Cookie hatte leere Domain und kein SameSite
+ *     Fix: Cookie-Pruefung und Auslieferung unveraendert, aber
+ *     95_fpc_bypass_cookie.php setzt jetzt korrekte Cookie-Attribute
  */
 
 // ============================================================
@@ -159,7 +165,7 @@ if (strpos($tail, $FPC_HEALTH_MARKER) === false) {
 
 header('Content-Type: text/html; charset=utf-8');
 header('X-FPC-Cache: HIT');
-header('X-FPC-Version: 8.0.7');
+header('X-FPC-Version: 8.0.9');
 header('X-FPC-Cached-At: ' . gmdate('D, d M Y H:i:s', $mtime) . ' GMT');
 header('Cache-Control: no-store, no-cache, must-revalidate');
 header('Pragma: no-cache');

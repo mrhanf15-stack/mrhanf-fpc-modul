@@ -1,4 +1,4 @@
-# Mr. Hanf Full Page Cache (FPC) v8.0.8
+# Mr. Hanf Full Page Cache (FPC) v8.0.9
 
 **Cron-basiertes Full Page Cache System fuer modified eCommerce (xt:Commerce Fork)**
 
@@ -127,6 +127,22 @@ php fpc_flush.php --expired    # Nur abgelaufene
 | 7 | Verify-After-Write | Cache-Datei wird nach Schreiben zurueckgelesen |
 
 ## Changelog
+
+### v8.0.9 (2026-03-27)
+- **KRITISCHER FIX**: Redirect-Loop bei Warenkorb-Aktionen behoben!
+  - **Bug 1**: `fpc_bypass` Cookie wurde mit leerer Domain gesetzt.
+    Browser sendete das Cookie bei Redirects nicht zuverlaessig mit.
+    Fix: Domain auf `.mr-hanf.de`, SameSite=Lax, Secure=true.
+  - **Bug 2**: Preloader cachte Seiten unter der Original-URL statt der
+    finalen URL nach Redirects. Wenn der Shop z.B. von `/autoflowering-seeds/`
+    nach `/autoflowering-samen/` redirected, wurde die Seite unter der alten
+    URL gespeichert. Besucher bekamen gecachte Seite mit Links zur neuen URL,
+    was bei Interaktionen (Warenkorb) zu Redirect-Loops fuehrte.
+    Fix: Preloader erkennt jetzt Redirects und cached unter finaler URL.
+  - **Bug 3**: Cookie hatte kein SameSite-Attribut (inkonsistent mit MODsid).
+    Fix: SameSite=Lax explizit gesetzt.
+- **GEAENDERT**: `95_fpc_bypass_cookie.php` verwendet jetzt PHP 7.3+ Options-Array
+- **GEAENDERT**: Preloader loggt Redirect-Erkennung
 
 ### v8.0.8 (2026-03-27)
 - **NEU**: "Cache neu aufbauen" Button im Admin-Modul
