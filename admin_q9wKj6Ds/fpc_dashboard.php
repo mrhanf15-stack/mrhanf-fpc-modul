@@ -595,7 +595,7 @@ function fpc_validate_htaccess($base_dir) {
     $content = file_get_contents($file);
     $checks = array();
     $checks[] = array('name' => 'FPC RewriteRule', 'ok' => strpos($content, 'fpc_serve.php') !== false);
-    $checks[] = array('name' => 'POST-Bypass', 'ok' => (bool)preg_match('/RewriteCond.*REQUEST_METHOD.*!POST/i', $content));
+    $checks[] = array('name' => 'POST-Bypass', 'ok' => (bool)preg_match('/RewriteCond.*REQUEST_METHOD.*(=GET|!POST)/i', $content));
     $checks[] = array('name' => 'Query-String Bypass', 'ok' => (bool)preg_match('/RewriteCond.*QUERY_STRING.*\^\$/', $content));
     $checks[] = array('name' => 'FPC-Bypass Cookie (fpc_bypass)', 'ok' => strpos($content, 'fpc_bypass') !== false, 'info' => 'Ersetzt MODsid-Bypass (v8.2.0+)');
     $checks[] = array('name' => 'Cache-Datei Existenz-Check', 'ok' => strpos($content, 'cache/fpc') !== false);
@@ -1314,7 +1314,7 @@ setInterval(function() {
 function fpcLoadDashboard() {
     fpcAjax('ajax=status', function(d) {
         var ampel = d.errors_1h > 5 ? 'red' : (d.hit_rate < 70 ? 'yellow' : 'green');
-        var status = ampel === 'green' ? 'aktiv' : (ampel === 'yellow' ? 'degraded' : 'Fehler');
+        var status = ampel === 'green' ? 'Aktiv' : (ampel === 'yellow' ? 'Eingeschraenkt' : 'Fehler');
         var kpis = '';
         kpis += '<div class="fpc-kpi"><div class="fpc-kpi-label"><span class="fpc-ampel ' + ampel + '"></span>Cache Status</div><div class="fpc-kpi-value" style="color:var(--fpc-' + ampel + ')">' + status + '</div></div>';
         kpis += '<div class="fpc-kpi"><div class="fpc-kpi-label">Gecachte Seiten</div><div class="fpc-kpi-value" style="color:var(--fpc-teal)">' + d.files.toLocaleString() + '</div></div>';
