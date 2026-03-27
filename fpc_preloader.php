@@ -1,6 +1,6 @@
 <?php
 //
-// Mr. Hanf Full Page Cache v8.0.9 - Cron Preloader (Ausfallsicher + Rate-Limited)
+// Mr. Hanf Full Page Cache v8.2.0 - Cron Preloader (Ausfallsicher + Rate-Limited)
 //
 // Cron-Job der Shop-Seiten abruft und als statische HTML-Dateien speichert.
 // Primaere URL-Quelle: sitemap.xml
@@ -32,7 +32,7 @@
 //   - Atomic Write: Erst .tmp schreiben, validieren, dann umbenennen
 //   - Health-Marker: <!-- FPC-VALID --> wird an jede Cache-Datei angehaengt
 //
-// @version   8.0.5
+// @version   8.2.0
 // @date      2026-03-22
 
 // ============================================================

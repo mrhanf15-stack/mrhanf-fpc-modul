@@ -1,6 +1,6 @@
 <?php
 /**
- * Mr. Hanf Full Page Cache v8.0.9 - System-Modul fuer modified eCommerce
+ * Mr. Hanf Full Page Cache v8.2.0 - System-Modul fuer modified eCommerce
  *
  * Cron-basiertes Preloading-System:
  *   - Ein Cron-Job (fpc_preloader.php) ruft Shop-Seiten ab und speichert
@@ -18,7 +18,7 @@
  *   - Rebuild-Status Anzeige (laeuft/gestoppt)
  *   - Stop-Button fuer laufende Rebuilds
  *
- * @version   8.0.9
+ * @version   8.2.0
  * @date      2026-03-27
  */
 defined('_VALID_XTC') or die('Direct Access to this location is not allowed.');
@@ -136,7 +136,7 @@ class mrhanf_fpc
         // ============================================================
         $html  = '<br /><br />';
         $html .= '<table border="0" cellpadding="4" cellspacing="0" style="background:#f8f8f8; border:1px solid #ccc; margin-top:8px; width:100%;">';
-        $html .= '<tr><td colspan="2" style="background:#4a90d9; color:#fff; font-weight:bold; padding:8px;">Cache-Status (v8.0.9 - Direkte Apache-Auslieferung)</td></tr>';
+        $html .= '<tr><td colspan="2" style="background:#4a90d9; color:#fff; font-weight:bold; padding:8px;">Cache-Status (v8.2.0 - Direkte Apache-Auslieferung)</td></tr>';
         $html .= '<tr><td style="width:180px;"><b>Gecachte Seiten:</b></td><td>' . $files . '</td></tr>';
         $html .= '<tr><td><b>Cache-Groesse:</b></td><td>' . $this->_formatBytes($size) . '</td></tr>';
         $html .= '<tr><td><b>Letzter Cron-Lauf:</b></td><td>' . $last_run . '</td></tr>';

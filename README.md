@@ -1,4 +1,4 @@
-# Mr. Hanf Full Page Cache (FPC) v8.0.9
+# Mr. Hanf Full Page Cache (FPC) v8.2.0
 
 **Cron-basiertes Full Page Cache System fuer modified eCommerce (xt:Commerce Fork)**
 
@@ -28,6 +28,10 @@ Eingeloggter   → Apache → index.php → modified eCommerce → dynamische Se
 | `admin_q9wKj6Ds/fpc_dashboard_install.php` | Installations-Script fuer Menueeintrag |
 | `admin_q9wKj6Ds/fpc_dashboard_menu_patch.txt` | Manueller Menueeintrag-Code fuer column_left.php |
 | `lang/{de,en}/admin/fpc_dashboard.php` | Sprachdateien fuer die Schaltzentrale |
+| `fpc_healthcheck.php` | Cron: Automatischer Health-Check mit HIT-Rate, TTFB, Redirect-Pruefung |
+| `shoproot/.../add_product_before_redirect/95_fpc_bypass.php` | **KRITISCH**: Setzt fpc_bypass Cookie VOR dem Redirect nach Warenkorb-Add |
+| `shoproot/.../buy_now_before_redirect/95_fpc_bypass.php` | **KRITISCH**: Setzt fpc_bypass Cookie VOR dem Redirect nach buy_now |
+| `shoproot/.../application_top_end/95_fpc_bypass_cookie.php` | Sicherheitsnetz: Cookie-Management fuer eingeloggte User und nicht-leere Warenkoerbe |
 
 ## Installation
 
@@ -35,14 +39,43 @@ Eingeloggter   → Apache → index.php → modified eCommerce → dynamische Se
 
 ```bash
 SHOP="/home/www/doc/28856/dcp288560004/mr-hanf.de/www"
-cp fpc_serve.php fpc_preloader.php fpc_flush.php "$SHOP/"
+
+# Kern-Dateien
+cp fpc_serve.php fpc_preloader.php fpc_flush.php fpc_session_init.php fpc_healthcheck.php "$SHOP/"
+
+# Admin-Modul
 cp admin_q9wKj6Ds/includes/modules/system/mrhanf_fpc.php \
    "$SHOP/admin_q9wKj6Ds/includes/modules/system/"
+
+# FPC Schaltzentrale (Dashboard)
+cp admin_q9wKj6Ds/fpc_dashboard.php "$SHOP/admin_q9wKj6Ds/"
+cp admin_q9wKj6Ds/includes/extra/menu/fpc_dashboard.php \
+   "$SHOP/admin_q9wKj6Ds/includes/extra/menu/"
+cp admin_q9wKj6Ds/includes/extra/filenames/fpc_dashboard.php \
+   "$SHOP/admin_q9wKj6Ds/includes/extra/filenames/"
+
+# Sprachdateien
 for LANG in german english french spanish; do
   mkdir -p "$SHOP/lang/$LANG/modules/system"
   cp "lang/$LANG/modules/system/mrhanf_fpc.php" \
-     "$SHOP/lang/$LANG/modules/system/"
+     "$SHOP/lang/$LANG/modules/system/" 2>/dev/null
 done
+for LANG in german english; do
+  mkdir -p "$SHOP/lang/$LANG/admin"
+  cp "lang/$LANG/admin/fpc_dashboard.php" \
+     "$SHOP/lang/$LANG/admin/" 2>/dev/null
+done
+
+# v8.2.0 KRITISCH: Bypass-Cookie Hooks (Warenkorb-Fix)
+mkdir -p "$SHOP/includes/extra/cart_actions/add_product_before_redirect"
+mkdir -p "$SHOP/includes/extra/cart_actions/buy_now_before_redirect"
+cp shoproot/includes/extra/cart_actions/add_product_before_redirect/95_fpc_bypass.php \
+   "$SHOP/includes/extra/cart_actions/add_product_before_redirect/"
+cp shoproot/includes/extra/cart_actions/buy_now_before_redirect/95_fpc_bypass.php \
+   "$SHOP/includes/extra/cart_actions/buy_now_before_redirect/"
+cp shoproot/includes/extra/application_top/application_top_end/95_fpc_bypass_cookie.php \
+   "$SHOP/includes/extra/application_top/application_top_end/"
+
 mkdir -p "$SHOP/cache/fpc"
 ```
 
@@ -134,6 +167,15 @@ php fpc_flush.php --expired    # Nur abgelaufene
 ## Changelog
 
 ### v8.2.0 (2026-03-27)
+- **KRITISCHER FIX**: Warenkorb-Bypass-Cookie wird jetzt VOR dem Redirect gesetzt!
+  - **Root Cause**: Nach dem Warenkorb-Add macht modified einen 302-Redirect.
+    Das Bypass-Cookie in `application_top_end` wurde NACH dem Redirect gesetzt,
+    daher lieferte der FPC die gecachte Seite (mit leerem Warenkorb) aus.
+  - **Loesung**: Neue Hooks `add_product_before_redirect` und `buy_now_before_redirect`
+    setzen das `fpc_bypass=1` Cookie exakt zwischen Warenkorb-Add und Redirect.
+  - **Neue Dateien**:
+    - `includes/extra/cart_actions/add_product_before_redirect/95_fpc_bypass.php`
+    - `includes/extra/cart_actions/buy_now_before_redirect/95_fpc_bypass.php`
 - **NEU**: AJAX-Warenkorb fuer gecachte Seiten
   - Formular-Submit wird per JavaScript abgefangen und per AJAX gesendet
   - Mini-Warenkorb wird ohne Seitenreload aktualisiert (Badge + Dropdown)
@@ -143,6 +185,12 @@ php fpc_flush.php --expired    # Nur abgelaufene
   - Toast-Benachrichtigung bei Erfolg/Fehler
   - Session-Initializer integriert (wartet auf Session bevor POST)
   - Kein Seitenreload mehr noetig!
+- **FIX**: FPC Schaltzentrale Dashboard-Buttons repariert
+  - Chart.js wird jetzt mit `defer` geladen (blockiert nicht mehr die Seite)
+  - IIFE durch `DOMContentLoaded` Event ersetzt (robusterer Timing)
+  - Chart-Rendering mit `typeof Chart` Check abgesichert
+  - Error-Boundary um Init-Code
+  - Version auf v8.2.0 aktualisiert
 
 ### v8.1.0 (2026-03-27)
 - **KRITISCHER FIX**: Warenkorb funktioniert jetzt beim ersten Klick!

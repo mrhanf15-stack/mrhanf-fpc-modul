@@ -1,6 +1,6 @@
 <?php
 /**
- * Mr. Hanf FPC Schaltzentrale v1.0
+ * Mr. Hanf FPC Schaltzentrale v8.2.0
  *
  * Vollstaendiges Dashboard fuer das Full Page Cache System.
  * Wird als eigenstaendige Admin-Seite unter Statistiken eingebunden.
@@ -12,7 +12,7 @@
  *   4. Logs         - Preloader-Log, Rebuild-Log, Live-Ansicht
  *   5. Monitoring   - Automatische Tests, Redirect-Pruefung, Historie
  *
- * @version   1.0.0
+ * @version   8.2.0
  * @date      2026-03-27
  */
 
@@ -540,7 +540,7 @@ function fpc_remove_custom_url($file, $url) {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>FPC Schaltzentrale</title>
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" defer></script>
 <style>
 /* ============================================================
    FPC SCHALTZENTRALE - CSS
@@ -902,7 +902,7 @@ function fpc_remove_custom_url($file, $url) {
     <h1><span>&#9881;</span> FPC Schaltzentrale</h1>
     <div class="fpc-header-right">
         <span id="fpc-clock"></span>
-        <span class="fpc-version">v8.0.9</span>
+        <span class="fpc-version">v8.2.0</span>
     </div>
 </div>
 
@@ -1094,20 +1094,20 @@ function fpc_remove_custom_url($file, $url) {
 <!-- JAVASCRIPT -->
 <!-- ============================================================ -->
 <script>
-(function() {
+document.addEventListener('DOMContentLoaded', function() {
     'use strict';
 
-    const BASE = 'fpc_dashboard.php';
-    let currentLogType = null;
-    let autoRefreshInterval = null;
-    let currentUrlPage = 1;
-    let searchTimeout = null;
+    var BASE = 'fpc_dashboard.php';
+    var currentLogType = null;
+    var autoRefreshInterval = null;
+    var currentUrlPage = 1;
+    var searchTimeout = null;
 
     // Charts
-    let chartCategories = null;
-    let chartLastStats = null;
-    let chartMonitorHitrate = null;
-    let chartMonitorTtfb = null;
+    var chartCategories = null;
+    var chartLastStats = null;
+    var chartMonitorHitrate = null;
+    var chartMonitorTtfb = null;
 
     // ============================================================
     // TAB-NAVIGATION
@@ -1115,7 +1115,7 @@ function fpc_remove_custom_url($file, $url) {
     document.querySelectorAll('.fpc-tab').forEach(tab => {
         tab.addEventListener('click', function(e) {
             e.preventDefault();
-            const target = this.dataset.tab;
+            var target = this.dataset.tab;
             document.querySelectorAll('.fpc-tab').forEach(t => t.classList.remove('active'));
             document.querySelectorAll('.fpc-tab-panel').forEach(p => p.classList.remove('active'));
             this.classList.add('active');
@@ -1135,7 +1135,7 @@ function fpc_remove_custom_url($file, $url) {
     // CLOCK
     // ============================================================
     function updateClock() {
-        const now = new Date();
+        var now = new Date();
         document.getElementById('fpc-clock').textContent = now.toLocaleString('de-DE');
     }
     setInterval(updateClock, 1000);
@@ -1146,7 +1146,7 @@ function fpc_remove_custom_url($file, $url) {
     // ============================================================
     window.fpcToast = function(msg, type) {
         type = type || 'info';
-        const el = document.getElementById('fpc-toast');
+        var el = document.getElementById('fpc-toast');
         el.className = 'fpc-toast ' + type;
         el.textContent = msg;
         el.classList.add('show');
@@ -1157,14 +1157,14 @@ function fpc_remove_custom_url($file, $url) {
     // AJAX HELPER
     // ============================================================
     async function fpcGet(params) {
-        const url = BASE + '?' + new URLSearchParams(params).toString();
-        const res = await fetch(url);
+        var url = BASE + '?' + new URLSearchParams(params).toString();
+        var res = await fetch(url);
         return res.json();
     }
 
     async function fpcPost(params, body) {
-        const url = BASE + '?' + new URLSearchParams(params).toString();
-        const res = await fetch(url, {
+        var url = BASE + '?' + new URLSearchParams(params).toString();
+        var res = await fetch(url, {
             method: 'POST',
             headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
             body: new URLSearchParams(body).toString()
@@ -1177,7 +1177,7 @@ function fpc_remove_custom_url($file, $url) {
     // ============================================================
     async function fpcLoadStatus() {
         try {
-            const d = await fpcGet({ ajax: 'status' });
+            var d = await fpcGet({ ajax: 'status' });
 
             document.getElementById('kpi-files').textContent = d.files;
             document.getElementById('kpi-files-sub').textContent = 'Ø ' + d.avg_file_size + ' pro Datei';
@@ -1221,10 +1221,11 @@ function fpc_remove_custom_url($file, $url) {
     }
 
     function renderCategoryChart(cats) {
-        const ctx = document.getElementById('chart-categories').getContext('2d');
-        const labels = Object.keys(cats);
-        const values = Object.values(cats);
-        const colors = generateColors(labels.length);
+        if (typeof Chart === 'undefined') { console.warn('Chart.js nicht geladen - Charts deaktiviert'); return; }
+        var ctx = document.getElementById('chart-categories').getContext('2d');
+        var labels = Object.keys(cats);
+        var values = Object.values(cats);
+        var colors = generateColors(labels.length);
 
         if (chartCategories) chartCategories.destroy();
         chartCategories = new Chart(ctx, {
@@ -1243,7 +1244,8 @@ function fpc_remove_custom_url($file, $url) {
     }
 
     function renderLastStatsChart(stats) {
-        const ctx = document.getElementById('chart-laststats').getContext('2d');
+        if (typeof Chart === 'undefined') return;
+        var ctx = document.getElementById('chart-laststats').getContext('2d');
         if (chartLastStats) chartLastStats.destroy();
         chartLastStats = new Chart(ctx, {
             type: 'bar',
@@ -1268,7 +1270,7 @@ function fpc_remove_custom_url($file, $url) {
     }
 
     function generateColors(n) {
-        const base = ['#00d4aa','#00a8ff','#2ed573','#ffa502','#ff4757','#a55eea','#45aaf2','#fed330','#26de81','#fc5c65','#778ca3','#4b7bec','#eb3b5a','#20bf6b','#f7b731'];
+        var base = ['#00d4aa','#00a8ff','#2ed573','#ffa502','#ff4757','#a55eea','#45aaf2','#fed330','#26de81','#fc5c65','#778ca3','#4b7bec','#eb3b5a','#20bf6b','#f7b731'];
         while (base.length < n) base.push('#' + Math.floor(Math.random()*16777215).toString(16).padStart(6,'0'));
         return base.slice(0, n);
     }
@@ -1278,30 +1280,30 @@ function fpc_remove_custom_url($file, $url) {
     // ============================================================
     window.fpcRebuild = async function() {
         if (!confirm('Cache jetzt neu aufbauen? Der Preloader wird im Hintergrund gestartet.')) return;
-        const r = await fpcGet({ ajax: 'rebuild' });
+        var r = await fpcGet({ ajax: 'rebuild' });
         fpcToast(r.msg, r.ok ? 'success' : 'error');
         fpcLoadStatus();
     };
 
     window.fpcStopRebuild = async function() {
         if (!confirm('Laufenden Rebuild wirklich stoppen?')) return;
-        const r = await fpcGet({ ajax: 'stop' });
+        var r = await fpcGet({ ajax: 'stop' });
         fpcToast(r.msg, r.ok ? 'success' : 'error');
         fpcLoadStatus();
     };
 
     window.fpcFlush = async function() {
         if (!confirm('ACHTUNG: Gesamten Cache wirklich leeren? Alle gecachten Seiten werden geloescht!')) return;
-        const r = await fpcGet({ ajax: 'flush' });
+        var r = await fpcGet({ ajax: 'flush' });
         fpcToast(r.msg, r.ok ? 'success' : 'error');
         fpcLoadStatus();
     };
 
     window.fpcCacheSingle = async function() {
-        const url = document.getElementById('single-url').value.trim();
+        var url = document.getElementById('single-url').value.trim();
         if (!url) { fpcToast('Bitte URL eingeben', 'error'); return; }
         document.getElementById('single-url-result').innerHTML = '<span class="fpc-spinner"></span> Wird gecacht...';
-        const r = await fpcPost({ ajax: 'cache_url' }, { url: url });
+        var r = await fpcPost({ ajax: 'cache_url' }, { url: url });
         document.getElementById('single-url-result').innerHTML =
             '<div style="padding:8px; margin-top:8px; border-radius:4px; background:' + (r.ok ? 'rgba(46,213,115,0.1)' : 'rgba(255,71,87,0.1)') + '; color:' + (r.ok ? 'var(--fpc-success)' : 'var(--fpc-danger)') + ';">' + r.msg + '</div>';
         if (r.ok) document.getElementById('single-url').value = '';
@@ -1309,23 +1311,23 @@ function fpc_remove_custom_url($file, $url) {
 
     // Custom URLs
     window.fpcAddCustomUrl = async function() {
-        const url = document.getElementById('custom-url-input').value.trim();
+        var url = document.getElementById('custom-url-input').value.trim();
         if (!url) { fpcToast('Bitte URL eingeben', 'error'); return; }
-        const r = await fpcPost({ ajax: 'add_custom_url' }, { url: url });
+        var r = await fpcPost({ ajax: 'add_custom_url' }, { url: url });
         fpcToast(r.msg, r.ok ? 'success' : 'error');
         if (r.ok) { document.getElementById('custom-url-input').value = ''; fpcLoadCustomUrls(); }
     };
 
     window.fpcRemoveCustomUrl = async function(url) {
         if (!confirm('URL entfernen: ' + url + '?')) return;
-        const r = await fpcPost({ ajax: 'remove_custom_url' }, { url: url });
+        var r = await fpcPost({ ajax: 'remove_custom_url' }, { url: url });
         fpcToast(r.msg, r.ok ? 'success' : 'error');
         fpcLoadCustomUrls();
     };
 
     async function fpcLoadCustomUrls() {
-        const r = await fpcGet({ ajax: 'custom_urls' });
-        const el = document.getElementById('custom-urls-list');
+        var r = await fpcGet({ ajax: 'custom_urls' });
+        var el = document.getElementById('custom-urls-list');
         if (!r.urls || r.urls.length === 0) {
             el.innerHTML = '<p style="color:var(--fpc-text2); font-size:13px;">Keine eigenen URLs definiert.</p>';
             return;
@@ -1343,7 +1345,7 @@ function fpc_remove_custom_url($file, $url) {
 
     window.fpcCacheSingleDirect = async function(url) {
         fpcToast('Wird gecacht: ' + url, 'info');
-        const r = await fpcPost({ ajax: 'cache_url' }, { url: url });
+        var r = await fpcPost({ ajax: 'cache_url' }, { url: url });
         fpcToast(r.msg, r.ok ? 'success' : 'error');
     };
 
@@ -1352,8 +1354,8 @@ function fpc_remove_custom_url($file, $url) {
     // ============================================================
     window.fpcLoadUrls = async function(page) {
         currentUrlPage = page || 1;
-        const search = document.getElementById('url-search').value.trim();
-        const r = await fpcGet({ ajax: 'urls', search: search, page: currentUrlPage });
+        var search = document.getElementById('url-search').value.trim();
+        var r = await fpcGet({ ajax: 'urls', search: search, page: currentUrlPage });
 
         document.getElementById('url-count').textContent = r.total + ' gecachte URLs' + (search ? ' (Filter: "' + search + '")' : '');
 
@@ -1362,7 +1364,7 @@ function fpc_remove_custom_url($file, $url) {
             html += '<tr><td colspan="5" style="text-align:center; color:var(--fpc-text2);">Keine URLs gefunden</td></tr>';
         }
         r.urls.forEach(u => {
-            const ageColor = u.age_h > 24 ? 'var(--fpc-danger)' : u.age_h > 12 ? 'var(--fpc-warn)' : 'var(--fpc-success)';
+            var ageColor = u.age_h > 24 ? 'var(--fpc-danger)' : u.age_h > 12 ? 'var(--fpc-warn)' : 'var(--fpc-success)';
             html += '<tr>'
                   + '<td><code style="font-size:12px;">' + u.path + '</code></td>'
                   + '<td>' + u.size_f + '</td>'
@@ -1397,14 +1399,14 @@ function fpc_remove_custom_url($file, $url) {
 
     window.fpcRecacheUrl = async function(path) {
         fpcToast('Wird neu gecacht: ' + path, 'info');
-        const r = await fpcPost({ ajax: 'cache_url' }, { url: path });
+        var r = await fpcPost({ ajax: 'cache_url' }, { url: path });
         fpcToast(r.msg, r.ok ? 'success' : 'error');
         fpcLoadUrls(currentUrlPage);
     };
 
     window.fpcRemoveUrl = async function(path) {
         if (!confirm('Aus Cache entfernen: ' + path + '?')) return;
-        const r = await fpcPost({ ajax: 'remove_url' }, { path: path });
+        var r = await fpcPost({ ajax: 'remove_url' }, { path: path });
         fpcToast(r.msg, r.ok ? 'success' : 'error');
         fpcLoadUrls(currentUrlPage);
     };
@@ -1414,13 +1416,13 @@ function fpc_remove_custom_url($file, $url) {
     // ============================================================
     window.fpcLoadLog = async function(type) {
         currentLogType = type;
-        const lines = document.getElementById('log-lines').value;
+        var lines = document.getElementById('log-lines').value;
         document.getElementById('btn-log-preloader').classList.toggle('teal', type === 'preloader');
         document.getElementById('btn-log-preloader').classList.toggle('dark', type !== 'preloader');
         document.getElementById('btn-log-rebuild').classList.toggle('teal', type === 'rebuild');
         document.getElementById('btn-log-rebuild').classList.toggle('dark', type !== 'rebuild');
 
-        const r = await fpcGet({ ajax: 'log', type: type, lines: lines });
+        var r = await fpcGet({ ajax: 'log', type: type, lines: lines });
         document.getElementById('log-info').textContent = r.file + ' (letzte ' + lines + ' Zeilen)';
 
         // Syntax-Highlighting
@@ -1434,7 +1436,7 @@ function fpc_remove_custom_url($file, $url) {
         content = content.replace(/^(.*Gecacht:.*)$/gm, '<span class="log-ok">$1</span>');
         content = content.replace(/^(.*Start:.*)$/gm, '<span class="log-info">$1</span>');
 
-        const el = document.getElementById('log-content');
+        var el = document.getElementById('log-content');
         el.innerHTML = content;
         el.scrollTop = el.scrollHeight;
     };
@@ -1444,7 +1446,7 @@ function fpc_remove_custom_url($file, $url) {
     };
 
     window.fpcAutoRefreshLog = function() {
-        const btn = document.getElementById('btn-log-auto');
+        var btn = document.getElementById('btn-log-auto');
         if (autoRefreshInterval) {
             clearInterval(autoRefreshInterval);
             autoRefreshInterval = null;
@@ -1469,7 +1471,7 @@ function fpc_remove_custom_url($file, $url) {
         fpcToast('Monitoring-Test gestartet (' + count + ' URLs)...', 'info');
 
         try {
-            const r = await fpcPost({ ajax: 'run_monitor' }, { count: count });
+            var r = await fpcPost({ ajax: 'run_monitor' }, { count: count });
             if (r.ok && r.run) {
                 fpcToast('Test abgeschlossen: HIT-Rate ' + r.run.hit_rate + '%', 'success');
                 renderMonitorResults(r.run);
@@ -1495,8 +1497,8 @@ function fpc_remove_custom_url($file, $url) {
 
         html += '<div class="fpc-table-wrap"><table class="fpc-table"><thead><tr><th>URL</th><th>HTTP</th><th>FPC</th><th>TTFB</th><th>Redirect</th></tr></thead><tbody>';
         run.results.forEach(r => {
-            const fpcClass = r.fpc === 'HIT' ? 'hit' : 'miss';
-            const httpColor = r.http >= 400 ? 'var(--fpc-danger)' : r.http >= 300 ? 'var(--fpc-warn)' : 'var(--fpc-success)';
+            var fpcClass = r.fpc === 'HIT' ? 'hit' : 'miss';
+            var httpColor = r.http >= 400 ? 'var(--fpc-danger)' : r.http >= 300 ? 'var(--fpc-warn)' : 'var(--fpc-success)';
             html += '<tr>'
                 + '<td><code style="font-size:11px;">' + r.url + '</code></td>'
                 + '<td style="color:' + httpColor + ';">' + r.http + '</td>'
@@ -1510,18 +1512,19 @@ function fpc_remove_custom_url($file, $url) {
     }
 
     async function fpcLoadMonitorData() {
-        const data = await fpcGet({ ajax: 'monitor_data' });
+        var data = await fpcGet({ ajax: 'monitor_data' });
         if (!data.runs || data.runs.length === 0) {
             document.getElementById('monitor-history').innerHTML = '<p style="color:var(--fpc-text2);">Noch keine Tests durchgefuehrt.</p>';
             return;
         }
 
         // Charts
-        const labels = data.runs.map(r => r.timestamp.substring(5, 16));
-        const hitrates = data.runs.map(r => r.hit_rate);
-        const ttfbs = data.runs.map(r => r.avg_ttfb);
+        var labels = data.runs.map(r => r.timestamp.substring(5, 16));
+        var hitrates = data.runs.map(r => r.hit_rate);
+        var ttfbs = data.runs.map(r => r.avg_ttfb);
 
-        const ctxHit = document.getElementById('chart-monitor-hitrate').getContext('2d');
+        if (typeof Chart === 'undefined') return;
+        var ctxHit = document.getElementById('chart-monitor-hitrate').getContext('2d');
         if (chartMonitorHitrate) chartMonitorHitrate.destroy();
         chartMonitorHitrate = new Chart(ctxHit, {
             type: 'line',
@@ -1548,7 +1551,7 @@ function fpc_remove_custom_url($file, $url) {
             }
         });
 
-        const ctxTtfb = document.getElementById('chart-monitor-ttfb').getContext('2d');
+        var ctxTtfb = document.getElementById('chart-monitor-ttfb').getContext('2d');
         if (chartMonitorTtfb) chartMonitorTtfb.destroy();
         chartMonitorTtfb = new Chart(ctxTtfb, {
             type: 'line',
@@ -1578,7 +1581,7 @@ function fpc_remove_custom_url($file, $url) {
         // Historie-Tabelle
         let html = '<div class="fpc-table-wrap"><table class="fpc-table"><thead><tr><th>Zeitpunkt</th><th>URLs</th><th>HIT-Rate</th><th>HITs</th><th>MISSes</th><th>Redirects</th><th>Ø TTFB</th></tr></thead><tbody>';
         data.runs.slice().reverse().forEach(r => {
-            const hitColor = r.hit_rate >= 90 ? 'var(--fpc-success)' : r.hit_rate >= 70 ? 'var(--fpc-warn)' : 'var(--fpc-danger)';
+            var hitColor = r.hit_rate >= 90 ? 'var(--fpc-success)' : r.hit_rate >= 70 ? 'var(--fpc-warn)' : 'var(--fpc-danger)';
             html += '<tr>'
                 + '<td>' + r.timestamp + '</td>'
                 + '<td>' + r.total + '</td>'
@@ -1596,16 +1599,20 @@ function fpc_remove_custom_url($file, $url) {
     // ============================================================
     // INIT
     // ============================================================
-    fpcLoadStatus();
-    setInterval(fpcLoadStatus, 30000); // Alle 30s aktualisieren
+    try {
+        fpcLoadStatus();
+        setInterval(fpcLoadStatus, 30000); // Alle 30s aktualisieren
 
-    // Tab-spezifische Init
-    const activeTab = '<?php echo $active_tab; ?>';
-    if (activeTab === 'urls') fpcLoadUrls(1);
-    if (activeTab === 'monitoring') fpcLoadMonitorData();
-    if (activeTab === 'steuerung') fpcLoadCustomUrls();
+        // Tab-spezifische Init
+        var activeTab = '<?php echo $active_tab; ?>';
+        if (activeTab === 'urls') fpcLoadUrls(1);
+        if (activeTab === 'monitoring') fpcLoadMonitorData();
+        if (activeTab === 'steuerung') fpcLoadCustomUrls();
+    } catch (initErr) {
+        console.error('FPC Dashboard Init-Fehler:', initErr);
+    }
 
-})();
+});
 </script>
 </body>
 </html>
