@@ -1,6 +1,6 @@
 <?php
 /**
- * Mr. Hanf FPC Control Center v9.0.8
+ * Mr. Hanf FPC Control Center v9.1.0
  *
  * Enterprise-Level Dashboard for the Full Page Cache System.
  *
@@ -18,6 +18,16 @@
  *   11. Statistics   - Visitors, Bounce Rate, Duration, Devices
  *   12. Alerts       - Thresholds, Notifications, History
  *   13. Settings     - All FPC configuration in one place
+ *   14. GSC          - Google Search Console: Indexing, Clicks, Queries
+ *   15. Analytics    - Google Analytics 4: Traffic, Devices, Sources
+ *   16. SISTRIX      - Visibility Index, Rankings, Competitors
+ *
+ * v9.1.0 NEW:
+ *   - NEW: Remote Management API (fpc_api.php) with token auth
+ *   - NEW: Google Search Console tab (Tab 14) - Indexing, Clicks, Queries
+ *   - NEW: Google Analytics 4 tab (Tab 15) - Traffic, Devices, Sources
+ *   - NEW: SISTRIX tab (Tab 16) - Visibility, Rankings, Competitors
+ *   - NEW: API credentials config in Settings tab
  *
  * v9.0.8 FIXES:
  *   - FIX: Health Check tab now renders actual healthcheck.json structure
@@ -70,7 +80,7 @@ $alerts_log     = $cache_dir . 'alerts_history.json';
 $shop_url       = 'https://mr-hanf.de';
 
 $active_tab = isset($_GET['tab']) ? $_GET['tab'] : 'dashboard';
-$allowed_tabs = array('dashboard','performance','coverage','steuerung','urls','preloader','fehler','seo','inspector','health','statistik','alerts','settings');
+$allowed_tabs = array('dashboard','performance','coverage','steuerung','urls','preloader','fehler','seo','inspector','health','statistik','alerts','settings','gsc','analytics','sistrix');
 if (!in_array($active_tab, $allowed_tabs)) $active_tab = 'dashboard';
 
 // ============================================================
@@ -246,6 +256,32 @@ if (isset($_GET['ajax'])) {
         case 'settings_save':
             $cfg = json_decode(file_get_contents('php://input'), true);
             echo json_encode(fpc_save_settings($cfg, $cache_dir));
+            exit;
+
+        // v9.1.0: Google Search Console
+        case 'gsc_data':
+            echo json_encode(fpc_get_gsc_data($cache_dir, $base_dir));
+            exit;
+
+        // v9.1.0: Google Analytics 4
+        case 'ga4_data':
+            echo json_encode(fpc_get_ga4_data($cache_dir, $base_dir));
+            exit;
+
+        // v9.1.0: SISTRIX
+        case 'sistrix_data':
+            echo json_encode(fpc_get_sistrix_data($cache_dir, $base_dir));
+            exit;
+
+        // v9.1.0: Save API credentials
+        case 'save_api_credentials':
+            $creds = json_decode(file_get_contents('php://input'), true);
+            echo json_encode(fpc_save_api_credentials($cache_dir, $creds));
+            exit;
+
+        // v9.1.0: Load API credentials
+        case 'load_api_credentials':
+            echo json_encode(fpc_load_api_credentials($cache_dir));
             exit;
     }
     exit;
@@ -1046,6 +1082,89 @@ function fpc_get_preloader_status($cache_dir, $pid_file, $log_file, $rebuild_log
 }
 
 // ============================================================
+// v9.1.0: EXTERNAL INTEGRATIONS (GSC, GA4, SISTRIX)
+// ============================================================
+
+function fpc_load_api_credentials($cache_dir) {
+    $file = $cache_dir . 'api_credentials.json';
+    $defaults = array(
+        'gsc_service_account' => '',
+        'gsc_site_url' => 'https://mr-hanf.de/',
+        'ga4_service_account' => '',
+        'ga4_property_id' => '',
+        'sistrix_api_key' => '',
+        'sistrix_domain' => 'mr-hanf.de',
+    );
+    if (!is_file($file)) return $defaults;
+    $data = @json_decode(file_get_contents($file), true);
+    return $data ? array_merge($defaults, $data) : $defaults;
+}
+
+function fpc_save_api_credentials($cache_dir, $creds) {
+    $file = $cache_dir . 'api_credentials.json';
+    // Only save known keys
+    $allowed = array('gsc_service_account','gsc_site_url','ga4_service_account','ga4_property_id','sistrix_api_key','sistrix_domain');
+    $save = array();
+    foreach ($allowed as $k) {
+        $save[$k] = isset($creds[$k]) ? trim($creds[$k]) : '';
+    }
+    file_put_contents($file, json_encode($save, JSON_PRETTY_PRINT));
+    return array('ok' => true, 'msg' => 'API credentials saved');
+}
+
+function fpc_get_gsc_data($cache_dir, $base_dir) {
+    $creds = fpc_load_api_credentials($cache_dir);
+    $sa_file = $creds['gsc_service_account'];
+    if (empty($sa_file) || !is_file($base_dir . $sa_file)) {
+        return array('error' => true, 'msg' => 'Google Service Account JSON not configured. Go to Settings > API Credentials to set the path.', 'configured' => false);
+    }
+    try {
+        require_once($base_dir . 'fpc_gsc.php');
+        $gsc = new FPC_GoogleSearchConsole($base_dir . $sa_file, $creds['gsc_site_url'], $cache_dir . 'gsc/');
+        $data = $gsc->getDashboardData(28);
+        $data['configured'] = true;
+        return $data;
+    } catch (Exception $e) {
+        return array('error' => true, 'msg' => 'GSC Error: ' . $e->getMessage(), 'configured' => true);
+    }
+}
+
+function fpc_get_ga4_data($cache_dir, $base_dir) {
+    $creds = fpc_load_api_credentials($cache_dir);
+    $sa_file = $creds['ga4_service_account'];
+    $prop_id = $creds['ga4_property_id'];
+    if (empty($sa_file) || empty($prop_id) || !is_file($base_dir . $sa_file)) {
+        return array('error' => true, 'msg' => 'Google Analytics 4 not configured. Go to Settings > API Credentials to set Service Account path and Property ID.', 'configured' => false);
+    }
+    try {
+        require_once($base_dir . 'fpc_ga4.php');
+        $ga4 = new FPC_GoogleAnalytics4($base_dir . $sa_file, $prop_id, $cache_dir . 'ga4/');
+        $data = $ga4->getDashboardData(30);
+        $data['configured'] = true;
+        return $data;
+    } catch (Exception $e) {
+        return array('error' => true, 'msg' => 'GA4 Error: ' . $e->getMessage(), 'configured' => true);
+    }
+}
+
+function fpc_get_sistrix_data($cache_dir, $base_dir) {
+    $creds = fpc_load_api_credentials($cache_dir);
+    $api_key = $creds['sistrix_api_key'];
+    if (empty($api_key)) {
+        return array('error' => true, 'msg' => 'SISTRIX API key not configured. Go to Settings > API Credentials to set your API key.', 'configured' => false);
+    }
+    try {
+        require_once($base_dir . 'fpc_sistrix.php');
+        $sx = new FPC_Sistrix($api_key, $creds['sistrix_domain'], $cache_dir . 'sistrix/');
+        $data = $sx->getDashboardData();
+        $data['configured'] = true;
+        return $data;
+    } catch (Exception $e) {
+        return array('error' => true, 'msg' => 'SISTRIX Error: ' . $e->getMessage(), 'configured' => true);
+    }
+}
+
+// ============================================================
 // SEITENAUSGABE (HTML)
 // ============================================================
 $page_title = 'FPC Control Center';
@@ -1055,7 +1174,7 @@ $page_title = 'FPC Control Center';
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title><?php echo $page_title; ?> v9.0.8</title>
+<title><?php echo $page_title; ?> v9.1.0</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4" defer></script>
 <style>
 :root { --fpc-bg:#0d1b2a; --fpc-card:#1b2838; --fpc-border:#2a3a4a; --fpc-text:#e0e6ed; --fpc-text2:#8899aa; --fpc-teal:#00d4aa; --fpc-green:#00e676; --fpc-red:#ff4757; --fpc-orange:#ffa502; --fpc-yellow:#ffd32a; --fpc-blue:#00a8ff; }
@@ -1140,7 +1259,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 
 <!-- HEADER -->
 <div class="fpc-header">
-    <h1>FPC Control Center <span>v9.0.8</span></h1>
+    <h1>FPC Control Center <span>v9.1.0</span></h1>
     <div class="fpc-quick-actions">
         <button class="fpc-quick-btn" onclick="fpcFlush()" title="Flush Cache">&#128465; Flush</button>
         <button class="fpc-quick-btn" onclick="fpcRebuild()" title="Rebuild Cache">&#8635; Rebuild</button>
@@ -1148,7 +1267,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
     </div>
     <div>
         <span id="fpc-clock" style="color:var(--fpc-text2);font-size:12px;"></span>
-        <span class="fpc-version">v9.0.8</span>
+        <span class="fpc-version">v9.1.0</span>
     </div>
 </div>
 
@@ -1161,6 +1280,9 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
         'fehler' => '&#9888; Errors', 'seo' => '&#128270; SEO', 'inspector' => '&#128269; Inspector',
         'health' => '&#128154; Health', 'statistik' => '&#128200; Statistics', 'alerts' => '&#128276; Alerts',
         'settings' => '&#9881; Settings',
+        'gsc' => '&#128270; GSC',
+        'analytics' => '&#128200; Analytics',
+        'sistrix' => '&#128202; SISTRIX',
     );
     foreach ($tab_labels as $key => $label) {
         $cls = ($active_tab === $key) ? 'fpc-tab active' : 'fpc-tab';
@@ -1414,17 +1536,115 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
     <p style="color:var(--fpc-text2);font-size:12px;margin-bottom:12px;">Settings for the daily health check cron job.</p>
     <div id="settings-healthcheck" style="background:var(--fpc-card);border-radius:10px;padding:20px;border:1px solid var(--fpc-border);margin-bottom:20px;"></div>
 
+    <div class="fpc-section-title">API Credentials (External Integrations)</div>
+    <p style="color:var(--fpc-text2);font-size:12px;margin-bottom:12px;">Configure API keys for Google Search Console, Google Analytics 4, and SISTRIX. Credentials are stored locally in <code>cache/fpc/api_credentials.json</code>.</p>
+    <div id="settings-api-creds" style="background:var(--fpc-card);border-radius:10px;padding:20px;border:1px solid var(--fpc-border);margin-bottom:20px;"></div>
+
+    <div class="fpc-section-title">Remote Management API</div>
+    <p style="color:var(--fpc-text2);font-size:12px;margin-bottom:12px;">The FPC API allows remote management via <code>fpc_api.php</code>. Use the token below for authentication.</p>
+    <div style="background:var(--fpc-card);border-radius:10px;padding:20px;border:1px solid var(--fpc-border);margin-bottom:20px;">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+            <div>
+                <label style="color:var(--fpc-text2);font-size:12px;display:block;margin-bottom:4px;">API Endpoint</label>
+                <input type="text" class="fpc-input" value="https://mr-hanf.de/fpc_api.php" readonly style="width:100%;">
+            </div>
+            <div>
+                <label style="color:var(--fpc-text2);font-size:12px;display:block;margin-bottom:4px;">API Token</label>
+                <input type="text" class="fpc-input" value="(configured in fpc_api.php)" readonly style="width:100%;">
+                <small style="color:var(--fpc-text2);font-size:11px;">Token is set directly in fpc_api.php for security</small>
+            </div>
+        </div>
+    </div>
+
     <div style="margin-top:20px;">
         <button class="fpc-btn green" onclick="fpcSaveSettings()">&#128190; Save All Settings</button>
+        <button class="fpc-btn green" onclick="fpcSaveApiCredentials()" style="margin-left:8px;">&#128190; Save API Credentials</button>
         <button class="fpc-btn orange" onclick="fpcLoadSettings()" style="margin-left:8px;">&#8635; Reset to Saved</button>
     </div>
+</div>
+
+<!-- ========== TAB 14: GOOGLE SEARCH CONSOLE ========== -->
+<div class="fpc-panel <?php echo $active_tab === 'gsc' ? 'active' : ''; ?>" id="panel-gsc">
+    <div id="gsc-setup" style="display:none;">
+        <div style="background:var(--fpc-card);border-radius:10px;padding:30px;border:1px solid var(--fpc-border);max-width:600px;margin:40px auto;text-align:center;">
+            <h3 style="color:var(--fpc-teal);margin-bottom:16px;">Google Search Console Setup</h3>
+            <p style="color:var(--fpc-text2);margin-bottom:20px;">To use this feature, you need to configure a Google Service Account.<br>Go to <strong>Settings tab > API Credentials</strong> to set up your credentials.</p>
+            <a href="?tab=settings" class="fpc-btn green" style="text-decoration:none;">Go to Settings</a>
+        </div>
+    </div>
+    <div id="gsc-content" style="display:none;">
+        <div class="fpc-kpis" id="gsc-kpis"></div>
+        <div class="fpc-charts">
+            <div class="fpc-chart-box"><h3>Daily Clicks & Impressions (28 Days)</h3><canvas id="chart-gsc-daily" height="200"></canvas></div>
+            <div class="fpc-chart-box"><h3>Average Position & CTR (28 Days)</h3><canvas id="chart-gsc-position" height="200"></canvas></div>
+        </div>
+        <div class="fpc-section-title">Top Search Queries</div>
+        <div id="gsc-queries" style="overflow-x:auto;"></div>
+        <div class="fpc-section-title" style="margin-top:20px;">Top Pages by Clicks</div>
+        <div id="gsc-pages" style="overflow-x:auto;"></div>
+        <div class="fpc-section-title" style="margin-top:20px;">Sitemaps Status</div>
+        <div id="gsc-sitemaps" style="overflow-x:auto;"></div>
+    </div>
+    <div id="gsc-error" style="display:none;"></div>
+</div>
+
+<!-- ========== TAB 15: GOOGLE ANALYTICS 4 ========== -->
+<div class="fpc-panel <?php echo $active_tab === 'analytics' ? 'active' : ''; ?>" id="panel-analytics">
+    <div id="ga4-setup" style="display:none;">
+        <div style="background:var(--fpc-card);border-radius:10px;padding:30px;border:1px solid var(--fpc-border);max-width:600px;margin:40px auto;text-align:center;">
+            <h3 style="color:var(--fpc-teal);margin-bottom:16px;">Google Analytics 4 Setup</h3>
+            <p style="color:var(--fpc-text2);margin-bottom:20px;">To use this feature, configure a Google Service Account and GA4 Property ID.<br>Go to <strong>Settings tab > API Credentials</strong> to set up.</p>
+            <a href="?tab=settings" class="fpc-btn green" style="text-decoration:none;">Go to Settings</a>
+        </div>
+    </div>
+    <div id="ga4-content" style="display:none;">
+        <div class="fpc-kpis" id="ga4-kpis"></div>
+        <div class="fpc-charts">
+            <div class="fpc-chart-box"><h3>Daily Sessions & Users (30 Days)</h3><canvas id="chart-ga4-daily" height="200"></canvas></div>
+            <div class="fpc-chart-box"><h3>Traffic by Device</h3><canvas id="chart-ga4-devices" height="200"></canvas></div>
+        </div>
+        <div class="fpc-charts">
+            <div class="fpc-chart-box"><h3>Traffic Sources</h3><canvas id="chart-ga4-sources" height="200"></canvas></div>
+            <div class="fpc-chart-box"><h3>Hourly Traffic (Today)</h3><canvas id="chart-ga4-hourly" height="200"></canvas></div>
+        </div>
+        <div class="fpc-section-title">Top Pages by Pageviews</div>
+        <div id="ga4-pages" style="overflow-x:auto;"></div>
+        <div class="fpc-section-title" style="margin-top:20px;">Top Countries</div>
+        <div id="ga4-countries" style="overflow-x:auto;"></div>
+    </div>
+    <div id="ga4-error" style="display:none;"></div>
+</div>
+
+<!-- ========== TAB 16: SISTRIX ========== -->
+<div class="fpc-panel <?php echo $active_tab === 'sistrix' ? 'active' : ''; ?>" id="panel-sistrix">
+    <div id="sx-setup" style="display:none;">
+        <div style="background:var(--fpc-card);border-radius:10px;padding:30px;border:1px solid var(--fpc-border);max-width:600px;margin:40px auto;text-align:center;">
+            <h3 style="color:var(--fpc-teal);margin-bottom:16px;">SISTRIX Setup</h3>
+            <p style="color:var(--fpc-text2);margin-bottom:20px;">To use this feature, enter your SISTRIX API key.<br>Go to <strong>Settings tab > API Credentials</strong> to configure.</p>
+            <a href="?tab=settings" class="fpc-btn green" style="text-decoration:none;">Go to Settings</a>
+        </div>
+    </div>
+    <div id="sx-content" style="display:none;">
+        <div class="fpc-kpis" id="sx-kpis"></div>
+        <div class="fpc-charts">
+            <div class="fpc-chart-box"><h3>Visibility Index History</h3><canvas id="chart-sx-visibility" height="200"></canvas></div>
+            <div class="fpc-chart-box"><h3>Ranking Distribution</h3><canvas id="chart-sx-ranking" height="200"></canvas></div>
+        </div>
+        <div class="fpc-section-title">Top Keywords</div>
+        <div id="sx-keywords" style="overflow-x:auto;"></div>
+        <div class="fpc-section-title" style="margin-top:20px;">Keyword Winners / Losers</div>
+        <div id="sx-changes" style="overflow-x:auto;"></div>
+        <div class="fpc-section-title" style="margin-top:20px;">Top Competitors</div>
+        <div id="sx-competitors" style="overflow-x:auto;"></div>
+    </div>
+    <div id="sx-error" style="display:none;"></div>
 </div>
 
 </div><!-- /fpc-content -->
 
 <script>
 // ============================================================
-// JAVASCRIPT v9.0.8
+// JAVASCRIPT v9.1.0
 // ============================================================
 var BASE = '<?php echo basename(__FILE__); ?>';
 var chartInstances = {};
@@ -2179,6 +2399,347 @@ function fpcSaveSettings() {
 }
 
 // ============================================================
+// TAB 14: GOOGLE SEARCH CONSOLE
+// ============================================================
+function fpcLoadGSC() {
+    fpcAjax('ajax=gsc_data', function(d) {
+        if (!d.configured) {
+            document.getElementById('gsc-setup').style.display = 'block';
+            document.getElementById('gsc-content').style.display = 'none';
+            return;
+        }
+        if (d.error) {
+            document.getElementById('gsc-error').style.display = 'block';
+            document.getElementById('gsc-error').innerHTML = '<div style="background:var(--fpc-card);border:1px solid var(--fpc-red);border-radius:10px;padding:20px;margin:20px 0;"><strong style="color:var(--fpc-red);">Error:</strong> ' + d.msg + '</div>';
+            return;
+        }
+        document.getElementById('gsc-content').style.display = 'block';
+
+        // KPIs from performance data
+        var perf = d.performance;
+        var totalClicks = 0, totalImpressions = 0, avgCtr = 0, avgPos = 0;
+        if (perf && perf.rows) {
+            perf.rows.forEach(function(r) {
+                totalClicks += r.clicks || 0;
+                totalImpressions += r.impressions || 0;
+            });
+            avgCtr = totalImpressions > 0 ? (totalClicks / totalImpressions * 100) : 0;
+            var posSum = 0, posCount = 0;
+            perf.rows.forEach(function(r) { if (r.position) { posSum += r.position; posCount++; } });
+            avgPos = posCount > 0 ? (posSum / posCount) : 0;
+        }
+        document.getElementById('gsc-kpis').innerHTML =
+            fpcKpiBox('Total Clicks', fpcNum(totalClicks), 'teal') +
+            fpcKpiBox('Total Impressions', fpcNum(totalImpressions), 'blue') +
+            fpcKpiBox('Avg CTR', avgCtr.toFixed(1) + '%', avgCtr > 3 ? 'green' : 'orange') +
+            fpcKpiBox('Avg Position', avgPos.toFixed(1), avgPos < 20 ? 'green' : 'orange');
+
+        // Daily chart
+        if (perf && perf.rows) {
+            var labels = [], clicks = [], impressions = [];
+            perf.rows.forEach(function(r) {
+                labels.push(r.keys ? r.keys[0] : '');
+                clicks.push(r.clicks || 0);
+                impressions.push(r.impressions || 0);
+            });
+            fpcChart('chart-gsc-daily', 'line', labels, [
+                {label: 'Clicks', data: clicks, borderColor: '#00d4aa', backgroundColor: 'rgba(0,212,170,0.1)', fill: true},
+                {label: 'Impressions', data: impressions, borderColor: '#00a8ff', backgroundColor: 'rgba(0,168,255,0.1)', fill: true, yAxisID: 'y1'}
+            ], {scales: {y: {position: 'left'}, y1: {position: 'right', grid: {drawOnChartArea: false}}}});
+        }
+
+        // Top Queries table
+        var queries = d.top_queries;
+        if (queries && queries.rows) {
+            var html = '<table class="fpc-table"><thead><tr><th>Query</th><th>Clicks</th><th>Impressions</th><th>CTR</th><th>Position</th></tr></thead><tbody>';
+            queries.rows.forEach(function(r) {
+                html += '<tr><td>' + (r.keys ? r.keys[0] : '') + '</td><td>' + (r.clicks||0) + '</td><td>' + fpcNum(r.impressions||0) + '</td><td>' + ((r.ctr||0)*100).toFixed(1) + '%</td><td>' + (r.position||0).toFixed(1) + '</td></tr>';
+            });
+            html += '</tbody></table>';
+            document.getElementById('gsc-queries').innerHTML = html;
+        }
+
+        // Top Pages table
+        var pages = d.top_pages;
+        if (pages && pages.rows) {
+            var html = '<table class="fpc-table"><thead><tr><th>Page</th><th>Clicks</th><th>Impressions</th><th>CTR</th><th>Position</th></tr></thead><tbody>';
+            pages.rows.forEach(function(r) {
+                var url = r.keys ? r.keys[0] : '';
+                var short = url.replace('https://mr-hanf.de', '');
+                html += '<tr><td title="' + url + '">' + short.substring(0,60) + '</td><td>' + (r.clicks||0) + '</td><td>' + fpcNum(r.impressions||0) + '</td><td>' + ((r.ctr||0)*100).toFixed(1) + '%</td><td>' + (r.position||0).toFixed(1) + '</td></tr>';
+            });
+            html += '</tbody></table>';
+            document.getElementById('gsc-pages').innerHTML = html;
+        }
+
+        // Sitemaps
+        var sitemaps = d.sitemaps;
+        if (sitemaps && sitemaps.sitemap) {
+            var html = '<table class="fpc-table"><thead><tr><th>Sitemap</th><th>Type</th><th>Submitted</th><th>Last Downloaded</th><th>Status</th></tr></thead><tbody>';
+            sitemaps.sitemap.forEach(function(s) {
+                html += '<tr><td>' + (s.path||'') + '</td><td>' + (s.type||'') + '</td><td>' + (s.lastSubmitted||'').substring(0,10) + '</td><td>' + (s.lastDownloaded||'').substring(0,10) + '</td><td>' + (s.isPending ? 'Pending' : 'OK') + '</td></tr>';
+            });
+            html += '</tbody></table>';
+            document.getElementById('gsc-sitemaps').innerHTML = html;
+        }
+    });
+}
+
+// ============================================================
+// TAB 15: GOOGLE ANALYTICS 4
+// ============================================================
+function fpcLoadGA4() {
+    fpcAjax('ajax=ga4_data', function(d) {
+        if (!d.configured) {
+            document.getElementById('ga4-setup').style.display = 'block';
+            document.getElementById('ga4-content').style.display = 'none';
+            return;
+        }
+        if (d.error) {
+            document.getElementById('ga4-error').style.display = 'block';
+            document.getElementById('ga4-error').innerHTML = '<div style="background:var(--fpc-card);border:1px solid var(--fpc-red);border-radius:10px;padding:20px;margin:20px 0;"><strong style="color:var(--fpc-red);">Error:</strong> ' + d.msg + '</div>';
+            return;
+        }
+        document.getElementById('ga4-content').style.display = 'block';
+
+        // Parse GA4 daily traffic
+        var daily = d.daily_traffic;
+        if (daily && daily.rows) {
+            var labels = [], sessions = [], users = [], pageviews = [];
+            var totalSessions = 0, totalUsers = 0, totalPV = 0, avgBounce = 0;
+            daily.rows.forEach(function(r) {
+                var date = r.dimensionValues ? r.dimensionValues[0].value : '';
+                if (date.length === 8) date = date.substring(0,4) + '-' + date.substring(4,6) + '-' + date.substring(6,8);
+                labels.push(date);
+                var s = r.metricValues ? parseInt(r.metricValues[0].value) : 0;
+                var u = r.metricValues ? parseInt(r.metricValues[1].value) : 0;
+                var pv = r.metricValues ? parseInt(r.metricValues[2].value) : 0;
+                sessions.push(s); users.push(u); pageviews.push(pv);
+                totalSessions += s; totalUsers += u; totalPV += pv;
+                avgBounce += r.metricValues ? parseFloat(r.metricValues[3].value) : 0;
+            });
+            avgBounce = daily.rows.length > 0 ? (avgBounce / daily.rows.length * 100) : 0;
+
+            document.getElementById('ga4-kpis').innerHTML =
+                fpcKpiBox('Sessions (30d)', fpcNum(totalSessions), 'teal') +
+                fpcKpiBox('Users (30d)', fpcNum(totalUsers), 'blue') +
+                fpcKpiBox('Pageviews (30d)', fpcNum(totalPV), 'green') +
+                fpcKpiBox('Avg Bounce Rate', avgBounce.toFixed(1) + '%', avgBounce < 50 ? 'green' : 'orange');
+
+            fpcChart('chart-ga4-daily', 'line', labels, [
+                {label: 'Sessions', data: sessions, borderColor: '#00d4aa', backgroundColor: 'rgba(0,212,170,0.1)', fill: true},
+                {label: 'Users', data: users, borderColor: '#00a8ff', backgroundColor: 'rgba(0,168,255,0.1)', fill: true}
+            ]);
+        }
+
+        // Devices pie chart
+        var devices = d.devices;
+        if (devices && devices.rows) {
+            var devLabels = [], devData = [], devColors = ['#00d4aa','#00a8ff','#ffa502','#ff4757'];
+            devices.rows.forEach(function(r) {
+                devLabels.push(r.dimensionValues ? r.dimensionValues[0].value : '');
+                devData.push(r.metricValues ? parseInt(r.metricValues[0].value) : 0);
+            });
+            fpcChart('chart-ga4-devices', 'doughnut', devLabels, [{data: devData, backgroundColor: devColors}]);
+        }
+
+        // Traffic Sources bar chart
+        var sources = d.traffic_sources;
+        if (sources && sources.rows) {
+            var srcLabels = [], srcData = [];
+            sources.rows.slice(0, 10).forEach(function(r) {
+                srcLabels.push(r.dimensionValues ? r.dimensionValues[0].value : '');
+                srcData.push(r.metricValues ? parseInt(r.metricValues[0].value) : 0);
+            });
+            fpcChart('chart-ga4-sources', 'bar', srcLabels, [{label: 'Sessions', data: srcData, backgroundColor: '#00d4aa'}]);
+        }
+
+        // Hourly chart
+        var hourly = d.hourly;
+        if (hourly && hourly.rows) {
+            var hLabels = [], hSessions = [], hPV = [];
+            for (var h = 0; h < 24; h++) { hLabels.push(h + ':00'); hSessions.push(0); hPV.push(0); }
+            hourly.rows.forEach(function(r) {
+                var hour = r.dimensionValues ? parseInt(r.dimensionValues[0].value) : 0;
+                hSessions[hour] = r.metricValues ? parseInt(r.metricValues[0].value) : 0;
+                hPV[hour] = r.metricValues ? parseInt(r.metricValues[1].value) : 0;
+            });
+            fpcChart('chart-ga4-hourly', 'bar', hLabels, [
+                {label: 'Sessions', data: hSessions, backgroundColor: '#00d4aa'},
+                {label: 'Pageviews', data: hPV, backgroundColor: '#00a8ff'}
+            ]);
+        }
+
+        // Top Pages table
+        var pages = d.top_pages;
+        if (pages && pages.rows) {
+            var html = '<table class="fpc-table"><thead><tr><th>Page</th><th>Pageviews</th><th>Sessions</th><th>Bounce Rate</th><th>Avg Duration</th></tr></thead><tbody>';
+            pages.rows.forEach(function(r) {
+                var path = r.dimensionValues ? r.dimensionValues[0].value : '';
+                var pv = r.metricValues ? r.metricValues[0].value : '0';
+                var sess = r.metricValues ? r.metricValues[1].value : '0';
+                var bounce = r.metricValues ? (parseFloat(r.metricValues[2].value)*100).toFixed(1) : '0';
+                var dur = r.metricValues ? parseFloat(r.metricValues[3].value).toFixed(0) : '0';
+                html += '<tr><td title="' + path + '">' + path.substring(0,60) + '</td><td>' + pv + '</td><td>' + sess + '</td><td>' + bounce + '%</td><td>' + dur + 's</td></tr>';
+            });
+            html += '</tbody></table>';
+            document.getElementById('ga4-pages').innerHTML = html;
+        }
+
+        // Countries table
+        var countries = d.countries;
+        if (countries && countries.rows) {
+            var html = '<table class="fpc-table"><thead><tr><th>Country</th><th>Sessions</th><th>Users</th></tr></thead><tbody>';
+            countries.rows.forEach(function(r) {
+                html += '<tr><td>' + (r.dimensionValues ? r.dimensionValues[0].value : '') + '</td><td>' + (r.metricValues ? r.metricValues[0].value : '0') + '</td><td>' + (r.metricValues ? r.metricValues[1].value : '0') + '</td></tr>';
+            });
+            html += '</tbody></table>';
+            document.getElementById('ga4-countries').innerHTML = html;
+        }
+    });
+}
+
+// ============================================================
+// TAB 16: SISTRIX
+// ============================================================
+function fpcLoadSistrix() {
+    fpcAjax('ajax=sistrix_data', function(d) {
+        if (!d.configured) {
+            document.getElementById('sx-setup').style.display = 'block';
+            document.getElementById('sx-content').style.display = 'none';
+            return;
+        }
+        if (d.error) {
+            document.getElementById('sx-error').style.display = 'block';
+            document.getElementById('sx-error').innerHTML = '<div style="background:var(--fpc-card);border:1px solid var(--fpc-red);border-radius:10px;padding:20px;margin:20px 0;"><strong style="color:var(--fpc-red);">Error:</strong> ' + d.msg + '</div>';
+            return;
+        }
+        document.getElementById('sx-content').style.display = 'block';
+
+        // KPIs
+        var vi = d.visibility;
+        var viVal = '—';
+        if (vi && vi.answer && vi.answer[0] && vi.answer[0].sichtbarkeitsindex !== undefined) {
+            viVal = parseFloat(vi.answer[0].sichtbarkeitsindex).toFixed(2);
+        }
+        document.getElementById('sx-kpis').innerHTML =
+            fpcKpiBox('Visibility Index', viVal, 'teal') +
+            fpcKpiBox('Domain', d.configured ? 'mr-hanf.de' : '—', 'blue') +
+            fpcKpiBox('Last Update', d.timestamp || '—', 'text2');
+
+        // Visibility History chart
+        var viHist = d.vi_history;
+        if (viHist && viHist.answer) {
+            var labels = [], values = [];
+            viHist.answer.forEach(function(p) {
+                if (p.date) labels.push(p.date.substring(0,10));
+                if (p.sichtbarkeitsindex !== undefined) values.push(parseFloat(p.sichtbarkeitsindex));
+            });
+            fpcChart('chart-sx-visibility', 'line', labels, [
+                {label: 'Visibility Index', data: values, borderColor: '#00d4aa', backgroundColor: 'rgba(0,212,170,0.1)', fill: true}
+            ]);
+        }
+
+        // Ranking Distribution
+        var rd = d.ranking_dist;
+        if (rd && rd.answer && rd.answer[0]) {
+            var rdData = rd.answer[0];
+            var rdLabels = ['Top 10', '11-20', '21-50', '51-100'];
+            var rdValues = [
+                parseInt(rdData['1-10'] || 0),
+                parseInt(rdData['11-20'] || 0),
+                parseInt(rdData['21-50'] || 0),
+                parseInt(rdData['51-100'] || 0)
+            ];
+            fpcChart('chart-sx-ranking', 'bar', rdLabels, [{label: 'Keywords', data: rdValues, backgroundColor: ['#00e676','#00d4aa','#ffa502','#ff4757']}]);
+        }
+
+        // Keywords table
+        var kw = d.keywords;
+        if (kw && kw.answer) {
+            var html = '<table class="fpc-table"><thead><tr><th>Keyword</th><th>Position</th><th>URL</th><th>Search Volume</th><th>Competition</th></tr></thead><tbody>';
+            kw.answer.slice(0, 50).forEach(function(r) {
+                html += '<tr><td>' + (r.keyword || '') + '</td><td>' + (r.position || '') + '</td><td title="' + (r.url||'') + '">' + (r.url||'').substring(0,50) + '</td><td>' + (r.traffic||'') + '</td><td>' + (r.competition||'') + '</td></tr>';
+            });
+            html += '</tbody></table>';
+            document.getElementById('sx-keywords').innerHTML = html;
+        }
+
+        // Keyword Changes
+        var kc = d.keyword_changes;
+        if (kc && kc.answer) {
+            var html = '<table class="fpc-table"><thead><tr><th>Keyword</th><th>Old Position</th><th>New Position</th><th>Change</th></tr></thead><tbody>';
+            kc.answer.slice(0, 30).forEach(function(r) {
+                var change = (r.position_old || 0) - (r.position_new || 0);
+                var color = change > 0 ? 'var(--fpc-green)' : (change < 0 ? 'var(--fpc-red)' : 'var(--fpc-text2)');
+                var arrow = change > 0 ? '&#9650;' : (change < 0 ? '&#9660;' : '&#9654;');
+                html += '<tr><td>' + (r.keyword || '') + '</td><td>' + (r.position_old || '—') + '</td><td>' + (r.position_new || '—') + '</td><td style="color:' + color + ';font-weight:bold;">' + arrow + ' ' + Math.abs(change) + '</td></tr>';
+            });
+            html += '</tbody></table>';
+            document.getElementById('sx-changes').innerHTML = html;
+        }
+
+        // Competitors table
+        var comp = d.competitors;
+        if (comp && comp.answer) {
+            var html = '<table class="fpc-table"><thead><tr><th>Domain</th><th>Visibility</th><th>Common Keywords</th></tr></thead><tbody>';
+            comp.answer.slice(0, 15).forEach(function(r) {
+                html += '<tr><td>' + (r.domain || '') + '</td><td>' + (r.sichtbarkeitsindex || '') + '</td><td>' + (r.match || '') + '</td></tr>';
+            });
+            html += '</tbody></table>';
+            document.getElementById('sx-competitors').innerHTML = html;
+        }
+    });
+}
+
+// ============================================================
+// API CREDENTIALS (Settings Tab)
+// ============================================================
+function fpcLoadApiCredentials() {
+    fpcAjax('ajax=load_api_credentials', function(d) {
+        var html = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">';
+        html += '<div><label style="color:var(--fpc-text2);font-size:12px;display:block;margin-bottom:4px;">Google Service Account JSON Path</label>';
+        html += '<input type="text" class="fpc-input" id="cred-gsc-sa" value="' + (d.gsc_service_account || '') + '" placeholder="e.g. cache/fpc/google-service-account.json" style="width:100%;">';
+        html += '<small style="color:var(--fpc-text2);font-size:11px;">Relative path from shop root. Used for both GSC and GA4.</small></div>';
+
+        html += '<div><label style="color:var(--fpc-text2);font-size:12px;display:block;margin-bottom:4px;">GSC Site URL</label>';
+        html += '<input type="text" class="fpc-input" id="cred-gsc-url" value="' + (d.gsc_site_url || 'https://mr-hanf.de/') + '" style="width:100%;">';
+        html += '<small style="color:var(--fpc-text2);font-size:11px;">Your Search Console property URL</small></div>';
+
+        html += '<div><label style="color:var(--fpc-text2);font-size:12px;display:block;margin-bottom:4px;">GA4 Service Account JSON Path</label>';
+        html += '<input type="text" class="fpc-input" id="cred-ga4-sa" value="' + (d.ga4_service_account || '') + '" placeholder="Same as GSC or separate file" style="width:100%;">';
+        html += '<small style="color:var(--fpc-text2);font-size:11px;">Can be the same file as GSC if scopes are configured</small></div>';
+
+        html += '<div><label style="color:var(--fpc-text2);font-size:12px;display:block;margin-bottom:4px;">GA4 Property ID</label>';
+        html += '<input type="text" class="fpc-input" id="cred-ga4-prop" value="' + (d.ga4_property_id || '') + '" placeholder="e.g. 123456789" style="width:100%;">';
+        html += '<small style="color:var(--fpc-text2);font-size:11px;">Numeric GA4 Property ID (Admin > Property Settings)</small></div>';
+
+        html += '<div><label style="color:var(--fpc-text2);font-size:12px;display:block;margin-bottom:4px;">SISTRIX API Key</label>';
+        html += '<input type="text" class="fpc-input" id="cred-sx-key" value="' + (d.sistrix_api_key || '') + '" placeholder="Your SISTRIX API key" style="width:100%;">';
+        html += '<small style="color:var(--fpc-text2);font-size:11px;">From sistrix.de > My Account > API</small></div>';
+
+        html += '<div><label style="color:var(--fpc-text2);font-size:12px;display:block;margin-bottom:4px;">SISTRIX Domain</label>';
+        html += '<input type="text" class="fpc-input" id="cred-sx-domain" value="' + (d.sistrix_domain || 'mr-hanf.de') + '" style="width:100%;">';
+        html += '<small style="color:var(--fpc-text2);font-size:11px;">Domain to analyze</small></div>';
+
+        html += '</div>';
+        document.getElementById('settings-api-creds').innerHTML = html;
+    });
+}
+
+function fpcSaveApiCredentials() {
+    var creds = {
+        gsc_service_account: document.getElementById('cred-gsc-sa').value,
+        gsc_site_url: document.getElementById('cred-gsc-url').value,
+        ga4_service_account: document.getElementById('cred-ga4-sa').value,
+        ga4_property_id: document.getElementById('cred-ga4-prop').value,
+        sistrix_api_key: document.getElementById('cred-sx-key').value,
+        sistrix_domain: document.getElementById('cred-sx-domain').value,
+    };
+    fpcAjaxPostJson('save_api_credentials', creds, function(r) { fpcToast(r.msg, !r.ok); });
+}
+
+// ============================================================
 // INIT: Tab-specific data loading
 // ============================================================
 document.addEventListener('DOMContentLoaded', function() {
@@ -2196,7 +2757,10 @@ document.addEventListener('DOMContentLoaded', function() {
         case 'health': fpcLoadHealth(); break;
         case 'statistik': fpcLoadStats(); break;
         case 'alerts': fpcLoadAlerts(); break;
-        case 'settings': fpcLoadSettings(); break;
+        case 'settings': fpcLoadSettings(); fpcLoadApiCredentials(); break;
+        case 'gsc': fpcLoadGSC(); break;
+        case 'analytics': fpcLoadGA4(); break;
+        case 'sistrix': fpcLoadSistrix(); break;
     }
     // Check if rebuild is running
     fpcAjax('ajax=rebuild_progress', function(d) {
