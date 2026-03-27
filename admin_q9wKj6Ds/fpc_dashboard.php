@@ -1,6 +1,6 @@
 <?php
 /**
- * Mr. Hanf FPC Control Center v9.0.6
+ * Mr. Hanf FPC Control Center v9.0.7
  *
  * Enterprise-Level Dashboard for the Full Page Cache System.
  *
@@ -18,6 +18,11 @@
  *   11. Statistics   - Visitors, Bounce Rate, Duration, Devices
  *   12. Alerts       - Thresholds, Notifications, History
  *   13. Settings     - All FPC configuration in one place
+ *
+ * v9.0.7 FIXES:
+ *   - CRITICAL FIX: JavaScript syntax errors in health-check section
+ *     that prevented ALL tabs from loading (broken string concatenation,
+ *     merged statements on line 1920)
  *
  * v9.0.6 FIXES:
  *   - NEW: Settings tab (Tab 13) with all FPC configuration options
@@ -213,7 +218,7 @@ if (isset($_GET['ajax'])) {
             if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $cfg = json_decode(file_get_contents('php://input'), true);
                 file_put_contents($alerts_config, json_encode($cfg, JSON_PRETTY_PRINT));
-                echo json_encode(array('ok' => true, 'msg' => 'Alerts gespeichert'));
+                echo json_encode(array('ok' => true, 'msg' => 'Alerts saved'));
             } else {
                 echo json_encode(fpc_get_alerts_config($alerts_config));
             }
@@ -377,10 +382,10 @@ function fpc_get_status($cache_dir, $pid_file, $log_file, $healthcheck_file, $re
 }
 
 function fpc_tail_file($file, $lines = 100) {
-    if (!is_file($file)) return '(Datei nicht gefunden: ' . basename($file) . ')';
+    if (!is_file($file)) return '(File not found: ' . basename($file) . ')';
     $result = array();
     $fp = @fopen($file, 'r');
-    if (!$fp) return '(Datei nicht lesbar)';
+    if (!$fp) return '(File not readable)';
     $buffer = array();
     while (($line = fgets($fp)) !== false) {
         $buffer[] = rtrim($line);
@@ -439,8 +444,8 @@ function fpc_cache_single_url($url, $cache_dir, $base_dir) {
 
 function fpc_remove_cached_url($cache_dir, $path) {
     $file = $cache_dir . ltrim($path, '/') . 'index.html';
-    if (is_file($file)) { @unlink($file); return array('ok' => true, 'msg' => 'Entfernt: ' . $path); }
-    return array('ok' => false, 'msg' => 'Nicht gefunden: ' . $path);
+    if (is_file($file)) { @unlink($file); return array('ok' => true, 'msg' => 'Removed: ' . $path); }
+    return array('ok' => false, 'msg' => 'Not found: ' . $path);
 }
 
 function fpc_flush_cache($cache_dir) {
@@ -582,11 +587,11 @@ function fpc_get_custom_urls($file) {
 }
 
 function fpc_remove_custom_url($file, $url) {
-    if (!is_file($file)) return array('ok' => false, 'msg' => 'Datei nicht gefunden');
+    if (!is_file($file)) return array('ok' => false, 'msg' => 'File not found');
     $urls = array_filter(array_map('trim', file($file)));
     $urls = array_values(array_diff($urls, array($url)));
     file_put_contents($file, implode("\n", $urls) . "\n");
-    return array('ok' => true, 'msg' => 'Entfernt: ' . $url);
+    return array('ok' => true, 'msg' => 'Removed: ' . $url);
 }
 
 function fpc_get_healthcheck_data($file) {
@@ -676,9 +681,9 @@ function fpc_get_error_log($lines, $filter) {
     $log_paths = array('/var/log/php_errors.log', '/tmp/php_errors.log', ini_get('error_log'));
     $log_file = null;
     foreach ($log_paths as $p) { if ($p && is_file($p) && is_readable($p)) { $log_file = $p; break; } }
-    if (!$log_file) return array('content' => '(Kein PHP-Error-Log gefunden)', 'entries' => array());
+    if (!$log_file) return array('content' => '(No PHP error log found)', 'entries' => array());
     $all = array(); $fp = @fopen($log_file, 'r');
-    if (!$fp) return array('content' => '(Log nicht lesbar)', 'entries' => array());
+    if (!$fp) return array('content' => '(Log not readable)', 'entries' => array());
     $buffer = array();
     while (($line = fgets($fp)) !== false) { $buffer[] = rtrim($line); if (count($buffer) > $lines) array_shift($buffer); }
     fclose($fp);
@@ -714,13 +719,13 @@ function fpc_validate_htaccess($base_dir) {
     $checks[] = array('name' => 'FPC RewriteRule', 'ok' => strpos($content, 'fpc_serve.php') !== false);
     $checks[] = array('name' => 'POST-Bypass', 'ok' => (bool)preg_match('/RewriteCond.*REQUEST_METHOD.*(=GET|!POST)/i', $content));
     $checks[] = array('name' => 'Query-String Bypass', 'ok' => (bool)preg_match('/RewriteCond.*QUERY_STRING.*\^\$/', $content));
-    $checks[] = array('name' => 'FPC-Bypass Cookie (fpc_bypass)', 'ok' => strpos($content, 'fpc_bypass') !== false, 'info' => 'Ersetzt MODsid-Bypass (v8.2.0+)');
-    $checks[] = array('name' => 'Cache-Datei Existenz-Check', 'ok' => strpos($content, 'cache/fpc') !== false);
-    $checks[] = array('name' => 'Admin-Bypass', 'ok' => strpos($content, 'admin') !== false);
-    $checks[] = array('name' => 'Bot-Durchlass', 'ok' => true, 'info' => 'Bots werden gecacht bedient');
+    $checks[] = array('name' => 'FPC-Bypass Cookie (fpc_bypass)', 'ok' => strpos($content, 'fpc_bypass') !== false, 'info' => 'Replaces MODsid bypass (v8.2.0+)');
+    $checks[] = array('name' => 'Cache File Existence Check', 'ok' => strpos($content, 'cache/fpc') !== false);
+    $checks[] = array('name' => 'Admin Bypass', 'ok' => strpos($content, 'admin') !== false);
+    $checks[] = array('name' => 'Bot Pass-through', 'ok' => true, 'info' => 'Bots are served cached pages');
     $passed = 0; $total = count($checks);
     foreach ($checks as $c) { if ($c['ok']) $passed++; }
-    return array('ok' => $passed === $total, 'msg' => $passed . '/' . $total . ' Checks bestanden', 'checks' => $checks, 'score' => round(($passed / $total) * 100));
+    return array('ok' => $passed === $total, 'msg' => $passed . '/' . $total . ' checks passed', 'checks' => $checks, 'score' => round(($passed / $total) * 100));
 }
 
 // ============================================================
@@ -1044,7 +1049,7 @@ $page_title = 'FPC Control Center';
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title><?php echo $page_title; ?> v9.0.5</title>
+<title><?php echo $page_title; ?> v9.0.7</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4" defer></script>
 <style>
 :root { --fpc-bg:#0d1b2a; --fpc-card:#1b2838; --fpc-border:#2a3a4a; --fpc-text:#e0e6ed; --fpc-text2:#8899aa; --fpc-teal:#00d4aa; --fpc-green:#00e676; --fpc-red:#ff4757; --fpc-orange:#ffa502; --fpc-yellow:#ffd32a; --fpc-blue:#00a8ff; }
@@ -1129,7 +1134,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 
 <!-- HEADER -->
 <div class="fpc-header">
-    <h1>FPC Control Center <span>v9.0.6</span></h1>
+    <h1>FPC Control Center <span>v9.0.7</span></h1>
     <div class="fpc-quick-actions">
         <button class="fpc-quick-btn" onclick="fpcFlush()" title="Flush Cache">&#128465; Flush</button>
         <button class="fpc-quick-btn" onclick="fpcRebuild()" title="Rebuild Cache">&#8635; Rebuild</button>
@@ -1137,7 +1142,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
     </div>
     <div>
         <span id="fpc-clock" style="color:var(--fpc-text2);font-size:12px;"></span>
-        <span class="fpc-version">v9.0.6</span>
+        <span class="fpc-version">v9.0.7</span>
     </div>
 </div>
 
@@ -1413,7 +1418,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 
 <script>
 // ============================================================
-// JAVASCRIPT v9.0.6
+// JAVASCRIPT v9.0.7
 // ============================================================
 var BASE = '<?php echo basename(__FILE__); ?>';
 var chartInstances = {};
@@ -1912,12 +1917,14 @@ function fpcLoadHealth() {
         var html = '<div style="display:flex;align-items:center;gap:20px;background:var(--fpc-card);padding:20px;border-radius:10px;border:1px solid var(--fpc-border);">';
         html += '<div style="font-size:64px;font-weight:900;color:' + color + '">' + grade + '</div>';
         html += '<div><div style="font-size:24px;font-weight:700;color:' + color + '">' + score + ' / 100</div>';
-        html += '<div style="color:var(--fpc-text2)"'Checked: ' + (summary.timestamp || '-') + '</div>';
-        html += '<div style="color:var(--fpc-text2)">'Cached Pages: '+ (summary.cached_pages || '-') + ' | Errors: ' + (summary.total_errors || 0) + '</div>';
+        html += '<div style="color:var(--fpc-text2)">Checked: ' + (summary.timestamp || '-') + '</div>';
+        html += '<div style="color:var(--fpc-text2)">Cached Pages: '+ (summary.cached_pages || '-') + ' | Errors: ' + (summary.total_errors || 0) + '</div>';
         html += '</div></div>';
         document.getElementById('health-score-box').innerHTML = html;
         // Details
-        var checks = latest.checks || {        var html = '<table class="fpc-table"><thead><tr><th>Check</th><th>Status</th><th>Details</th></tr></thead><tbody>';        for (var check in checks) {
+        var checks = latest.checks || {};
+        var html = '<table class="fpc-table"><thead><tr><th>Check</th><th>Status</th><th>Details</th></tr></thead><tbody>';
+        for (var check in checks) {
             var c = checks[check];
             var ok = c.ok || c.status === 'ok' || c.passed;
             html += '<tr><td>' + check + '</td><td><span class="sev-' + (ok ? 'ok' : 'error') + '">' + (ok ? 'OK' : 'ERROR') + '</span></td><td>' + (c.msg || c.detail || '-') + '</td></tr>';
@@ -1929,7 +1936,7 @@ function fpcLoadHealth() {
     fpcAjax('ajax=validate_htaccess', function(d) {
         var html = '<table class="fpc-table"><thead><tr><th>Check</th><th>Status</th><th>Info</th></tr></thead><tbody>';
         d.checks.forEach(function(c) {
-            html += '<tr><td>' + c.name + '</td><td><span class="sev-' + (c.ok ? 'ok' : 'error') + '">' + (c.ok ? 'OK' : 'FEHLT') + '</span></td><td style="color:var(--fpc-text2)">' + (c.info || '') + '</td></tr>';
+            html += '<tr><td>' + c.name + '</td><td><span class="sev-' + (c.ok ? 'ok' : 'error') + '">' + (c.ok ? 'OK' : 'MISSING') + '</span></td><td style="color:var(--fpc-text2)">' + (c.info || '') + '</td></tr>';
         });
         html += '</tbody></table>';
         html += '<p style="color:var(--fpc-text2);font-size:12px;margin-top:8px;">Score: ' + d.score + '/100 | ' + d.msg + '</p>';
