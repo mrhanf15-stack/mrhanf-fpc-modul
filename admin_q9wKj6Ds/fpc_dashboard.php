@@ -1,6 +1,6 @@
 <?php
 /**
- * Mr. Hanf FPC Control Center v9.0.5
+ * Mr. Hanf FPC Control Center v9.0.6
  *
  * Enterprise-Level Dashboard for the Full Page Cache System.
  *
@@ -17,6 +17,13 @@
  *   10. Health       - Score, SSL, htaccess, Layer overview
  *   11. Statistics   - Visitors, Bounce Rate, Duration, Devices
  *   12. Alerts       - Thresholds, Notifications, History
+ *   13. Settings     - All FPC configuration in one place
+ *
+ * v9.0.6 FIXES:
+ *   - NEW: Settings tab (Tab 13) with all FPC configuration options
+ *   - FIX: Progress bar now matches actual preloader log format
+ *   - FIX: Speed display (URLs/sec) in preloader progress
+ *   - FIX: All UI text translated to English
  *
  * v9.0.5 FIXES:
  *   - FIX: Request-Log reads daily files from cache/fpc/logs/requests_*.log
@@ -52,7 +59,7 @@ $alerts_log     = $cache_dir . 'alerts_history.json';
 $shop_url       = 'https://mr-hanf.de';
 
 $active_tab = isset($_GET['tab']) ? $_GET['tab'] : 'dashboard';
-$allowed_tabs = array('dashboard','performance','coverage','steuerung','urls','preloader','fehler','seo','inspector','health','statistik','alerts');
+$allowed_tabs = array('dashboard','performance','coverage','steuerung','urls','preloader','fehler','seo','inspector','health','statistik','alerts','settings');
 if (!in_array($active_tab, $allowed_tabs)) $active_tab = 'dashboard';
 
 // ============================================================
@@ -82,26 +89,26 @@ if (isset($_GET['ajax'])) {
 
         case 'cache_url':
             $url = isset($_POST['url']) ? trim($_POST['url']) : '';
-            if (empty($url)) { echo json_encode(array('ok' => false, 'msg' => 'Keine URL angegeben')); exit; }
+            if (empty($url)) { echo json_encode(array('ok' => false, 'msg' => 'No URL provided')); exit; }
             echo json_encode(fpc_cache_single_url($url, $cache_dir, $base_dir));
             exit;
 
         case 'remove_url':
             $path = isset($_POST['path']) ? trim($_POST['path']) : '';
-            if (empty($path)) { echo json_encode(array('ok' => false, 'msg' => 'Kein Pfad angegeben')); exit; }
+            if (empty($path)) { echo json_encode(array('ok' => false, 'msg' => 'No path provided')); exit; }
             echo json_encode(fpc_remove_cached_url($cache_dir, $path));
             exit;
 
         case 'recache_url':
             $path = isset($_POST['path']) ? trim($_POST['path']) : '';
-            if (empty($path)) { echo json_encode(array('ok' => false, 'msg' => 'Kein Pfad angegeben')); exit; }
+            if (empty($path)) { echo json_encode(array('ok' => false, 'msg' => 'No path provided')); exit; }
             fpc_remove_cached_url($cache_dir, $path);
             echo json_encode(fpc_cache_single_url($shop_url . $path, $cache_dir, $base_dir));
             exit;
 
         case 'flush':
             fpc_flush_cache($cache_dir);
-            echo json_encode(array('ok' => true, 'msg' => 'Cache wurde geleert'));
+            echo json_encode(array('ok' => true, 'msg' => 'Cache flushed successfully'));
             exit;
 
         case 'rebuild':
@@ -110,7 +117,7 @@ if (isset($_GET['ajax'])) {
 
         case 'stop':
             fpc_stop_rebuild($pid_file);
-            echo json_encode(array('ok' => true, 'msg' => 'Rebuild gestoppt'));
+            echo json_encode(array('ok' => true, 'msg' => 'Rebuild stopped'));
             exit;
 
         case 'rebuild_progress':
@@ -128,7 +135,7 @@ if (isset($_GET['ajax'])) {
 
         case 'add_custom_url':
             $url = isset($_POST['url']) ? trim($_POST['url']) : '';
-            if (empty($url)) { echo json_encode(array('ok' => false, 'msg' => 'Keine URL angegeben')); exit; }
+            if (empty($url)) { echo json_encode(array('ok' => false, 'msg' => 'No URL provided')); exit; }
             echo json_encode(fpc_add_custom_url($custom_urls_file, $url));
             exit;
 
@@ -218,6 +225,16 @@ if (isset($_GET['ajax'])) {
 
         case 'preloader_status':
             echo json_encode(fpc_get_preloader_status($cache_dir, $pid_file, $log_file, $rebuild_log));
+            exit;
+
+        // v9.0.6: Settings Tab
+        case 'settings_load':
+            echo json_encode(fpc_load_settings($cache_dir));
+            exit;
+
+        case 'settings_save':
+            $cfg = json_decode(file_get_contents('php://input'), true);
+            echo json_encode(fpc_save_settings($cfg, $cache_dir));
             exit;
     }
     exit;
@@ -408,8 +425,8 @@ function fpc_cache_single_url($url, $cache_dir, $base_dir) {
         CURLOPT_HTTPHEADER => array('Accept: text/html,application/xhtml+xml', 'Accept-Language: de-DE,de;q=0.9'),
     ));
     $html = curl_exec($ch); $code = curl_getinfo($ch, CURLINFO_HTTP_CODE); curl_close($ch);
-    if ($code !== 200) return array('ok' => false, 'msg' => 'HTTP ' . $code . ' - Seite konnte nicht geladen werden (' . strlen($html) . ' Bytes)');
-    if (strlen($html) < 500) return array('ok' => false, 'msg' => 'Antwort zu klein (' . strlen($html) . ' Bytes)');
+    if ($code !== 200) return array('ok' => false, 'msg' => 'HTTP ' . $code . ' - Page could not be loaded (' . strlen($html) . ' Bytes)');
+    if (strlen($html) < 500) return array('ok' => false, 'msg' => 'Response too small (' . strlen($html) . ' Bytes)');
     $parsed = parse_url($url);
     $path = isset($parsed['path']) ? $parsed['path'] : '/';
     if (substr($path, -1) !== '/') $path .= '/';
@@ -417,7 +434,7 @@ function fpc_cache_single_url($url, $cache_dir, $base_dir) {
     $dir = dirname($file_path);
     if (!is_dir($dir)) @mkdir($dir, 0755, true);
     file_put_contents($file_path, $html);
-    return array('ok' => true, 'msg' => 'Gecacht: ' . $path . ' (' . fpc_format_bytes(strlen($html)) . ')');
+    return array('ok' => true, 'msg' => 'Cached: ' . $path . ' (' . fpc_format_bytes(strlen($html)) . ')');
 }
 
 function fpc_remove_cached_url($cache_dir, $path) {
@@ -467,23 +484,43 @@ function fpc_get_rebuild_progress($cache_dir, $pid_file, $rebuild_log) {
             if (!$running) { @unlink($pid_file); $pid = 0; }
         }
     }
-    $total = 0; $done = 0; $errors = 0; $skipped = 0; $current_url = ''; $last_lines = array();
+    $total = 0; $done = 0; $errors = 0; $skipped = 0; $current_url = ''; $last_lines = array(); $speed = 0;
     if (is_file($rebuild_log)) {
         $fp = @fopen($rebuild_log, 'r');
         if ($fp) {
+            $runtime_sec = 0;
             while (($line = fgets($fp)) !== false) {
                 $line = trim($line);
-                if (preg_match('/Starte Preloader:\s*(\d+)\s*URLs/', $line, $m)) $total = (int)$m[1];
-                if (preg_match('/^\[(\d+)\/(\d+)\]/', $line, $m)) { $done = (int)$m[1]; if ((int)$m[2] > $total) $total = (int)$m[2]; $current_url = $line; }
-                if (strpos($line, 'FEHLER') !== false || strpos($line, 'Error') !== false) $errors++;
-                if (strpos($line, 'Uebersprungen') !== false || strpos($line, 'Skip') !== false) $skipped++;
-                $last_lines[] = $line; if (count($last_lines) > 5) array_shift($last_lines);
+                // v9.0.6: Match actual preloader log format
+                // "[FPC] 37500 URLs aus Sitemap" or "[FPC] 37500 URLs nach Filter (max 50000)"
+                if (preg_match('/\[FPC\]\s+(\d+)\s+URLs\s+(aus|nach)/', $line, $m)) {
+                    $total = (int)$m[1];
+                }
+                // "[FPC] Fortschritt: 100 gecacht | Avg-TTFB: 485ms | ... | Runtime: 101s"
+                if (preg_match('/Fortschritt:\s*(\d+)\s*gecacht/', $line, $m)) {
+                    $done = (int)$m[1];
+                    $current_url = $line;
+                }
+                // Extract runtime for speed calculation
+                if (preg_match('/Runtime:\s*(\d+)s/', $line, $m)) {
+                    $runtime_sec = (int)$m[1];
+                }
+                // "[FPC] FEHLER:" or "[FPC] SCHREIBFEHLER:" or "[FPC] VERIFY-FEHLER:"
+                if (preg_match('/FEHLER|Error|UNGUELTIG/', $line)) $errors++;
+                // "Uebersprungen" or "Skip" or skipped in summary
+                if (preg_match('/Uebersprungen|Skip/', $line)) $skipped++;
+                // "[FPC] v8.0 | Gecacht: 1000 | Uebersprungen: 50 | Ungueltig: 5 | Fehler: 3"
+                if (preg_match('/Gecacht:\s*(\d+)\s*\|\s*Uebersprungen:\s*(\d+).*Fehler:\s*(\d+)/', $line, $m)) {
+                    $done = (int)$m[1]; $skipped = (int)$m[2]; $errors = (int)$m[3];
+                }
+                $last_lines[] = $line; if (count($last_lines) > 8) array_shift($last_lines);
             }
             fclose($fp);
+            if ($runtime_sec > 0 && $done > 0) $speed = round($done / $runtime_sec, 1);
         }
     }
     $percent = ($total > 0) ? min(100, round(($done / $total) * 100, 1)) : 0;
-    return array('running' => $running, 'pid' => $pid, 'started' => $started, 'total' => $total, 'done' => $done, 'errors' => $errors, 'skipped' => $skipped, 'percent' => $percent, 'current_url' => $current_url, 'last_lines' => $last_lines);
+    return array('running' => $running, 'pid' => $pid, 'started' => $started, 'total' => $total, 'done' => $done, 'errors' => $errors, 'skipped' => $skipped, 'percent' => $percent, 'speed' => $speed, 'current_url' => $current_url, 'last_lines' => $last_lines);
 }
 
 function fpc_get_monitor_data($monitor_log) {
@@ -505,7 +542,7 @@ function fpc_run_monitor_test($cache_dir, $monitor_log, $base_dir, $count) {
             }
         }
     }
-    if (empty($urls)) return array('ok' => false, 'msg' => 'Keine gecachten URLs gefunden');
+    if (empty($urls)) return array('ok' => false, 'msg' => 'No cached URLs found');
     shuffle($urls); $urls = array_slice($urls, 0, $count);
     $hits = 0; $misses = 0; $ttfb_sum = 0;
     foreach ($urls as $u) {
@@ -659,7 +696,7 @@ function fpc_get_error_log($lines, $filter) {
 }
 
 function fpc_export_urls_csv($cache_dir) {
-    echo "Pfad;Groesse;Gecacht;Alter_Stunden\n";
+    echo "Path;Size;Cached;Age_Hours\n";
     if (!is_dir($cache_dir)) return;
     $iter = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($cache_dir, RecursiveDirectoryIterator::SKIP_DOTS));
     foreach ($iter as $f) {
@@ -890,6 +927,90 @@ function fpc_get_alerts_history($file) {
     return array('alerts' => isset($data['alerts']) ? array_slice($data['alerts'], -50) : array());
 }
 
+// v9.0.6: Settings functions - reads/writes DB config + local JSON settings
+function fpc_load_settings($cache_dir) {
+    $settings = array();
+    // 1. DB-based settings (modified eCommerce configuration table)
+    $db_keys = array(
+        'MODULE_MRHANF_FPC_STATUS' => array('label' => 'Enable Module', 'desc' => 'Should the Full Page Cache be enabled?', 'type' => 'boolean', 'default' => 'True'),
+        'MODULE_MRHANF_FPC_CACHE_TIME' => array('label' => 'Cache Lifetime (seconds)', 'desc' => 'How long should a page stay in cache? Default: 86400 (24h)', 'type' => 'number', 'default' => '86400'),
+        'MODULE_MRHANF_FPC_EXCLUDED_PAGES' => array('label' => 'Excluded Pages', 'desc' => 'Comma-separated URL parts that should NOT be cached', 'type' => 'text', 'default' => 'checkout,login,account,shopping_cart'),
+        'MODULE_MRHANF_FPC_PRELOAD_LIMIT' => array('label' => 'Max Pages per Cron Run', 'desc' => 'Maximum number of pages to cache per cron run', 'type' => 'number', 'default' => '500'),
+    );
+    $db_settings = array();
+    foreach ($db_keys as $key => $meta) {
+        $val = defined($key) ? constant($key) : $meta['default'];
+        $db_settings[] = array('key' => $key, 'value' => $val, 'label' => $meta['label'], 'desc' => $meta['desc'], 'type' => $meta['type']);
+    }
+    $settings['db'] = $db_settings;
+
+    // 2. Preloader settings (from fpc_settings.json)
+    $settings_file = $cache_dir . 'fpc_settings.json';
+    $preloader_defaults = array(
+        'request_delay_ms' => 500, 'load_threshold' => 3.0, 'load_pause_sec' => 30,
+        'batch_size' => 100, 'batch_pause_sec' => 30, 'slow_threshold_ms' => 3000,
+        'max_runtime_sec' => 2700, 'adaptive_enabled' => true, 'min_html_size' => 1000,
+        'require_doctype' => true, 'require_body' => true, 'verify_after_write' => true,
+        'max_error_rate' => 0.20,
+    );
+    $preloader = $preloader_defaults;
+    if (is_file($settings_file)) {
+        $saved = @json_decode(file_get_contents($settings_file), true);
+        if (is_array($saved)) $preloader = array_merge($preloader_defaults, $saved);
+    }
+    $settings['preloader'] = $preloader;
+
+    // 3. Serve settings (from fpc_settings.json)
+    $serve_defaults = array(
+        'min_filesize' => 500, 'max_age' => 172800, 'auto_delete' => true, 'request_log' => true,
+    );
+    $serve = $serve_defaults;
+    if (is_file($settings_file)) {
+        $saved = @json_decode(file_get_contents($settings_file), true);
+        if (is_array($saved) && isset($saved['serve'])) $serve = array_merge($serve_defaults, $saved['serve']);
+    }
+    $settings['serve'] = $serve;
+
+    // 4. Healthcheck settings
+    $hc_defaults = array('max_urls' => 200, 'timeout' => 15, 'max_history' => 90);
+    $hc = $hc_defaults;
+    if (is_file($settings_file)) {
+        $saved = @json_decode(file_get_contents($settings_file), true);
+        if (is_array($saved) && isset($saved['healthcheck'])) $hc = array_merge($hc_defaults, $saved['healthcheck']);
+    }
+    $settings['healthcheck'] = $hc;
+
+    return $settings;
+}
+
+function fpc_save_settings($cfg, $cache_dir) {
+    if (!is_array($cfg)) return array('ok' => false, 'msg' => 'Invalid data');
+
+    // Save DB settings
+    if (!empty($cfg['db']) && is_array($cfg['db'])) {
+        foreach ($cfg['db'] as $item) {
+            if (!isset($item['key']) || !isset($item['value'])) continue;
+            $key = preg_replace('/[^A-Z_]/', '', $item['key']);
+            if (strpos($key, 'MODULE_MRHANF_FPC_') !== 0) continue;
+            $val = addslashes($item['value']);
+            xtc_db_query("UPDATE configuration SET configuration_value = '" . xtc_db_input($val) . "' WHERE configuration_key = '" . xtc_db_input($key) . "'");
+        }
+    }
+
+    // Save local settings (preloader, serve, healthcheck)
+    $settings_file = $cache_dir . 'fpc_settings.json';
+    $existing = array();
+    if (is_file($settings_file)) {
+        $existing = @json_decode(file_get_contents($settings_file), true) ?: array();
+    }
+    if (isset($cfg['preloader'])) $existing = array_merge($existing, $cfg['preloader']);
+    if (isset($cfg['serve'])) $existing['serve'] = $cfg['serve'];
+    if (isset($cfg['healthcheck'])) $existing['healthcheck'] = $cfg['healthcheck'];
+    file_put_contents($settings_file, json_encode($existing, JSON_PRETTY_PRINT));
+
+    return array('ok' => true, 'msg' => 'Settings saved successfully');
+}
+
 function fpc_get_preloader_status($cache_dir, $pid_file, $log_file, $rebuild_log) {
     $progress = fpc_get_rebuild_progress($cache_dir, $pid_file, $rebuild_log);
     $queue_size = 0; $sitemap_urls = 0;
@@ -1008,15 +1129,15 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 
 <!-- HEADER -->
 <div class="fpc-header">
-    <h1>FPC Control Center <span>v9.0.5</span></h1>
+    <h1>FPC Control Center <span>v9.0.6</span></h1>
     <div class="fpc-quick-actions">
-        <button class="fpc-quick-btn" onclick="fpcFlush()" title="Cache leeren">&#128465; Flush</button>
-        <button class="fpc-quick-btn" onclick="fpcRebuild()" title="Cache neu aufbauen">&#8635; Rebuild</button>
+        <button class="fpc-quick-btn" onclick="fpcFlush()" title="Flush Cache">&#128465; Flush</button>
+        <button class="fpc-quick-btn" onclick="fpcRebuild()" title="Rebuild Cache">&#8635; Rebuild</button>
         <button class="fpc-quick-btn" onclick="fpcExportUrls()" title="CSV Export">&#128190; Export</button>
     </div>
     <div>
         <span id="fpc-clock" style="color:var(--fpc-text2);font-size:12px;"></span>
-        <span class="fpc-version">v9.0.5</span>
+        <span class="fpc-version">v9.0.6</span>
     </div>
 </div>
 
@@ -1025,9 +1146,10 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
     <?php
     $tab_labels = array(
         'dashboard' => '&#9632; Dashboard', 'performance' => '&#9889; Performance', 'coverage' => '&#127760; Coverage',
-        'steuerung' => '&#9881; Steuerung', 'urls' => '&#128279; URLs', 'preloader' => '&#128640; Preloader',
-        'fehler' => '&#9888; Fehler', 'seo' => '&#128270; SEO', 'inspector' => '&#128269; Inspector',
-        'health' => '&#128154; Health', 'statistik' => '&#128200; Statistik', 'alerts' => '&#128276; Alerts',
+        'steuerung' => '&#9881; Control', 'urls' => '&#128279; URLs', 'preloader' => '&#128640; Preloader',
+        'fehler' => '&#9888; Errors', 'seo' => '&#128270; SEO', 'inspector' => '&#128269; Inspector',
+        'health' => '&#128154; Health', 'statistik' => '&#128200; Statistics', 'alerts' => '&#128276; Alerts',
+        'settings' => '&#9881; Settings',
     );
     foreach ($tab_labels as $key => $label) {
         $cls = ($active_tab === $key) ? 'fpc-tab active' : 'fpc-tab';
@@ -1042,12 +1164,12 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 <div class="fpc-panel <?php echo $active_tab === 'dashboard' ? 'active' : ''; ?>" id="panel-dashboard">
     <div class="fpc-kpis" id="dash-kpis"></div>
     <div class="fpc-charts">
-        <div class="fpc-chart-box"><h3>Cache-Verteilung nach Kategorie</h3><canvas id="chart-categories" height="200"></canvas></div>
-        <div class="fpc-chart-box"><h3>Hit/Miss letzte 24h</h3><canvas id="chart-hitmiss-24h" height="200"></canvas></div>
+        <div class="fpc-chart-box"><h3>Cache Distribution by Category</h3><canvas id="chart-categories" height="200"></canvas></div>
+        <div class="fpc-chart-box"><h3>Hit/Miss Last 24h</h3><canvas id="chart-hitmiss-24h" height="200"></canvas></div>
     </div>
     <div class="fpc-charts">
         <div class="fpc-chart-box"><h3>OPCache Status</h3><div id="dash-opcache"></div></div>
-        <div class="fpc-chart-box"><h3>Letzter Preloader-Lauf</h3><div id="dash-preloader"></div></div>
+        <div class="fpc-chart-box"><h3>Last Preloader Run</h3><div id="dash-preloader"></div></div>
     </div>
 </div>
 
@@ -1055,57 +1177,57 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 <div class="fpc-panel <?php echo $active_tab === 'performance' ? 'active' : ''; ?>" id="panel-performance">
     <div class="fpc-kpis" id="perf-kpis"></div>
     <div class="fpc-charts">
-        <div class="fpc-chart-box"><h3>Hit vs Miss vs Bypass (Gesamt)</h3><canvas id="chart-perf-pie" height="200"></canvas></div>
-        <div class="fpc-chart-box"><h3>TTFB Vergleich</h3><canvas id="chart-perf-ttfb" height="200"></canvas></div>
+        <div class="fpc-chart-box"><h3>Hit vs Miss vs Bypass (Total)</h3><canvas id="chart-perf-pie" height="200"></canvas></div>
+        <div class="fpc-chart-box"><h3>TTFB Comparison</h3><canvas id="chart-perf-ttfb" height="200"></canvas></div>
     </div>
     <div class="fpc-charts">
-        <div class="fpc-chart-box"><h3>Requests pro Stunde (Heute)</h3><canvas id="chart-perf-hourly" height="200"></canvas></div>
-        <div class="fpc-chart-box"><h3>Taegl. Hit/Miss Trend (30 Tage)</h3><canvas id="chart-perf-timeline" height="200"></canvas></div>
+        <div class="fpc-chart-box"><h3>Requests per Hour (Today)</h3><canvas id="chart-perf-hourly" height="200"></canvas></div>
+        <div class="fpc-chart-box"><h3>Daily Hit/Miss Trend (30 Days)</h3><canvas id="chart-perf-timeline" height="200"></canvas></div>
     </div>
 </div>
 
 <!-- ========== TAB 3: COVERAGE ========== -->
 <div class="fpc-panel <?php echo $active_tab === 'coverage' ? 'active' : ''; ?>" id="panel-coverage">
     <div class="fpc-kpis" id="cov-kpis"></div>
-    <div class="fpc-section-title">Kategorie-Coverage</div>
+    <div class="fpc-section-title">Category Coverage</div>
     <div id="cov-categories"></div>
-    <div class="fpc-section-title">Pagination-Probleme (Seite 2+ nicht gecacht)</div>
+    <div class="fpc-section-title">Pagination Issues (Page 2+ not cached)</div>
     <div id="cov-pagination"></div>
-    <div class="fpc-section-title">Top 50 nicht gecachte URLs</div>
+    <div class="fpc-section-title">Top 50 Uncached URLs</div>
     <div id="cov-uncached"></div>
 </div>
 
 <!-- ========== TAB 4: STEUERUNG ========== -->
 <div class="fpc-panel <?php echo $active_tab === 'steuerung' ? 'active' : ''; ?>" id="panel-steuerung">
     <div style="display:flex;gap:12px;margin-bottom:20px;flex-wrap:wrap;">
-        <button class="fpc-btn green" onclick="fpcRebuild()">&#8635; Cache neu aufbauen</button>
-        <button class="fpc-btn red" onclick="fpcFlush()">&#128465; Gesamten Cache leeren</button>
-        <button class="fpc-btn orange" onclick="fpcStopRebuild()">&#9632; Rebuild stoppen</button>
+        <button class="fpc-btn green" onclick="fpcRebuild()">&#8635; Rebuild Cache</button>
+        <button class="fpc-btn red" onclick="fpcFlush()">&#128465; Flush Entire Cache</button>
+        <button class="fpc-btn orange" onclick="fpcStopRebuild()">&#9632; Stop Rebuild</button>
     </div>
     <div class="fpc-progress-wrap" id="rebuild-progress">
-        <strong>Rebuild-Fortschritt</strong>
+        <strong>Rebuild Progress</strong>
         <div class="fpc-progress-bar-outer">
             <div class="fpc-progress-bar-inner" id="rebuild-bar" style="width:0%"></div>
             <div class="fpc-progress-bar-text" id="rebuild-pct">0%</div>
         </div>
         <div class="fpc-progress-info">
             <span id="rebuild-done">0 / 0 URLs</span>
-            <span id="rebuild-errors">Fehler: 0 | Uebersprungen: 0</span>
+            <span id="rebuild-errors">Errors: 0 | Skipped: 0</span>
         </div>
         <div class="fpc-progress-log" id="rebuild-log"></div>
     </div>
-    <div class="fpc-section-title">Einzelne URL cachen</div>
-    <p style="color:var(--fpc-text2);font-size:12px;margin-bottom:8px;">Geben Sie eine URL oder einen Pfad ein (z.B. /samen-shop/autoflowering-samen/), um diese Seite sofort in den Cache aufzunehmen.</p>
+    <div class="fpc-section-title">Cache Single URL</div>
+    <p style="color:var(--fpc-text2);font-size:12px;margin-bottom:8px;">Enter a URL or path (e.g. /samen-shop/autoflowering-samen/) to immediately add this page to the cache.</p>
     <div class="fpc-input-group">
         <input type="text" class="fpc-input" id="cache-url-input" placeholder="/samen-shop/autoflowering-samen/">
-        <button class="fpc-btn teal" onclick="fpcCacheUrl()">Cachen</button>
+        <button class="fpc-btn teal" onclick="fpcCacheUrl()">Cache</button>
     </div>
     <div id="cache-url-result" style="margin-bottom:20px;"></div>
-    <div class="fpc-section-title">Custom URLs fuer Preloader</div>
-    <p style="color:var(--fpc-text2);font-size:12px;margin-bottom:8px;">URLs die nicht in der Sitemap sind, aber trotzdem gecacht werden sollen.</p>
+    <div class="fpc-section-title">Custom URLs for Preloader</div>
+    <p style="color:var(--fpc-text2);font-size:12px;margin-bottom:8px;">URLs not in the sitemap that should still be cached.</p>
     <div class="fpc-input-group">
         <input type="text" class="fpc-input" id="custom-url-input" placeholder="/blog/mein-artikel/">
-        <button class="fpc-btn teal" onclick="fpcAddCustomUrl()">Hinzufuegen</button>
+        <button class="fpc-btn teal" onclick="fpcAddCustomUrl()">Add</button>
     </div>
     <div id="custom-urls-list"></div>
 </div>
@@ -1113,8 +1235,8 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 <!-- ========== TAB 5: URLS ========== -->
 <div class="fpc-panel <?php echo $active_tab === 'urls' ? 'active' : ''; ?>" id="panel-urls">
     <div class="fpc-input-group">
-        <input type="text" class="fpc-input" id="url-search" placeholder="URLs durchsuchen..." onkeyup="if(event.key==='Enter')fpcLoadUrls(1)">
-        <button class="fpc-btn teal" onclick="fpcLoadUrls(1)">Suchen</button>
+        <input type="text" class="fpc-input" id="url-search" placeholder="Search URLs..." onkeyup="if(event.key==='Enter')fpcLoadUrls(1)">
+        <button class="fpc-btn teal" onclick="fpcLoadUrls(1)">Search</button>
         <button class="fpc-btn blue" onclick="fpcExportUrls()">CSV Export</button>
     </div>
     <div id="urls-table"></div>
@@ -1125,7 +1247,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 <div class="fpc-panel <?php echo $active_tab === 'preloader' ? 'active' : ''; ?>" id="panel-preloader">
     <div class="fpc-kpis" id="preloader-kpis"></div>
     <div class="fpc-progress-wrap active" id="preloader-progress">
-        <strong>Preloader-Fortschritt</strong>
+        <strong>Preloader Progress</strong>
         <div class="fpc-progress-bar-outer">
             <div class="fpc-progress-bar-inner" id="preloader-bar" style="width:0%"></div>
             <div class="fpc-progress-bar-text" id="preloader-pct">0%</div>
@@ -1137,20 +1259,20 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
         <div class="fpc-progress-log" id="preloader-log"></div>
     </div>
     <div style="display:flex;gap:12px;margin-bottom:20px;flex-wrap:wrap;">
-        <button class="fpc-btn green" onclick="fpcRebuild()">&#128640; Preloader starten</button>
-        <button class="fpc-btn orange" onclick="fpcStopRebuild()">&#9632; Stoppen</button>
+        <button class="fpc-btn green" onclick="fpcRebuild()">&#128640; Start Preloader</button>
+        <button class="fpc-btn orange" onclick="fpcStopRebuild()">&#9632; Stop</button>
     </div>
-    <div class="fpc-section-title">Preloader-Log</div>
+    <div class="fpc-section-title">Preloader Log</div>
     <div class="fpc-log-box" id="preloader-full-log" style="max-height:300px;"></div>
 </div>
 
 <!-- ========== TAB 7: FEHLER ========== -->
 <div class="fpc-panel <?php echo $active_tab === 'fehler' ? 'active' : ''; ?>" id="panel-fehler">
-    <div class="fpc-section-title">Haeufigste Cache-Miss-Gruende</div>
+    <div class="fpc-section-title">Most Common Cache-Miss Reasons</div>
     <div id="fehler-reasons"></div>
-    <div class="fpc-section-title">Top Fehler-URLs (HTTP 4xx/5xx)</div>
+    <div class="fpc-section-title">Top Error URLs (HTTP 4xx/5xx)</div>
     <div id="fehler-urls"></div>
-    <div class="fpc-section-title">Langsamste Seiten (Top 20)</div>
+    <div class="fpc-section-title">Slowest Pages (Top 20)</div>
     <div id="fehler-slowest"></div>
 </div>
 
@@ -1158,35 +1280,35 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 <div class="fpc-panel <?php echo $active_tab === 'seo' ? 'active' : ''; ?>" id="panel-seo">
     <div class="fpc-kpis" id="seo-kpis"></div>
     <div class="fpc-charts">
-        <div class="fpc-chart-box"><h3>Bot-Requests nach Crawler</h3><canvas id="chart-seo-bots" height="200"></canvas></div>
+        <div class="fpc-chart-box"><h3>Bot Requests by Crawler</h3><canvas id="chart-seo-bots" height="200"></canvas></div>
         <div class="fpc-chart-box"><h3>Bot Hit Rate</h3><canvas id="chart-seo-hitrate" height="200"></canvas></div>
     </div>
-    <div class="fpc-section-title">Top URLs von Bots angefragt</div>
+    <div class="fpc-section-title">Top URLs Requested by Bots</div>
     <div id="seo-top-urls"></div>
 </div>
 
 <!-- ========== TAB 9: INSPECTOR ========== -->
 <div class="fpc-panel <?php echo $active_tab === 'inspector' ? 'active' : ''; ?>" id="panel-inspector">
     <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;">
-        <button class="fpc-btn teal" onclick="fpcLoadInspector('')">Alle</button>
-        <button class="fpc-btn red" onclick="fpcLoadInspector('miss')">Nur MISS</button>
-        <button class="fpc-btn green" onclick="fpcLoadInspector('hit')">Nur HIT</button>
-        <button class="fpc-btn blue" onclick="fpcLoadInspector('bot')">Nur Bots</button>
-        <button class="fpc-btn orange" onclick="fpcLoadInspector('session')">Session-Leakage</button>
-        <button class="fpc-btn red" onclick="fpcLoadInspector('error')">Fehler (4xx/5xx)</button>
+        <button class="fpc-btn teal" onclick="fpcLoadInspector('')">All</button>
+        <button class="fpc-btn red" onclick="fpcLoadInspector('miss')">MISS Only</button>
+        <button class="fpc-btn green" onclick="fpcLoadInspector('hit')">HIT Only</button>
+        <button class="fpc-btn blue" onclick="fpcLoadInspector('bot')">Bots Only</button>
+        <button class="fpc-btn orange" onclick="fpcLoadInspector('session')">Session Leakage</button>
+        <button class="fpc-btn red" onclick="fpcLoadInspector('error')">Errors (4xx/5xx)</button>
     </div>
-    <p style="color:var(--fpc-text2);font-size:12px;margin-bottom:12px;">Live Request Inspector - Zeigt warum Seiten NICHT gecacht wurden. Daten kommen aus dem Request-Log (fpc_serve.php schreibt bei jedem Request).</p>
+    <p style="color:var(--fpc-text2);font-size:12px;margin-bottom:12px;">Live Request Inspector - Shows why pages were NOT cached. Data comes from the request log (fpc_serve.php logs every request).</p>
     <div id="inspector-table"></div>
 </div>
 
 <!-- ========== TAB 10: HEALTH ========== -->
 <div class="fpc-panel <?php echo $active_tab === 'health' ? 'active' : ''; ?>" id="panel-health">
     <div style="display:flex;gap:12px;margin-bottom:20px;">
-        <button class="fpc-btn green" onclick="fpcRunHealthcheck()">&#9654; Jetzt pruefen</button>
-        <button class="fpc-btn teal" onclick="fpcLoadHealth()">&#8635; Daten aktualisieren</button>
+        <button class="fpc-btn green" onclick="fpcRunHealthcheck()">&#9654; Run Check Now</button>
+        <button class="fpc-btn teal" onclick="fpcLoadHealth()">&#8635; Refresh Data</button>
     </div>
     <div id="health-score-box" style="margin-bottom:20px;"></div>
-    <div class="fpc-section-title">Technische Layer-Uebersicht</div>
+    <div class="fpc-section-title">Technical Layer Overview</div>
     <div class="fpc-layer-flow" id="health-layers">
         <div class="fpc-layer active"><strong>User</strong><br><small>Browser</small></div>
         <div class="fpc-layer-arrow">&#8594;</div>
@@ -1200,7 +1322,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
     </div>
     <div class="fpc-section-title">.htaccess Validator</div>
     <div id="health-htaccess"></div>
-    <div class="fpc-section-title">Health-Check Details</div>
+    <div class="fpc-section-title">Health Check Details</div>
     <div id="health-details"></div>
 </div>
 
@@ -1208,22 +1330,22 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 <div class="fpc-panel <?php echo $active_tab === 'statistik' ? 'active' : ''; ?>" id="panel-statistik">
     <div style="margin-bottom:12px;">
         <select class="fpc-input" id="stats-days" style="width:auto;" onchange="fpcLoadStats()">
-            <option value="7">Letzte 7 Tage</option>
-            <option value="14">Letzte 14 Tage</option>
-            <option value="30" selected>Letzte 30 Tage</option>
-            <option value="90">Letzte 90 Tage</option>
+            <option value="7">Last 7 Days</option>
+            <option value="14">Last 14 Days</option>
+            <option value="30" selected>Last 30 Days</option>
+            <option value="90">Last 90 Days</option>
         </select>
     </div>
     <div class="fpc-kpis" id="stats-kpis"></div>
     <div class="fpc-charts">
-        <div class="fpc-chart-box"><h3>Seitenaufrufe pro Tag</h3><canvas id="chart-stats-daily" height="200"></canvas></div>
-        <div class="fpc-chart-box"><h3>Besucher nach Stunde</h3><canvas id="chart-stats-hourly" height="200"></canvas></div>
+        <div class="fpc-chart-box"><h3>Pageviews per Day</h3><canvas id="chart-stats-daily" height="200"></canvas></div>
+        <div class="fpc-chart-box"><h3>Visitors by Hour</h3><canvas id="chart-stats-hourly" height="200"></canvas></div>
     </div>
     <div class="fpc-charts">
-        <div class="fpc-chart-box"><h3>Geraetetypen</h3><canvas id="chart-stats-devices" height="200"></canvas></div>
-        <div class="fpc-chart-box"><h3>Absprungrate pro Tag</h3><canvas id="chart-stats-bounce" height="200"></canvas></div>
+        <div class="fpc-chart-box"><h3>Device Types</h3><canvas id="chart-stats-devices" height="200"></canvas></div>
+        <div class="fpc-chart-box"><h3>Bounce Rate per Day</h3><canvas id="chart-stats-bounce" height="200"></canvas></div>
     </div>
-    <div class="fpc-section-title">Top 20 Seiten</div>
+    <div class="fpc-section-title">Top 20 Pages</div>
     <div id="stats-top-pages"></div>
     <div class="fpc-section-title">Top Referrer</div>
     <div id="stats-top-referrers"></div>
@@ -1231,7 +1353,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 
 <!-- ========== TAB 12: ALERTS ========== -->
 <div class="fpc-panel <?php echo $active_tab === 'alerts' ? 'active' : ''; ?>" id="panel-alerts">
-    <div class="fpc-section-title">Alert-Konfiguration</div>
+    <div class="fpc-section-title">Alert Configuration</div>
     <div style="background:var(--fpc-card);border-radius:10px;padding:20px;border:1px solid var(--fpc-border);margin-bottom:20px;">
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
             <div>
@@ -1239,35 +1361,59 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
                 <input type="number" class="fpc-input" id="alert-hitrate" value="70" min="0" max="100">
             </div>
             <div>
-                <label style="color:var(--fpc-text2);font-size:12px;">Cache-Leer Warnung (Minuten)</label>
+                <label style="color:var(--fpc-text2);font-size:12px;">Cache Empty Warning (Minutes)</label>
                 <input type="number" class="fpc-input" id="alert-empty" value="30" min="1">
             </div>
             <div>
-                <label style="color:var(--fpc-text2);font-size:12px;">Fehler-Schwellwert pro Stunde</label>
+                <label style="color:var(--fpc-text2);font-size:12px;">Error Threshold per Hour</label>
                 <input type="number" class="fpc-input" id="alert-errors" value="10" min="1">
             </div>
             <div>
-                <label style="color:var(--fpc-text2);font-size:12px;">E-Mail fuer Benachrichtigungen</label>
+                <label style="color:var(--fpc-text2);font-size:12px;">Notification Email</label>
                 <input type="email" class="fpc-input" id="alert-email" placeholder="admin@mr-hanf.de">
             </div>
         </div>
         <div style="margin-top:16px;display:flex;gap:12px;align-items:center;">
-            <label style="color:var(--fpc-text2);font-size:13px;"><input type="checkbox" id="alert-enabled"> Alerts aktivieren</label>
-            <label style="color:var(--fpc-text2);font-size:13px;"><input type="checkbox" id="alert-preloader-stop" checked> Preloader-Stopp melden</label>
+            <label style="color:var(--fpc-text2);font-size:13px;"><input type="checkbox" id="alert-enabled"> Enable Alerts</label>
+            <label style="color:var(--fpc-text2);font-size:13px;"><input type="checkbox" id="alert-preloader-stop" checked> Report Preloader Stops</label>
         </div>
         <div style="margin-top:16px;">
-            <button class="fpc-btn green" onclick="fpcSaveAlerts()">&#128190; Speichern</button>
+            <button class="fpc-btn green" onclick="fpcSaveAlerts()">&#128190; Save</button>
         </div>
     </div>
-    <div class="fpc-section-title">Alert-Historie</div>
+    <div class="fpc-section-title">Alert History</div>
     <div id="alerts-history"></div>
+</div>
+
+<!-- ========== TAB 13: SETTINGS ========== -->
+<div class="fpc-panel <?php echo $active_tab === 'settings' ? 'active' : ''; ?>" id="panel-settings">
+    <div class="fpc-section-title">Module Settings (Database)</div>
+    <p style="color:var(--fpc-text2);font-size:12px;margin-bottom:12px;">These settings are stored in the modified eCommerce database and used by the preloader cron job.</p>
+    <div id="settings-db" style="background:var(--fpc-card);border-radius:10px;padding:20px;border:1px solid var(--fpc-border);margin-bottom:20px;"></div>
+
+    <div class="fpc-section-title">Preloader Settings</div>
+    <p style="color:var(--fpc-text2);font-size:12px;margin-bottom:12px;">Rate limiting, server load protection, and validation settings for the preloader cron job.</p>
+    <div id="settings-preloader" style="background:var(--fpc-card);border-radius:10px;padding:20px;border:1px solid var(--fpc-border);margin-bottom:20px;"></div>
+
+    <div class="fpc-section-title">Cache Serve Settings</div>
+    <p style="color:var(--fpc-text2);font-size:12px;margin-bottom:12px;">Settings for fpc_serve.php - the cache delivery handler.</p>
+    <div id="settings-serve" style="background:var(--fpc-card);border-radius:10px;padding:20px;border:1px solid var(--fpc-border);margin-bottom:20px;"></div>
+
+    <div class="fpc-section-title">Health Check Settings</div>
+    <p style="color:var(--fpc-text2);font-size:12px;margin-bottom:12px;">Settings for the daily health check cron job.</p>
+    <div id="settings-healthcheck" style="background:var(--fpc-card);border-radius:10px;padding:20px;border:1px solid var(--fpc-border);margin-bottom:20px;"></div>
+
+    <div style="margin-top:20px;">
+        <button class="fpc-btn green" onclick="fpcSaveSettings()">&#128190; Save All Settings</button>
+        <button class="fpc-btn orange" onclick="fpcLoadSettings()" style="margin-left:8px;">&#8635; Reset to Saved</button>
+    </div>
 </div>
 
 </div><!-- /fpc-content -->
 
 <script>
 // ============================================================
-// JAVASCRIPT v9.0.0
+// JAVASCRIPT v9.0.6
 // ============================================================
 var BASE = '<?php echo basename(__FILE__); ?>';
 var chartInstances = {};
@@ -1387,15 +1533,15 @@ setInterval(function() {
 function fpcLoadDashboard() {
     fpcAjax('ajax=status', function(d) {
         var ampel = d.errors_1h > 5 ? 'red' : (d.hit_rate < 70 ? 'yellow' : 'green');
-        var status = ampel === 'green' ? 'Aktiv' : (ampel === 'yellow' ? 'Degraded' : 'Fehler');
+        var status = ampel === 'green' ? 'Active' : (ampel === 'yellow' ? 'Degraded' : 'Error');
         var kpis = '';
         kpis += '<div class="fpc-kpi"><div class="fpc-kpi-label"><span class="fpc-ampel ' + ampel + '"></span>Cache Status</div><div class="fpc-kpi-value" style="color:var(--fpc-' + ampel + ')">' + status + '</div></div>';
-        kpis += '<div class="fpc-kpi"><div class="fpc-kpi-label">Gecachte Seiten</div><div class="fpc-kpi-value" style="color:var(--fpc-teal)">' + d.files.toLocaleString() + '</div></div>';
-        kpis += '<div class="fpc-kpi"><div class="fpc-kpi-label">Cache-Groesse</div><div class="fpc-kpi-value">' + d.size_formatted + '</div></div>';
+        kpis += '<div class="fpc-kpi"><div class="fpc-kpi-label">Cached Pages</div><div class="fpc-kpi-value" style="color:var(--fpc-teal)">' + d.files.toLocaleString() + '</div></div>';
+        kpis += '<div class="fpc-kpi"><div class="fpc-kpi-label">Cache Size</div><div class="fpc-kpi-value">' + d.size_formatted + '</div></div>';
         kpis += '<div class="fpc-kpi"><div class="fpc-kpi-label">Hit Rate (1h)</div><div class="fpc-kpi-value" style="color:' + (d.hit_rate >= 80 ? 'var(--fpc-green)' : d.hit_rate >= 50 ? 'var(--fpc-orange)' : 'var(--fpc-red)') + '">' + d.hit_rate + '%</div></div>';
         kpis += '<div class="fpc-kpi"><div class="fpc-kpi-label">Requests (1h)</div><div class="fpc-kpi-value">' + d.total_requests_1h + '</div></div>';
-        kpis += '<div class="fpc-kpi"><div class="fpc-kpi-label">Fehler (1h)</div><div class="fpc-kpi-value" style="color:' + (d.errors_1h > 0 ? 'var(--fpc-red)' : 'var(--fpc-green)') + '">' + d.errors_1h + '</div></div>';
-        kpis += '<div class="fpc-kpi"><div class="fpc-kpi-label">Health Score</div><div class="fpc-kpi-value">' + (d.health_grade || '-') + '</div><div class="fpc-kpi-sub">' + (d.health_score !== null ? d.health_score + '/100' : 'Noch nicht geprueft') + '</div></div>';
+        kpis += '<div class="fpc-kpi"><div class="fpc-kpi-label">Errors (1h)</div><div class="fpc-kpi-value" style="color:' + (d.errors_1h > 0 ? 'var(--fpc-red)' : 'var(--fpc-green)') + '">' + d.errors_1h + '</div></div>';
+        kpis += '<div class="fpc-kpi"><div class="fpc-kpi-label">Health Score</div><div class="fpc-kpi-value">' + (d.health_grade || '-') + '</div><div class="fpc-kpi-sub">' + (d.health_score !== null ? d.health_score + '/100' : 'Not checked yet') + '</div></div>';
         if (d.opcache) {
             kpis += '<div class="fpc-kpi"><div class="fpc-kpi-label">OPCache Hit Rate</div><div class="fpc-kpi-value" style="color:var(--fpc-green)">' + d.opcache.hit_rate + '%</div></div>';
         }
@@ -1403,16 +1549,16 @@ function fpcLoadDashboard() {
         // OPCache
         var oc = d.opcache;
         if (oc) {
-            document.getElementById('dash-opcache').innerHTML = '<p style="color:var(--fpc-text2)">Status: ' + (oc.enabled ? '<span class="sev-ok">Aktiv</span>' : '<span class="sev-error">Inaktiv</span>') + '</p><p style="color:var(--fpc-text2)">Hit Rate: <strong>' + oc.hit_rate + '%</strong></p><p style="color:var(--fpc-text2)">Speicher: ' + oc.memory_used + ' MB belegt / ' + oc.memory_free + ' MB frei</p>';
+            document.getElementById('dash-opcache').innerHTML = '<p style="color:var(--fpc-text2)">Status: ' + (oc.enabled ? '<span class="sev-ok">Active</span>' : '<span class="sev-error">Inactive</span>') + '</p><p style="color:var(--fpc-text2)">Hit Rate: <strong>' + oc.hit_rate + '%</strong></p><p style="color:var(--fpc-text2)">Memory: ' + oc.memory_used + ' MB used / ' + oc.memory_free + ' MB free</p>';
         } else {
-            document.getElementById('dash-opcache').innerHTML = '<p style="color:var(--fpc-text2)">OPCache nicht verfuegbar</p>';
+            document.getElementById('dash-opcache').innerHTML = '<p style="color:var(--fpc-text2)">OPCache not available</p>';
         }
         // Preloader
         var pl = '';
-        if (d.rebuild_running) pl = '<p><span class="fpc-ampel green"></span><strong style="color:var(--fpc-green)">Rebuild laeuft</strong> (seit ' + d.rebuild_started + ')</p>';
-        else if (d.last_run) pl = '<p>Letzter Lauf: <strong>' + d.last_run + '</strong></p>';
-        else pl = '<p style="color:var(--fpc-text2)">Kein Preloader-Lauf bekannt</p>';
-        if (d.last_stats) pl += '<p style="color:var(--fpc-text2)">Gecacht: ' + d.last_stats.cached + ' | Uebersprungen: ' + d.last_stats.skipped + ' | Fehler: ' + d.last_stats.errors + '</p>';
+        if (d.rebuild_running) pl = '<p><span class="fpc-ampel green"></span><strong style="color:var(--fpc-green)">Rebuild running</strong> (since ' + d.rebuild_started + ')</p>';
+        else if (d.last_run) pl = '<p>Last run: <strong>' + d.last_run + '</strong></p>';
+        else pl = '<p style="color:var(--fpc-text2)">No preloader run recorded</p>';
+        if (d.last_stats) pl += '<p style="color:var(--fpc-text2)">Cached: ' + d.last_stats.cached + ' | Skipped: ' + d.last_stats.skipped + ' | Errors: ' + d.last_stats.errors + '</p>';
         document.getElementById('dash-preloader').innerHTML = pl;
         // Charts
         if (typeof Chart !== 'undefined') {
@@ -1469,17 +1615,17 @@ function fpcLoadPerformance() {
 // TAB 3: COVERAGE
 // ============================================================
 function fpcLoadCoverage() {
-    document.getElementById('cov-kpis').innerHTML = '<div class="fpc-kpi"><div class="fpc-kpi-label">Lade...</div><div class="fpc-kpi-value">...</div></div>';
+    document.getElementById('cov-kpis').innerHTML = '<div class="fpc-kpi"><div class="fpc-kpi-label">Loading...</div><div class="fpc-kpi-value">...</div></div>';
     fpcAjax('ajax=coverage', function(d) {
         var kpis = '';
         kpis += '<div class="fpc-kpi"><div class="fpc-kpi-label">Sitemap URLs</div><div class="fpc-kpi-value">' + d.sitemap_total.toLocaleString() + '</div></div>';
-        kpis += '<div class="fpc-kpi"><div class="fpc-kpi-label">Gecacht</div><div class="fpc-kpi-value" style="color:var(--fpc-green)">' + d.cached_total.toLocaleString() + '</div></div>';
+        kpis += '<div class="fpc-kpi"><div class="fpc-kpi-label">Cached</div><div class="fpc-kpi-value" style="color:var(--fpc-green)">' + d.cached_total.toLocaleString() + '</div></div>';
         kpis += '<div class="fpc-kpi"><div class="fpc-kpi-label">Coverage</div><div class="fpc-kpi-value" style="color:' + (d.coverage_pct >= 80 ? 'var(--fpc-green)' : d.coverage_pct >= 50 ? 'var(--fpc-orange)' : 'var(--fpc-red)') + '">' + d.coverage_pct + '%</div></div>';
-        kpis += '<div class="fpc-kpi"><div class="fpc-kpi-label">Pagination-Probleme</div><div class="fpc-kpi-value" style="color:' + (d.pagination_issues.length > 0 ? 'var(--fpc-red)' : 'var(--fpc-green)') + '">' + d.pagination_issues.length + '</div></div>';
+        kpis += '<div class="fpc-kpi"><div class="fpc-kpi-label">Pagination Issues</div><div class="fpc-kpi-value" style="color:' + (d.pagination_issues.length > 0 ? 'var(--fpc-red)' : 'var(--fpc-green)') + '">' + d.pagination_issues.length + '</div></div>';
         document.getElementById('cov-kpis').innerHTML = kpis;
         // Kategorien
         var cats = d.categories || {};
-        var html = '<table class="fpc-table"><thead><tr><th>Kategorie</th><th>Sitemap</th><th>Gecacht</th><th>Coverage</th></tr></thead><tbody>';
+        var html = '<table class="fpc-table"><thead><tr><th>Category</th><th>Sitemap</th><th>Cached</th><th>Coverage</th></tr></thead><tbody>';
         for (var cat in cats) {
             var c = cats[cat]; var pct = c.total > 0 ? ((c.cached / c.total) * 100).toFixed(1) : 0;
             html += '<tr><td>' + cat + '</td><td>' + c.total + '</td><td>' + c.cached + '</td><td><span style="color:' + (pct >= 80 ? 'var(--fpc-green)' : pct >= 50 ? 'var(--fpc-orange)' : 'var(--fpc-red)') + '">' + pct + '%</span></td></tr>';
@@ -1488,21 +1634,21 @@ function fpcLoadCoverage() {
         document.getElementById('cov-categories').innerHTML = html;
         // Pagination
         if (d.pagination_issues.length > 0) {
-            html = '<table class="fpc-table"><thead><tr><th>URL</th><th>Seite</th><th>Aktion</th></tr></thead><tbody>';
+            html = '<table class="fpc-table"><thead><tr><th>URL</th><th>Page</th><th>Action</th></tr></thead><tbody>';
             d.pagination_issues.forEach(function(p) {
-                html += '<tr><td>' + p.url + '</td><td>Seite ' + p.page_num + '</td><td><button class="fpc-btn teal" style="padding:3px 8px;font-size:11px;" onclick="fpcCacheUrlDirect(\'' + p.url + '\')">Jetzt cachen</button></td></tr>';
+                html += '<tr><td>' + p.url + '</td><td>Page ' + p.page_num + '</td><td><button class="fpc-btn teal" style="padding:3px 8px;font-size:11px;" onclick="fpcCacheUrlDirect(\'' + p.url + '\')">Cache Now</button></td></tr>';
             });
             html += '</tbody></table>';
-        } else { html = '<p style="color:var(--fpc-green)">Keine Pagination-Probleme gefunden!</p>'; }
+        } else { html = '<p style="color:var(--fpc-green)">No pagination issues found!</p>'; }
         document.getElementById('cov-pagination').innerHTML = html;
         // Uncached
         if (d.uncached_top50.length > 0) {
-            html = '<table class="fpc-table"><thead><tr><th>URL</th><th>Aktion</th></tr></thead><tbody>';
+            html = '<table class="fpc-table"><thead><tr><th>URL</th><th>Action</th></tr></thead><tbody>';
             d.uncached_top50.forEach(function(u) {
-                html += '<tr><td>' + u + '</td><td><button class="fpc-btn teal" style="padding:3px 8px;font-size:11px;" onclick="fpcCacheUrlDirect(\'' + u + '\')">Cachen</button></td></tr>';
+                html += '<tr><td>' + u + '</td><td><button class="fpc-btn teal" style="padding:3px 8px;font-size:11px;" onclick="fpcCacheUrlDirect(\'' + u + '\')">Cache</button></td></tr>';
             });
             html += '</tbody></table>';
-        } else { html = '<p style="color:var(--fpc-green)">Alle Sitemap-URLs sind gecacht!</p>'; }
+        } else { html = '<p style="color:var(--fpc-green)">All sitemap URLs are cached!</p>'; }
         document.getElementById('cov-uncached').innerHTML = html;
     });
 }
@@ -1515,7 +1661,7 @@ function fpcCacheUrlDirect(url) {
 // TAB 4: STEUERUNG
 // ============================================================
 function fpcFlush() {
-    if (!confirm('Gesamten Cache wirklich leeren?')) return;
+    if (!confirm('Really flush entire cache?')) return;
     fpcAjax('ajax=flush', function(r) { fpcToast(r.msg); fpcLoadDashboard(); }, 'POST');
 }
 
@@ -1552,7 +1698,7 @@ function fpcPollProgress() {
         if (bar) bar.style.width = d.percent + '%';
         if (pct) pct.textContent = d.percent + '%';
         if (done) done.textContent = d.done + ' / ' + d.total + ' URLs';
-        if (errs) errs.textContent = 'Fehler: ' + d.errors + ' | Uebersprungen: ' + d.skipped;
+        if (errs) errs.textContent = 'Errors: ' + d.errors + ' | Skipped: ' + d.skipped;
         if (log && d.last_lines) log.textContent = d.last_lines.join('\n');
         // Also update preloader tab
         var pBar = document.getElementById('preloader-bar');
@@ -1562,10 +1708,12 @@ function fpcPollProgress() {
         if (pBar) pBar.style.width = d.percent + '%';
         if (pPct) pPct.textContent = d.percent + '%';
         if (pDone) pDone.textContent = d.done + ' / ' + d.total + ' URLs';
+        var pSpeed = document.getElementById('preloader-speed');
+        if (pSpeed && d.speed) pSpeed.textContent = d.speed + ' URLs/sec';
         if (pLog && d.last_lines) pLog.textContent = d.last_lines.join('\n');
         if (!d.running && d.done > 0) {
             if (rebuildPollTimer) { clearInterval(rebuildPollTimer); rebuildPollTimer = null; }
-            fpcToast('Rebuild abgeschlossen: ' + d.done + ' URLs');
+            fpcToast('Rebuild completed: ' + d.done + ' URLs');
             setTimeout(function() {
                 var wrap = document.getElementById('rebuild-progress');
                 if (wrap) wrap.classList.remove('active');
@@ -1591,10 +1739,10 @@ function fpcAddCustomUrl() {
 
 function fpcLoadCustomUrls() {
     fpcAjax('ajax=custom_urls', function(d) {
-        if (!d.urls || d.urls.length === 0) { document.getElementById('custom-urls-list').innerHTML = '<p style="color:var(--fpc-text2)">Keine Custom URLs.</p>'; return; }
-        var html = '<table class="fpc-table"><thead><tr><th>URL</th><th>Aktion</th></tr></thead><tbody>';
+        if (!d.urls || d.urls.length === 0) { document.getElementById('custom-urls-list').innerHTML = '<p style="color:var(--fpc-text2)">No custom URLs.</p>'; return; }
+        var html = '<table class="fpc-table"><thead><tr><th>URL</th><th>Action</th></tr></thead><tbody>';
         d.urls.forEach(function(u) {
-            html += '<tr><td>' + u + '</td><td><button class="fpc-btn red" style="padding:3px 8px;font-size:11px;" onclick="fpcRemoveCustomUrl(\'' + u + '\')">Entfernen</button></td></tr>';
+            html += '<tr><td>' + u + '</td><td><button class="fpc-btn red" style="padding:3px 8px;font-size:11px;" onclick="fpcRemoveCustomUrl(\'' + u + '\')">Remove</button></td></tr>';
         });
         html += '</tbody></table>';
         document.getElementById('custom-urls-list').innerHTML = html;
@@ -1611,14 +1759,14 @@ function fpcRemoveCustomUrl(url) {
 function fpcLoadUrls(page) {
     var search = document.getElementById('url-search') ? document.getElementById('url-search').value : '';
     fpcAjax('ajax=urls&page=' + page + '&search=' + encodeURIComponent(search), function(d) {
-        var html = '<table class="fpc-table"><thead><tr><th>Pfad</th><th>Groesse</th><th>Gecacht</th><th>Alter</th><th>Aktion</th></tr></thead><tbody>';
+        var html = '<table class="fpc-table"><thead><tr><th>Path</th><th>Size</th><th>Cached</th><th>Age</th><th>Action</th></tr></thead><tbody>';
         d.urls.forEach(function(u) {
             html += '<tr><td><a href="https://mr-hanf.de' + u.path + '" target="_blank" style="color:var(--fpc-teal)">' + u.path + '</a></td><td>' + fpcFormatBytes(u.size) + '</td><td>' + u.cached + '</td><td>' + u.age_h + 'h</td>';
             html += '<td><button class="fpc-btn teal" style="padding:3px 8px;font-size:11px;" onclick="fpcRecacheUrl(\'' + u.path.replace(/'/g, "\\'") + '\')">&#8635;</button> ';
             html += '<button class="fpc-btn red" style="padding:3px 8px;font-size:11px;" onclick="fpcRemoveUrl(\'' + u.path.replace(/'/g, "\\'") + '\')">&#128465;</button></td></tr>';
         });
         html += '</tbody></table>';
-        html += '<p style="color:var(--fpc-text2);font-size:12px;margin-top:8px;">' + d.total + ' URLs gesamt | Seite ' + d.page + ' von ' + d.pages + '</p>';
+        html += '<p style="color:var(--fpc-text2);font-size:12px;margin-top:8px;">' + d.total + ' URLs total | Page ' + d.page + ' of ' + d.pages + '</p>';
         document.getElementById('urls-table').innerHTML = html;
         fpcBuildPagination('urls-pagination', d.page, d.pages, 'fpcLoadUrls');
     });
@@ -1642,10 +1790,10 @@ function fpcExportUrls() {
 function fpcLoadPreloader() {
     fpcAjax('ajax=preloader_status', function(d) {
         var kpis = '';
-        kpis += '<div class="fpc-kpi"><div class="fpc-kpi-label">Gecachte Dateien</div><div class="fpc-kpi-value" style="color:var(--fpc-teal)">' + d.cached_files + '</div></div>';
+        kpis += '<div class="fpc-kpi"><div class="fpc-kpi-label">Cached Files</div><div class="fpc-kpi-value" style="color:var(--fpc-teal)">' + d.cached_files + '</div></div>';
         kpis += '<div class="fpc-kpi"><div class="fpc-kpi-label">Sitemap URLs</div><div class="fpc-kpi-value">' + d.sitemap_urls + '</div></div>';
         kpis += '<div class="fpc-kpi"><div class="fpc-kpi-label">Queue</div><div class="fpc-kpi-value">' + d.queue_size + '</div></div>';
-        kpis += '<div class="fpc-kpi"><div class="fpc-kpi-label">Status</div><div class="fpc-kpi-value" style="color:' + (d.running ? 'var(--fpc-green)' : 'var(--fpc-text2)') + '">' + (d.running ? 'Laeuft' : 'Gestoppt') + '</div></div>';
+        kpis += '<div class="fpc-kpi"><div class="fpc-kpi-label">Status</div><div class="fpc-kpi-value" style="color:' + (d.running ? 'var(--fpc-green)' : 'var(--fpc-text2)') + '">' + (d.running ? 'Running' : 'Stopped') + '</div></div>';
         document.getElementById('preloader-kpis').innerHTML = kpis;
         if (d.running) fpcStartProgressPoll();
     });
@@ -1660,18 +1808,18 @@ function fpcLoadPreloader() {
 // ============================================================
 function fpcLoadFehler() {
     fpcAjax('ajax=miss_reasons', function(d) {
-        var html = '<table class="fpc-table"><thead><tr><th>Grund</th><th>Anzahl</th><th>Anteil</th></tr></thead><tbody>';
+        var html = '<table class="fpc-table"><thead><tr><th>Reason</th><th>Count</th><th>Share</th></tr></thead><tbody>';
         for (var reason in d.reasons) {
             var pct = d.total > 0 ? ((d.reasons[reason] / d.total) * 100).toFixed(1) : 0;
             html += '<tr><td>' + reason + '</td><td>' + d.reasons[reason] + '</td><td>' + pct + '%</td></tr>';
         }
         html += '</tbody></table>';
-        if (Object.keys(d.reasons).length === 0) html = '<p style="color:var(--fpc-text2)">Noch keine Daten. Request-Logging muss in fpc_serve.php aktiviert sein.</p>';
+        if (Object.keys(d.reasons).length === 0) html = '<p style="color:var(--fpc-text2)">No data yet. Request logging must be enabled in fpc_serve.php.</p>';
         document.getElementById('fehler-reasons').innerHTML = html;
     });
     fpcAjax('ajax=error_urls', function(d) {
-        if (!d.urls || d.urls.length === 0) { document.getElementById('fehler-urls').innerHTML = '<p style="color:var(--fpc-green)">Keine Fehler-URLs!</p>'; return; }
-        var html = '<table class="fpc-table"><thead><tr><th>URL</th><th>HTTP Code</th><th>Anzahl</th><th>Letzter Fehler</th></tr></thead><tbody>';
+        if (!d.urls || d.urls.length === 0) { document.getElementById('fehler-urls').innerHTML = '<p style="color:var(--fpc-green)">No error URLs!</p>'; return; }
+        var html = '<table class="fpc-table"><thead><tr><th>URL</th><th>HTTP Code</th><th>Count</th><th>Last Error</th></tr></thead><tbody>';
         d.urls.forEach(function(u) {
             html += '<tr><td>' + u.url + '</td><td><span class="sev-error">' + u.code + '</span></td><td>' + u.count + '</td><td>' + u.last + '</td></tr>';
         });
@@ -1679,11 +1827,11 @@ function fpcLoadFehler() {
         document.getElementById('fehler-urls').innerHTML = html;
     });
     fpcAjax('ajax=slowest_pages', function(d) {
-        if (!d.pages || d.pages.length === 0) { document.getElementById('fehler-slowest').innerHTML = '<p style="color:var(--fpc-text2)">Noch keine Daten.</p>'; return; }
-        var html = '<table class="fpc-table"><thead><tr><th>URL</th><th>TTFB (ms)</th><th>Bewertung</th></tr></thead><tbody>';
+        if (!d.pages || d.pages.length === 0) { document.getElementById('fehler-slowest').innerHTML = '<p style="color:var(--fpc-text2)">No data yet.</p>'; return; }
+        var html = '<table class="fpc-table"><thead><tr><th>URL</th><th>TTFB (ms)</th><th>Rating</th></tr></thead><tbody>';
         d.pages.forEach(function(p) {
             var sev = p.ttfb > 3000 ? 'critical' : (p.ttfb > 1500 ? 'warning' : 'ok');
-            html += '<tr><td>' + p.url + '</td><td>' + p.ttfb + '</td><td><span class="sev-' + sev + '">' + (sev === 'critical' ? 'Kritisch' : sev === 'warning' ? 'Langsam' : 'OK') + '</span></td></tr>';
+            html += '<tr><td>' + p.url + '</td><td>' + p.ttfb + '</td><td><span class="sev-' + sev + '">' + (sev === 'critical' ? 'Critical' : sev === 'warning' ? 'Slow' : 'OK') + '</span></td></tr>';
         });
         html += '</tbody></table>';
         document.getElementById('fehler-slowest').innerHTML = html;
@@ -1712,7 +1860,7 @@ function fpcLoadSeo() {
         var html = '<table class="fpc-table"><thead><tr><th>URL</th><th>Bot-Requests</th></tr></thead><tbody>';
         for (var url in d.bot_top_urls) { html += '<tr><td>' + url + '</td><td>' + d.bot_top_urls[url] + '</td></tr>'; }
         html += '</tbody></table>';
-        if (Object.keys(d.bot_top_urls).length === 0) html = '<p style="color:var(--fpc-text2)">Noch keine Bot-Daten. Request-Logging muss aktiviert sein.</p>';
+        if (Object.keys(d.bot_top_urls).length === 0) html = '<p style="color:var(--fpc-text2)">No bot data yet. Request logging must be enabled.</p>';
         document.getElementById('seo-top-urls').innerHTML = html;
     });
 }
@@ -1739,7 +1887,7 @@ function fpcLoadInspector(filter) {
             html += '</tr>';
         });
         html += '</tbody></table>';
-        if (d.requests.length === 0) html = '<p style="color:var(--fpc-text2)">Keine Requests gefunden. Stellen Sie sicher, dass Request-Logging in fpc_serve.php aktiviert ist.</p>';
+        if (d.requests.length === 0) html = '<p style="color:var(--fpc-text2)">No requests found. Make sure request logging is enabled in fpc_serve.php.</p>';
         else html += '<p style="color:var(--fpc-text2);font-size:12px;margin-top:8px;">' + d.total + ' Requests im Log | Zeige letzte ' + d.requests.length + '</p>';
         document.getElementById('inspector-table').innerHTML = html;
     });
@@ -1751,7 +1899,7 @@ function fpcLoadInspector(filter) {
 function fpcLoadHealth() {
     fpcAjax('ajax=healthcheck', function(d) {
         if (!d.available) {
-            document.getElementById('health-score-box').innerHTML = '<p style="color:var(--fpc-orange)">Noch kein Health-Check ausgefuehrt. Klicken Sie auf "Jetzt pruefen".</p>';
+            document.getElementById('health-score-box').innerHTML = '<p style="color:var(--fpc-orange)">No health check performed yet. Click "Run Check Now".</p>';
             document.getElementById('health-details').innerHTML = '';
             return;
         }
@@ -1764,17 +1912,15 @@ function fpcLoadHealth() {
         var html = '<div style="display:flex;align-items:center;gap:20px;background:var(--fpc-card);padding:20px;border-radius:10px;border:1px solid var(--fpc-border);">';
         html += '<div style="font-size:64px;font-weight:900;color:' + color + '">' + grade + '</div>';
         html += '<div><div style="font-size:24px;font-weight:700;color:' + color + '">' + score + ' / 100</div>';
-        html += '<div style="color:var(--fpc-text2)">Geprueft: ' + (summary.timestamp || '-') + '</div>';
-        html += '<div style="color:var(--fpc-text2)">Gecachte Seiten: ' + (summary.cached_pages || '-') + ' | Fehler: ' + (summary.total_errors || 0) + '</div>';
+        html += '<div style="color:var(--fpc-text2)"'Checked: ' + (summary.timestamp || '-') + '</div>';
+        html += '<div style="color:var(--fpc-text2)">'Cached Pages: '+ (summary.cached_pages || '-') + ' | Errors: ' + (summary.total_errors || 0) + '</div>';
         html += '</div></div>';
         document.getElementById('health-score-box').innerHTML = html;
         // Details
-        var checks = latest.checks || {};
-        html = '<table class="fpc-table"><thead><tr><th>Pruefung</th><th>Status</th><th>Details</th></tr></thead><tbody>';
-        for (var check in checks) {
+        var checks = latest.checks || {        var html = '<table class="fpc-table"><thead><tr><th>Check</th><th>Status</th><th>Details</th></tr></thead><tbody>';        for (var check in checks) {
             var c = checks[check];
             var ok = c.ok || c.status === 'ok' || c.passed;
-            html += '<tr><td>' + check + '</td><td><span class="sev-' + (ok ? 'ok' : 'error') + '">' + (ok ? 'OK' : 'FEHLER') + '</span></td><td>' + (c.msg || c.detail || '-') + '</td></tr>';
+            html += '<tr><td>' + check + '</td><td><span class="sev-' + (ok ? 'ok' : 'error') + '">' + (ok ? 'OK' : 'ERROR') + '</span></td><td>' + (c.msg || c.detail || '-') + '</td></tr>';
         }
         html += '</tbody></table>';
         document.getElementById('health-details').innerHTML = html;
@@ -1792,7 +1938,7 @@ function fpcLoadHealth() {
 }
 
 function fpcRunHealthcheck() {
-    fpcToast('Health-Check wird ausgefuehrt...');
+    fpcToast('Running health check...');
     fpcAjaxPost('run_healthcheck', '', function(r) {
         fpcToast(r.msg, !r.ok);
         if (r.ok) setTimeout(fpcLoadHealth, 2000);
@@ -1806,29 +1952,29 @@ function fpcLoadStats() {
     var days = document.getElementById('stats-days') ? document.getElementById('stats-days').value : 30;
     fpcAjax('ajax=visitor_stats&days=' + days, function(d) {
         var kpis = '';
-        kpis += '<div class="fpc-kpi"><div class="fpc-kpi-label">Seitenaufrufe</div><div class="fpc-kpi-value" style="color:var(--fpc-teal)">' + d.total_pageviews.toLocaleString() + '</div></div>';
-        kpis += '<div class="fpc-kpi"><div class="fpc-kpi-label">Besucher</div><div class="fpc-kpi-value">' + d.total_visitors.toLocaleString() + '</div></div>';
-        kpis += '<div class="fpc-kpi"><div class="fpc-kpi-label">Absprungrate</div><div class="fpc-kpi-value" style="color:' + (d.bounce_rate > 60 ? 'var(--fpc-red)' : d.bounce_rate > 40 ? 'var(--fpc-orange)' : 'var(--fpc-green)') + '">' + d.bounce_rate + '%</div></div>';
-        kpis += '<div class="fpc-kpi"><div class="fpc-kpi-label">Verweildauer</div><div class="fpc-kpi-value">' + d.avg_duration + 's</div></div>';
+        kpis += '<div class="fpc-kpi"><div class="fpc-kpi-label">Pageviews</div><div class="fpc-kpi-value" style="color:var(--fpc-teal)">' + d.total_pageviews.toLocaleString() + '</div></div>';
+        kpis += '<div class="fpc-kpi"><div class="fpc-kpi-label">Visitors</div><div class="fpc-kpi-value">' + d.total_visitors.toLocaleString() + '</div></div>';
+        kpis += '<div class="fpc-kpi"><div class="fpc-kpi-label">Bounce Rate</div><div class="fpc-kpi-value" style="color:' + (d.bounce_rate > 60 ? 'var(--fpc-red)' : d.bounce_rate > 40 ? 'var(--fpc-orange)' : 'var(--fpc-green)') + '">' + d.bounce_rate + '%</div></div>';
+        kpis += '<div class="fpc-kpi"><div class="fpc-kpi-label">Avg Duration</div><div class="fpc-kpi-value">' + d.avg_duration + 's</div></div>';
         kpis += '<div class="fpc-kpi"><div class="fpc-kpi-label">Desktop</div><div class="fpc-kpi-value">' + d.devices.desktop + '</div></div>';
         kpis += '<div class="fpc-kpi"><div class="fpc-kpi-label">Mobile</div><div class="fpc-kpi-value">' + d.devices.mobile + '</div></div>';
         document.getElementById('stats-kpis').innerHTML = kpis;
         if (typeof Chart !== 'undefined' && d.daily.length > 0) {
             var dLabels = d.daily.map(function(x) { return x.date.substring(5); });
-            fpcMakeChart('chart-stats-daily', { type: 'line', data: { labels: dLabels, datasets: [{ label: 'Seitenaufrufe', data: d.daily.map(function(x) { return x.pageviews; }), borderColor: '#00d4aa', backgroundColor: 'rgba(0,212,170,0.1)', fill: true, tension: 0.3 }, { label: 'Besucher', data: d.daily.map(function(x) { return x.visitors; }), borderColor: '#00a8ff', fill: false, tension: 0.3 }] }, options: { responsive: true } });
+            fpcMakeChart('chart-stats-daily', { type: 'line', data: { labels: dLabels, datasets: [{ label: 'Pageviews', data: d.daily.map(function(x) { return x.pageviews; }), borderColor: '#00d4aa', backgroundColor: 'rgba(0,212,170,0.1)', fill: true, tension: 0.3 }, { label: 'Visitors', data: d.daily.map(function(x) { return x.visitors; }), borderColor: '#00a8ff', fill: false, tension: 0.3 }] }, options: { responsive: true } });
             var hLabels = []; var hData = [];
             for (var h = 0; h < 24; h++) { hLabels.push(h + ':00'); hData.push(d.hours[h] || 0); }
-            fpcMakeChart('chart-stats-hourly', { type: 'bar', data: { labels: hLabels, datasets: [{ label: 'Aufrufe', data: hData, backgroundColor: '#00d4aa' }] }, options: { responsive: true } });
+            fpcMakeChart('chart-stats-hourly', { type: 'bar', data: { labels: hLabels, datasets: [{ label: 'Views', data: hData, backgroundColor: '#00d4aa' }] }, options: { responsive: true } });
             fpcMakeChart('chart-stats-devices', { type: 'doughnut', data: { labels: ['Desktop', 'Mobile', 'Tablet'], datasets: [{ data: [d.devices.desktop, d.devices.mobile, d.devices.tablet], backgroundColor: ['#00a8ff', '#00e676', '#ffa502'] }] }, options: { responsive: true } });
-            fpcMakeChart('chart-stats-bounce', { type: 'line', data: { labels: dLabels, datasets: [{ label: 'Absprungrate %', data: d.daily.map(function(x) { return x.bounce_rate; }), borderColor: '#ff4757', fill: false, tension: 0.3 }] }, options: { responsive: true, scales: { y: { min: 0, max: 100 } } } });
+            fpcMakeChart('chart-stats-bounce', { type: 'line', data: { labels: dLabels, datasets: [{ label: 'Bounce Rate %', data: d.daily.map(function(x) { return x.bounce_rate; }), borderColor: '#ff4757', fill: false, tension: 0.3 }] }, options: { responsive: true, scales: { y: { min: 0, max: 100 } } } });
         }
         // Top Pages
-        var html = '<table class="fpc-table"><thead><tr><th>Seite</th><th>Aufrufe</th></tr></thead><tbody>';
+        var html = '<table class="fpc-table"><thead><tr><th>Page</th><th>Views</th></tr></thead><tbody>';
         for (var page in d.top_pages) { html += '<tr><td>' + page + '</td><td>' + d.top_pages[page] + '</td></tr>'; }
         html += '</tbody></table>';
         document.getElementById('stats-top-pages').innerHTML = html;
         // Top Referrers
-        html = '<table class="fpc-table"><thead><tr><th>Referrer</th><th>Aufrufe</th></tr></thead><tbody>';
+        html = '<table class="fpc-table"><thead><tr><th>Referrer</th><th>Views</th></tr></thead><tbody>';
         for (var ref in d.top_referrers) { html += '<tr><td>' + ref + '</td><td>' + d.top_referrers[ref] + '</td></tr>'; }
         html += '</tbody></table>';
         document.getElementById('stats-top-referrers').innerHTML = html;
@@ -1848,8 +1994,8 @@ function fpcLoadAlerts() {
         if (document.getElementById('alert-preloader-stop')) document.getElementById('alert-preloader-stop').checked = d.preloader_stop_alert !== false;
     });
     fpcAjax('ajax=alerts_history', function(d) {
-        if (!d.alerts || d.alerts.length === 0) { document.getElementById('alerts-history').innerHTML = '<p style="color:var(--fpc-text2)">Keine Alerts bisher.</p>'; return; }
-        var html = '<table class="fpc-table"><thead><tr><th>Zeit</th><th>Typ</th><th>Nachricht</th></tr></thead><tbody>';
+        if (!d.alerts || d.alerts.length === 0) { document.getElementById('alerts-history').innerHTML = '<p style="color:var(--fpc-text2)">No alerts yet.</p>'; return; }
+        var html = '<table class="fpc-table"><thead><tr><th>Time</th><th>Type</th><th>Message</th></tr></thead><tbody>';
         d.alerts.reverse().forEach(function(a) {
             html += '<tr><td>' + (a.timestamp || '-') + '</td><td><span class="sev-' + (a.severity || 'warning') + '">' + (a.type || '-') + '</span></td><td>' + (a.msg || '-') + '</td></tr>';
         });
@@ -1871,7 +2017,119 @@ function fpcSaveAlerts() {
 }
 
 // ============================================================
-// INIT: Tab-spezifische Daten laden
+// TAB 13: SETTINGS
+// ============================================================
+function fpcLoadSettings() {
+    fpcAjax('ajax=settings_load', function(d) {
+        // DB Settings
+        var html = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">';
+        d.db.forEach(function(s) {
+            html += '<div>';
+            html += '<label style="color:var(--fpc-text2);font-size:12px;display:block;margin-bottom:4px;">' + s.label + '</label>';
+            if (s.type === 'boolean') {
+                html += '<select class="fpc-input" data-db-key="' + s.key + '" style="width:100%;">';
+                html += '<option value="True"' + (s.value === 'True' ? ' selected' : '') + '>True</option>';
+                html += '<option value="False"' + (s.value === 'False' ? ' selected' : '') + '>False</option>';
+                html += '</select>';
+            } else if (s.type === 'number') {
+                html += '<input type="number" class="fpc-input" data-db-key="' + s.key + '" value="' + s.value + '" style="width:100%;">';
+            } else {
+                html += '<input type="text" class="fpc-input" data-db-key="' + s.key + '" value="' + s.value + '" style="width:100%;">';
+            }
+            html += '<small style="color:var(--fpc-text2);font-size:11px;">' + s.desc + '</small>';
+            html += '</div>';
+        });
+        html += '</div>';
+        document.getElementById('settings-db').innerHTML = html;
+
+        // Preloader Settings
+        var p = d.preloader;
+        var preloaderFields = [
+            {key:'request_delay_ms', label:'Request Delay (ms)', desc:'Minimum pause between requests', val:p.request_delay_ms, type:'number'},
+            {key:'load_threshold', label:'Server Load Threshold', desc:'Pause preloader when load exceeds this', val:p.load_threshold, type:'number', step:'0.1'},
+            {key:'load_pause_sec', label:'Load Pause (sec)', desc:'Pause duration when load is too high', val:p.load_pause_sec, type:'number'},
+            {key:'batch_size', label:'Batch Size', desc:'Pause after this many requests', val:p.batch_size, type:'number'},
+            {key:'batch_pause_sec', label:'Batch Pause (sec)', desc:'Pause duration between batches', val:p.batch_pause_sec, type:'number'},
+            {key:'slow_threshold_ms', label:'Slow Threshold (ms)', desc:'Double delay when TTFB exceeds this', val:p.slow_threshold_ms, type:'number'},
+            {key:'max_runtime_sec', label:'Max Runtime (sec)', desc:'Maximum preloader runtime (default: 2700 = 45min)', val:p.max_runtime_sec, type:'number'},
+            {key:'min_html_size', label:'Min HTML Size (bytes)', desc:'Minimum valid HTML file size', val:p.min_html_size, type:'number'},
+            {key:'max_error_rate', label:'Max Error Rate', desc:'Stop if error rate exceeds this (0.20 = 20%)', val:p.max_error_rate, type:'number', step:'0.01'},
+            {key:'adaptive_enabled', label:'Adaptive Throttling', desc:'Auto-adjust delay based on response time', val:p.adaptive_enabled, type:'bool'},
+            {key:'require_doctype', label:'Require DOCTYPE', desc:'Validate DOCTYPE in cached HTML', val:p.require_doctype, type:'bool'},
+            {key:'require_body', label:'Require Body Tag', desc:'Validate body tag in cached HTML', val:p.require_body, type:'bool'},
+            {key:'verify_after_write', label:'Verify After Write', desc:'Re-read and validate cache file after writing', val:p.verify_after_write, type:'bool'},
+        ];
+        html = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">';
+        preloaderFields.forEach(function(f) {
+            html += '<div>';
+            html += '<label style="color:var(--fpc-text2);font-size:12px;display:block;margin-bottom:4px;">' + f.label + '</label>';
+            if (f.type === 'bool') {
+                html += '<select class="fpc-input" id="set-pl-' + f.key + '" style="width:100%;">';
+                html += '<option value="true"' + (f.val ? ' selected' : '') + '>Enabled</option>';
+                html += '<option value="false"' + (!f.val ? ' selected' : '') + '>Disabled</option>';
+                html += '</select>';
+            } else {
+                html += '<input type="number" class="fpc-input" id="set-pl-' + f.key + '" value="' + f.val + '"' + (f.step ? ' step="' + f.step + '"' : '') + ' style="width:100%;">';
+            }
+            html += '<small style="color:var(--fpc-text2);font-size:11px;">' + f.desc + '</small>';
+            html += '</div>';
+        });
+        html += '</div>';
+        document.getElementById('settings-preloader').innerHTML = html;
+
+        // Serve Settings
+        var sv = d.serve;
+        html = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">';
+        html += '<div><label style="color:var(--fpc-text2);font-size:12px;display:block;margin-bottom:4px;">Min File Size (bytes)</label><input type="number" class="fpc-input" id="set-sv-min_filesize" value="' + sv.min_filesize + '" style="width:100%;"><small style="color:var(--fpc-text2);font-size:11px;">Reject cache files smaller than this</small></div>';
+        html += '<div><label style="color:var(--fpc-text2);font-size:12px;display:block;margin-bottom:4px;">Max Age (seconds)</label><input type="number" class="fpc-input" id="set-sv-max_age" value="' + sv.max_age + '" style="width:100%;"><small style="color:var(--fpc-text2);font-size:11px;">Fallback TTL for cache files (default: 172800 = 48h)</small></div>';
+        html += '<div><label style="color:var(--fpc-text2);font-size:12px;display:block;margin-bottom:4px;">Auto Delete Corrupt</label><select class="fpc-input" id="set-sv-auto_delete" style="width:100%;"><option value="true"' + (sv.auto_delete ? ' selected' : '') + '>Enabled</option><option value="false"' + (!sv.auto_delete ? ' selected' : '') + '>Disabled</option></select><small style="color:var(--fpc-text2);font-size:11px;">Automatically delete corrupt/expired cache files</small></div>';
+        html += '<div><label style="color:var(--fpc-text2);font-size:12px;display:block;margin-bottom:4px;">Request Logging</label><select class="fpc-input" id="set-sv-request_log" style="width:100%;"><option value="true"' + (sv.request_log ? ' selected' : '') + '>Enabled</option><option value="false"' + (!sv.request_log ? ' selected' : '') + '>Disabled</option></select><small style="color:var(--fpc-text2);font-size:11px;">Log every request for Inspector/SEO tabs</small></div>';
+        html += '</div>';
+        document.getElementById('settings-serve').innerHTML = html;
+
+        // Healthcheck Settings
+        var hc = d.healthcheck;
+        html = '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;">';
+        html += '<div><label style="color:var(--fpc-text2);font-size:12px;display:block;margin-bottom:4px;">Max URLs to Test</label><input type="number" class="fpc-input" id="set-hc-max_urls" value="' + hc.max_urls + '" style="width:100%;"><small style="color:var(--fpc-text2);font-size:11px;">Maximum URLs per health check run</small></div>';
+        html += '<div><label style="color:var(--fpc-text2);font-size:12px;display:block;margin-bottom:4px;">Timeout (sec)</label><input type="number" class="fpc-input" id="set-hc-timeout" value="' + hc.timeout + '" style="width:100%;"><small style="color:var(--fpc-text2);font-size:11px;">Timeout per URL in seconds</small></div>';
+        html += '<div><label style="color:var(--fpc-text2);font-size:12px;display:block;margin-bottom:4px;">Max History</label><input type="number" class="fpc-input" id="set-hc-max_history" value="' + hc.max_history + '" style="width:100%;"><small style="color:var(--fpc-text2);font-size:11px;">Maximum stored health check runs</small></div>';
+        html += '</div>';
+        document.getElementById('settings-healthcheck').innerHTML = html;
+    });
+}
+
+function fpcSaveSettings() {
+    var cfg = {db: [], preloader: {}, serve: {}, healthcheck: {}};
+    // DB settings
+    document.querySelectorAll('[data-db-key]').forEach(function(el) {
+        cfg.db.push({key: el.getAttribute('data-db-key'), value: el.value});
+    });
+    // Preloader settings
+    var plKeys = ['request_delay_ms','load_threshold','load_pause_sec','batch_size','batch_pause_sec','slow_threshold_ms','max_runtime_sec','min_html_size','max_error_rate','adaptive_enabled','require_doctype','require_body','verify_after_write'];
+    plKeys.forEach(function(k) {
+        var el = document.getElementById('set-pl-' + k);
+        if (!el) return;
+        if (el.tagName === 'SELECT') cfg.preloader[k] = el.value === 'true';
+        else cfg.preloader[k] = parseFloat(el.value) || 0;
+    });
+    // Serve settings
+    cfg.serve = {
+        min_filesize: parseInt(document.getElementById('set-sv-min_filesize').value) || 500,
+        max_age: parseInt(document.getElementById('set-sv-max_age').value) || 172800,
+        auto_delete: document.getElementById('set-sv-auto_delete').value === 'true',
+        request_log: document.getElementById('set-sv-request_log').value === 'true',
+    };
+    // Healthcheck settings
+    cfg.healthcheck = {
+        max_urls: parseInt(document.getElementById('set-hc-max_urls').value) || 200,
+        timeout: parseInt(document.getElementById('set-hc-timeout').value) || 15,
+        max_history: parseInt(document.getElementById('set-hc-max_history').value) || 90,
+    };
+    fpcAjaxPostJson('settings_save', cfg, function(r) { fpcToast(r.msg, !r.ok); });
+}
+
+// ============================================================
+// INIT: Tab-specific data loading
 // ============================================================
 document.addEventListener('DOMContentLoaded', function() {
     var tab = '<?php echo $active_tab; ?>';
@@ -1888,6 +2146,7 @@ document.addEventListener('DOMContentLoaded', function() {
         case 'health': fpcLoadHealth(); break;
         case 'statistik': fpcLoadStats(); break;
         case 'alerts': fpcLoadAlerts(); break;
+        case 'settings': fpcLoadSettings(); break;
     }
     // Check if rebuild is running
     fpcAjax('ajax=rebuild_progress', function(d) {
