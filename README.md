@@ -21,7 +21,7 @@ Eingeloggter   → Apache → index.php → modified eCommerce → dynamische Se
 | `fpc_preloader.php` | Cron-Job: Baut Cache auf (Sitemap + DB-Kategorien) |
 | `fpc_serve.php` | Fallback: PHP-basierte Auslieferung (nur bei Bedarf) |
 | `fpc_flush.php` | CLI: Cache leeren (komplett, einzeln, oder abgelaufen) |
-| `admin_q9wKj6Ds/.../mrhanf_fpc.php` | Admin-Modul fuer Konfiguration |
+| `admin_q9wKj6Ds/.../mrhanf_fpc.php` | Admin-Modul fuer Konfiguration + manueller Cache-Rebuild |
 | `lang/{de,en,fr,es}/.../mrhanf_fpc.php` | Sprachdateien (4 Sprachen) |
 
 ## Installation
@@ -144,8 +144,12 @@ php fpc_flush.php --expired    # Nur abgelaufene
 - **GEAENDERT**: `95_fpc_bypass_cookie.php` verwendet jetzt PHP 7.3+ Options-Array
 - **GEAENDERT**: Preloader loggt Redirect-Erkennung
 
-### v8.0.8 (2026-03-27) - revertiert in v8.0.9
-- ~~"Cache neu aufbauen" Button im Admin-Modul~~ (entfernt in v8.0.9)
+### v8.0.8 (2026-03-27)
+- **NEU**: "Cache neu aufbauen" Button im Admin-Modul
+  - Startet `fpc_preloader.php` als Hintergrund-Prozess (nohup)
+  - Admin-Browser wird nicht blockiert, Seite kann geschlossen werden
+  - PID-Tracking: Status-Anzeige ob Rebuild gerade laeuft
+  - Stop-Button zum Abbrechen eines laufenden Rebuilds
 
 ### v8.0.7 (2026-03-25)
 - **NEU**: `fpc_bypass` Cookie-System fuer Warenkorb und Login
