@@ -23,6 +23,10 @@ Eingeloggter   → Apache → index.php → modified eCommerce → dynamische Se
 | `fpc_flush.php` | CLI: Cache leeren (komplett, einzeln, oder abgelaufen) |
 | `admin_q9wKj6Ds/.../mrhanf_fpc.php` | Admin-Modul fuer Konfiguration + manueller Cache-Rebuild |
 | `lang/{de,en,fr,es}/.../mrhanf_fpc.php` | Sprachdateien (4 Sprachen) |
+| `admin_q9wKj6Ds/fpc_dashboard.php` | **FPC Schaltzentrale** - Dashboard mit Charts, Logs, Steuerung |
+| `admin_q9wKj6Ds/fpc_dashboard_install.php` | Installations-Script fuer Menueeintrag |
+| `admin_q9wKj6Ds/fpc_dashboard_menu_patch.txt` | Manueller Menueeintrag-Code fuer column_left.php |
+| `lang/{de,en}/admin/fpc_dashboard.php` | Sprachdateien fuer die Schaltzentrale |
 
 ## Installation
 
@@ -128,7 +132,17 @@ php fpc_flush.php --expired    # Nur abgelaufene
 
 ## Changelog
 
-### v8.0.9 (2026-03-27)
+### v8.0.9 (2026-03-27) + FPC Schaltzentrale v1.0
+- **NEU**: FPC Schaltzentrale als eigenstaendige Admin-Seite
+  - Tab 1: **Dashboard** - KPI-Kacheln, Cache-Verteilung Chart, Preloader-Statistik
+  - Tab 2: **Steuerung** - Cache leeren, neu aufbauen, einzelne URLs cachen, eigene URLs verwalten
+  - Tab 3: **URLs** - Alle gecachten URLs durchsuchen, filtern, einzeln loeschen/neu cachen
+  - Tab 4: **Logs** - Preloader-Log und Rebuild-Log mit Syntax-Highlighting und Auto-Refresh
+  - Tab 5: **Monitoring** - Automatische Cache-Tests, HIT-Rate/TTFB Charts, Test-Historie
+  - Menueeintrag unter Statistiken
+  - Installations-Script fuer Menueeintrag
+  - Dark-Theme UI mit Chart.js Visualisierungen
+  - AJAX-basiert: Alle Aktionen ohne Seitenreload
 - **KRITISCHER FIX**: Redirect-Loop bei Warenkorb-Aktionen behoben!
   - **Bug 1**: `fpc_bypass` Cookie wurde mit leerer Domain gesetzt.
     Browser sendete das Cookie bei Redirects nicht zuverlaessig mit.

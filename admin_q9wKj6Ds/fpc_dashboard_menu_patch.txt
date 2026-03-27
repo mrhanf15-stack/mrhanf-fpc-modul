@@ -1,0 +1,15 @@
+/**
+ * FPC Schaltzentrale - Menueeintrag fuer column_left.php
+ *
+ * Diesen Code in admin/includes/column_left.php einfuegen,
+ * innerhalb des Statistiken-Blocks (BOX_HEADING_STATISTICS).
+ *
+ * Suche nach: BOX_HEADING_STATISTICS
+ * Fuege DARUNTER (innerhalb des <ul>) folgenden Code ein:
+ */
+
+// --- START FPC Schaltzentrale Menueeintrag ---
+if (($admin_access['fpc_dashboard'] == '1') || ($customers_id == '1' && ADMIN_AREA_ALLOW_MASTER == 'true')) {
+    echo '<li><a href="' . xtc_href_link('fpc_dashboard.php') . '">FPC Schaltzentrale</a></li>';
+}
+// --- ENDE FPC Schaltzentrale Menueeintrag ---
