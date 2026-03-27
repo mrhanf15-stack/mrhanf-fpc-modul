@@ -1,4 +1,4 @@
-# Mr. Hanf Full Page Cache (FPC) v8.3.0
+# Mr. Hanf Full Page Cache (FPC) v9.0.0
 
 **Cron-basiertes Full Page Cache System fuer modified eCommerce (xt:Commerce Fork)**
 
@@ -21,11 +21,11 @@ Eingeloggter   → Apache → index.php → modified eCommerce → dynamische Se
 | `fpc_preloader.php` | Cron-Job: Baut Cache auf (Sitemap + DB-Kategorien) |
 | `fpc_serve.php` | Fallback: PHP-basierte Auslieferung (nur bei Bedarf) |
 | `fpc_flush.php` | CLI: Cache leeren (komplett, einzeln, oder abgelaufen) |
-| `fpc_session_init.php` | AJAX-Endpoint: Startet PHP-Session fuer FPC-Besucher (v8.1.0) |
-| `fpc_tracker.php` | **NEU v8.3.0**: Leichtgewichtiger Besucherstatistik-Tracker (DSGVO-konform) |
+| `fpc_session_init.php` | AJAX-Endpoint: Startet PHP-Session fuer FPC-Besucher (v9.0.0) |
+| `fpc_tracker.php` | **NEU v9.0.0**: Leichtgewichtiger Besucherstatistik-Tracker (DSGVO-konform) |
 | `admin_q9wKj6Ds/.../mrhanf_fpc.php` | Admin-Modul fuer Konfiguration + manueller Cache-Rebuild |
 | `lang/{de,en,fr,es}/.../mrhanf_fpc.php` | Sprachdateien (4 Sprachen) |
-| `admin_q9wKj6Ds/fpc_dashboard.php` | **FPC Schaltzentrale v8.3.0** - 8 Tabs: Dashboard, Steuerung, URLs, Logs, Monitoring, Health-Check, Statistik, Fehler-Log |
+| `admin_q9wKj6Ds/fpc_dashboard.php` | **FPC Schaltzentrale v9.0.0** - 8 Tabs: Dashboard, Steuerung, URLs, Logs, Monitoring, Health-Check, Statistik, Fehler-Log |
 | `admin_q9wKj6Ds/fpc_dashboard_install.php` | Installations-Script fuer Menueeintrag |
 | `admin_q9wKj6Ds/fpc_dashboard_menu_patch.txt` | Manueller Menueeintrag-Code fuer column_left.php |
 | `lang/{de,en}/admin/fpc_dashboard.php` | Sprachdateien fuer die Schaltzentrale |
@@ -70,7 +70,7 @@ for LANG in german english; do
      "$SHOP/lang/$LANG/admin/" 2>/dev/null
 done
 
-# v8.2.0 KRITISCH: Bypass-Cookie Hooks (Warenkorb-Fix)
+# v9.0.0 KRITISCH: Bypass-Cookie Hooks (Warenkorb-Fix)
 mkdir -p "$SHOP/includes/extra/cart_actions/add_product_before_redirect"
 mkdir -p "$SHOP/includes/extra/cart_actions/buy_now_before_redirect"
 cp shoproot/includes/extra/cart_actions/add_product_before_redirect/95_fpc_bypass.php \
@@ -87,7 +87,7 @@ mkdir -p "$SHOP/cache/fpc"
 
 Den Inhalt von `htaccess_fpc_rules.txt` am **Anfang** der `.htaccess` einfuegen, **vor** allen anderen RewriteRules.
 
-**WICHTIG v8.0.3:** Zusaetzlich muessen zwei Anpassungen in der bestehenden .htaccess gemacht werden:
+**WICHTIG v9.0.0:** Zusaetzlich muessen zwei Anpassungen in der bestehenden .htaccess gemacht werden:
 
 **a) cache/fpc/.htaccess erstellen** (erlaubt Apache den Zugriff auf HTML-Dateien):
 ```apache
@@ -115,10 +115,10 @@ Im Shop-Admin unter **Module → System-Module** das Modul "Mr. Hanf Full Page C
 ### 4. Cron-Job einrichten
 
 ```bash
-# Preloader (alle 2 Stunden) - v8.0.5: mkdir -p als Absicherung
+# Preloader (alle 2 Stunden) - v9.0.0: mkdir -p als Absicherung
 0 */2 * * * cd /pfad/zum/shop && mkdir -p cache/fpc && /usr/local/bin/php fpc_preloader.php >> cache/fpc/preloader.log 2>&1
 
-# Cache-Bereinigung (taeglich 3 Uhr) - v8.0.5: mkdir -p als Absicherung
+# Cache-Bereinigung (taeglich 3 Uhr) - v9.0.0: mkdir -p als Absicherung
 0 3 * * * cd /pfad/zum/shop && mkdir -p cache/fpc && /usr/local/bin/php fpc_flush.php --expired >> cache/fpc/flush.log 2>&1
 ```
 
@@ -170,7 +170,7 @@ php fpc_flush.php --expired    # Nur abgelaufene
 
 ## Changelog
 
-### v8.3.0 (2026-03-27)
+### v9.0.0 (2026-03-27)
 - **NEU**: Besucherstatistik-Tracker (`fpc_tracker.php`)
   - Leichtgewichtiges 1x1 Pixel-Tracking (DSGVO-konform)
   - Seitenaufrufe, eindeutige Besucher, Absprungrate, Verweildauer
@@ -180,7 +180,7 @@ php fpc_flush.php --expired    # Nur abgelaufene
   - Daten werden als JSON in `cache/fpc/tracker/` gespeichert
   - Automatische Bereinigung nach 90 Tagen
   - Bot-Erkennung (Google, Bing, etc. werden nicht gezaehlt)
-- **NEU**: FPC Schaltzentrale v8.3.0 - jetzt mit 8 Tabs!
+- **NEU**: FPC Schaltzentrale v9.0.0 - jetzt mit 8 Tabs!
   - Tab 6: **Health-Check** - Health-Score (A-F), SSL-Status, Fehler-Liste, langsame URLs, Redirect-Ketten, 90-Tage-Trend-Chart
   - Tab 7: **Statistik** - Besucherstatistik mit Absprungrate, Verweildauer, Geraetetypen, Traffic-Quellen, Top-Seiten, Tageszeit-Verteilung
   - Tab 8: **Fehler-Log** - PHP-Error-Log direkt im Dashboard, Severity-Filter (Critical/Error/Warning/Notice), FPC-Fehler-Filter
@@ -190,7 +190,7 @@ php fpc_flush.php --expired    # Nur abgelaufene
   - Alle URLs im Dashboard sind klickbar (oeffnen in neuem Tab)
   - Robustere Button-Logik (DOMContentLoaded + Error-Boundary)
 
-### v8.2.0 (2026-03-27)
+### v9.0.0 (2026-03-27)
 - **KRITISCHER FIX**: Warenkorb-Bypass-Cookie wird jetzt VOR dem Redirect gesetzt!
   - **Root Cause**: Nach dem Warenkorb-Add macht modified einen 302-Redirect.
     Das Bypass-Cookie in `application_top_end` wurde NACH dem Redirect gesetzt,
@@ -214,9 +214,9 @@ php fpc_flush.php --expired    # Nur abgelaufene
   - IIFE durch `DOMContentLoaded` Event ersetzt (robusterer Timing)
   - Chart-Rendering mit `typeof Chart` Check abgesichert
   - Error-Boundary um Init-Code
-  - Version auf v8.2.0 aktualisiert
+  - Version auf v9.0.0 aktualisiert
 
-### v8.1.0 (2026-03-27)
+### v9.0.0 (2026-03-27)
 - **KRITISCHER FIX**: Warenkorb funktioniert jetzt beim ersten Klick!
   - **Problem**: Gecachte Seiten wurden ohne PHP-Session ausgeliefert.
     Beim ersten Klick auf "In den Warenkorb" startete modified eine neue Session,
@@ -230,7 +230,7 @@ php fpc_flush.php --expired    # Nur abgelaufene
 - **GEAENDERT**: `fpc_serve.php` verwendet jetzt file_get_contents + str_replace statt readfile
   um das Session-Init-Script vor </body> zu injizieren
 
-### v8.0.9 (2026-03-27) + FPC Schaltzentrale v1.0
+### v9.0.0 (2026-03-27) + FPC Schaltzentrale v1.0
 - **NEU**: FPC Schaltzentrale als eigenstaendige Admin-Seite
   - Tab 1: **Dashboard** - KPI-Kacheln, Cache-Verteilung Chart, Preloader-Statistik
   - Tab 2: **Steuerung** - Cache leeren, neu aufbauen, einzelne URLs cachen, eigene URLs verwalten
@@ -256,14 +256,14 @@ php fpc_flush.php --expired    # Nur abgelaufene
 - **GEAENDERT**: `95_fpc_bypass_cookie.php` verwendet jetzt PHP 7.3+ Options-Array
 - **GEAENDERT**: Preloader loggt Redirect-Erkennung
 
-### v8.0.8 (2026-03-27)
+### v9.0.0 (2026-03-27)
 - **NEU**: "Cache neu aufbauen" Button im Admin-Modul
   - Startet `fpc_preloader.php` als Hintergrund-Prozess (nohup)
   - Admin-Browser wird nicht blockiert, Seite kann geschlossen werden
   - PID-Tracking: Status-Anzeige ob Rebuild gerade laeuft
   - Stop-Button zum Abbrechen eines laufenden Rebuilds
 
-### v8.0.7 (2026-03-25)
+### v9.0.0 (2026-03-25)
 - **NEU**: `fpc_bypass` Cookie-System fuer Warenkorb und Login
   - Autoinclude `95_fpc_bypass_cookie.php` setzt `fpc_bypass=1` wenn Warenkorb gefuellt oder Benutzer eingeloggt
   - `.htaccess` und `fpc_serve.php` pruefen dieses Cookie
@@ -271,7 +271,7 @@ php fpc_flush.php --expired    # Nur abgelaufene
   - Cookie wird automatisch geloescht wenn Warenkorb leer und Benutzer ausgeloggt
 - **NEU**: Datei `shoproot/includes/extra/application_top/application_top_end/95_fpc_bypass_cookie.php`
 
-### v8.0.6 (2026-03-25)
+### v9.0.0 (2026-03-25)
 - **FIX**: Cookie-Check (MODsid/PHPSESSID) aus .htaccess UND fpc_serve.php entfernt!
   modified-Shop setzt bei JEDEM Besucher (auch Gaeste) sofort ein MODsid-Cookie.
   Dadurch wurde der FPC fuer ALLE Besucher blockiert.
@@ -282,14 +282,14 @@ php fpc_flush.php --expired    # Nur abgelaufene
 - **FIX**: `RewriteRule ^$` durch `^/?$` ersetzt (robuster fuer Startseite)
 - **WICHTIG**: .htaccess muss komplett aktualisiert werden (siehe htaccess_fpc_rules.txt)
 
-### v8.0.5 (2026-03-25)
+### v9.0.0 (2026-03-25)
 - **FIX**: Verzeichnis-Schutz: `cache/fpc/` wird automatisch neu erstellt wenn es fehlt
 - **FIX**: Admin "Cache leeren" loescht nur Inhalt, nicht das Verzeichnis selbst
 - **FIX**: `fpc_flush.php` erstellt `cache/fpc/` + `.gitkeep` nach Flush automatisch
 - **FIX**: Cronjob-Empfehlung: `mkdir -p cache/fpc` vor PHP-Aufruf
 - **HINWEIS**: Cronjob muss aktualisiert werden (siehe Installation)
 
-### v8.0.3 (2026-03-23)
+### v9.0.0 (2026-03-23)
 - **FIX**: Cache-Control Header-Konflikt behoben (`Header always set` statt `Header set`)
 - **FIX**: Preloader cached jetzt auch Kategorie-Seiten (aus DB priorisiert)
 - **FIX**: Startseite + statische Seiten werden immer zuerst gecacht
@@ -297,13 +297,13 @@ php fpc_flush.php --expired    # Nur abgelaufene
 - **FIX**: CLEAN SEO URL `index.html`-Redirect verursachte Loop mit FPC
 - **AUFGERAEUMT**: Debug-Dateien und Backups entfernt
 
-### v8.0.2 (2026-03-23)
+### v9.0.0 (2026-03-23)
 - **FIX**: FPC-Header per env-Variable statt FilesMatch
 
-### v8.0.1 (2026-03-23)
+### v9.0.0 (2026-03-23)
 - **NEU**: /kasse und /warenkorb zur Ausschlussliste
 
-### v8.0.0 (2026-03-22)
+### v9.0.0 (2026-03-22)
 - **NEU**: Direkte Apache-Auslieferung (kein PHP-Worker)
 - **NEU**: Erweiterte HTML-Validierung (7 Schichten)
 - **NEU**: Verify-After-Write und Fehlerquoten-Schutz

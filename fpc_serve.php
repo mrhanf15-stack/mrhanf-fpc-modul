@@ -1,6 +1,6 @@
 <?php
 /**
- * Mr. Hanf Full Page Cache v8.3.0 - Cache-Handler
+ * Mr. Hanf Full Page Cache v9.0.0 - Cache-Handler
  *
  * Dieses Script wird von Apache via RewriteRule [END] aufgerufen
  * und liefert gecachte HTML-Dateien per readfile() aus.
@@ -11,15 +11,18 @@
  *   - PHP-Overhead: ~5ms (validiert + readfile + exit)
  *   - Zusaetzliche Validierung zur Laufzeit benoetigt wird
  *
- * CHANGELOG v8.3.0:
- *   - NEU: Besucherstatistik-Tracker (fpc_tracker.php) Pixel-Injection
- *     Leichtgewichtiges 1x1 Pixel-Tracking fuer Seitenaufrufe, Verweildauer,
- *     Absprungrate, Geraetetyp und Traffic-Quellen. DSGVO-konform.
+ * CHANGELOG v9.0.0:
+ *   - NEU: Request-Logging fuer Live Inspector und SEO-Bot-Tracking
+ *     Jeder Request wird mit Status (HIT/MISS/BYPASS), Grund, TTFB,
+ *     Bot-Erkennung in Tages-Log-Dateien geschrieben.
+ *   - NEU: X-FPC-Reason Header bei MISS/BYPASS
+ *   - NEU: Bot-Erkennung (Googlebot, Bing, Ahrefs, Semrush, GPTBot, etc.)
+ *   - NEU: Automatische Log-Rotation (7 Tage)
+ *   - v8.3.0: Besucherstatistik-Tracker Pixel-Injection
  *   - v8.2.0: AJAX-Warenkorb fuer gecachte Seiten
  *   - v8.1.0: Session-Initializer JavaScript Injection
- *   - v8.0.9: FIX: Redirect-Loop bei Warenkorb-Aktionen behoben
  *
- * @version   8.3.0
+ * @version   9.0.0
  * @date      2026-03-27
  */
 
@@ -30,13 +33,52 @@ $FPC_MIN_FILESIZE  = 500;      // Mindestgroesse in Bytes
 $FPC_MAX_AGE       = 172800;   // Max. Alter in Sekunden (48h Fallback)
 $FPC_HEALTH_MARKER = '<!-- FPC-VALID -->';  // Pflicht-Marker im HTML
 $FPC_AUTO_DELETE   = true;     // Korrupte Dateien automatisch loeschen
+$FPC_REQUEST_LOG   = true;     // Request-Logging fuer Inspector/SEO (v9.0.0)
+$FPC_LOG_DIR       = __DIR__ . '/cache/fpc/logs';  // Log-Verzeichnis
 
 // ============================================================
 // SICHERHEITSCHECKS
 // ============================================================
 
+// Request-Start-Zeit fuer TTFB-Messung (v9.0.0)
+$fpc_request_start = microtime(true);
+$fpc_cache_status = 'MISS';
+$fpc_miss_reason = '';
+$fpc_http_code = 200;
+
+// Bot-Erkennung (v9.0.0)
+$fpc_ua = isset($_SERVER['HTTP_USER_AGENT']) ? $_SERVER['HTTP_USER_AGENT'] : '';
+$fpc_is_bot = false;
+$fpc_bot_name = '';
+$bot_patterns = array(
+    'Googlebot' => 'Googlebot',
+    'bingbot' => 'Bing',
+    'Baiduspider' => 'Baidu',
+    'YandexBot' => 'Yandex',
+    'DuckDuckBot' => 'DuckDuckGo',
+    'Slurp' => 'Yahoo',
+    'facebot' => 'Facebook',
+    'Twitterbot' => 'Twitter',
+    'AhrefsBot' => 'Ahrefs',
+    'SemrushBot' => 'Semrush',
+    'MJ12bot' => 'Majestic',
+    'PetalBot' => 'Petal',
+    'Applebot' => 'Apple',
+    'GPTBot' => 'GPTBot',
+    'ClaudeBot' => 'ClaudeBot',
+);
+foreach ($bot_patterns as $pattern => $name) {
+    if (stripos($fpc_ua, $pattern) !== false) {
+        $fpc_is_bot = true;
+        $fpc_bot_name = $name;
+        break;
+    }
+}
+
 // Nur GET-Requests cachen
 if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
+    $fpc_miss_reason = 'NOT_GET';
+    fpc_log_request($fpc_request_start, $fpc_cache_status, $fpc_miss_reason, $fpc_is_bot, $fpc_bot_name, $fpc_http_code);
     return false;
 }
 
@@ -46,6 +88,9 @@ if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
 //   - Der Benutzer eingeloggt ist
 // HINWEIS: MODsid wird NICHT geprueft (modified setzt es bei jedem Gast).
 if (isset($_COOKIE['fpc_bypass']) && $_COOKIE['fpc_bypass'] === '1') {
+    $fpc_miss_reason = 'BYPASS_COOKIE';
+    $fpc_cache_status = 'BYPASS';
+    fpc_log_request($fpc_request_start, $fpc_cache_status, $fpc_miss_reason, $fpc_is_bot, $fpc_bot_name, $fpc_http_code);
     return false;
 }
 
@@ -107,12 +152,16 @@ if ($real_cache === false) {
 
 // Cache-Datei existiert?
 if (!is_file($cache_file)) {
+    $fpc_miss_reason = 'FILE_NOT_FOUND';
+    fpc_log_request($fpc_request_start, $fpc_cache_status, $fpc_miss_reason, $fpc_is_bot, $fpc_bot_name, $fpc_http_code);
     return false;
 }
 
 // Realpath-Check (verhindert Directory Traversal)
 $real_file = realpath($cache_file);
 if ($real_file === false || strpos($real_file, $real_cache) !== 0) {
+    $fpc_miss_reason = 'SECURITY_CHECK';
+    fpc_log_request($fpc_request_start, $fpc_cache_status, $fpc_miss_reason, $fpc_is_bot, $fpc_bot_name, $fpc_http_code);
     return false;
 }
 
@@ -126,6 +175,8 @@ if ($filesize === false || $filesize < $FPC_MIN_FILESIZE) {
     if ($FPC_AUTO_DELETE) {
         @unlink($cache_file);
     }
+    $fpc_miss_reason = 'FILE_TOO_SMALL';
+    fpc_log_request($fpc_request_start, $fpc_cache_status, $fpc_miss_reason, $fpc_is_bot, $fpc_bot_name, $fpc_http_code);
     return false;
 }
 
@@ -136,6 +187,8 @@ if ($age > $FPC_MAX_AGE) {
     if ($FPC_AUTO_DELETE) {
         @unlink($cache_file);
     }
+    $fpc_miss_reason = 'EXPIRED';
+    fpc_log_request($fpc_request_start, $fpc_cache_status, $fpc_miss_reason, $fpc_is_bot, $fpc_bot_name, $fpc_http_code);
     return false;
 }
 
@@ -153,6 +206,8 @@ if (strpos($tail, $FPC_HEALTH_MARKER) === false) {
     if ($FPC_AUTO_DELETE) {
         @unlink($cache_file);
     }
+    $fpc_miss_reason = 'NO_HEALTH_MARKER';
+    fpc_log_request($fpc_request_start, $fpc_cache_status, $fpc_miss_reason, $fpc_is_bot, $fpc_bot_name, $fpc_http_code);
     return false;
 }
 
@@ -162,8 +217,11 @@ if (strpos($tail, $FPC_HEALTH_MARKER) === false) {
 
 header('Content-Type: text/html; charset=utf-8');
 header('X-FPC-Cache: HIT');
-header('X-FPC-Version: 8.3.0');
+header('X-FPC-Version: 9.0.0');
+$fpc_cache_status = 'HIT';
+$fpc_miss_reason = '';
 header('X-FPC-Cached-At: ' . gmdate('D, d M Y H:i:s', $mtime) . ' GMT');
+if ($fpc_miss_reason) header('X-FPC-Reason: ' . $fpc_miss_reason);
 header('Cache-Control: no-store, no-cache, must-revalidate');
 header('Pragma: no-cache');
 header('Expires: 0');
@@ -179,7 +237,7 @@ header('Expires: 0');
 $html = file_get_contents($cache_file);
 
 $fpc_inject_js = <<<'FPCJS'
-<script data-fpc-inject="8.3.0">
+<script data-fpc-inject="9.0.0">
 (function(){
     'use strict';
 
@@ -467,6 +525,56 @@ FPCJS;
 // Injiziere vor </body>
 $html = str_replace('</body>', $fpc_inject_js . "\n</body>", $html);
 
+// Request-Logging (v9.0.0)
+fpc_log_request($fpc_request_start, $fpc_cache_status, $fpc_miss_reason, $fpc_is_bot, $fpc_bot_name, $fpc_http_code);
+
 // Ausgabe
 echo $html;
 exit;
+
+// ============================================================
+// v9.0.0: REQUEST-LOGGING FUNKTION
+// ============================================================
+function fpc_log_request($start, $status, $reason, $is_bot, $bot_name, $http_code) {
+    global $FPC_REQUEST_LOG, $FPC_LOG_DIR;
+    if (!$FPC_REQUEST_LOG) return;
+
+    $ttfb = round((microtime(true) - $start) * 1000, 1);
+    $uri = isset($_SERVER['REQUEST_URI']) ? $_SERVER['REQUEST_URI'] : '-';
+
+    // Log-Verzeichnis erstellen
+    if (!is_dir($FPC_LOG_DIR)) {
+        @mkdir($FPC_LOG_DIR, 0755, true);
+    }
+
+    // Tages-Log-Datei
+    $logfile = $FPC_LOG_DIR . '/requests_' . date('Y-m-d') . '.log';
+
+    // Kompaktes JSON-Format pro Zeile
+    $entry = json_encode(array(
+        'ts' => time(),
+        'url' => $uri,
+        'status' => $status,
+        'reason' => $reason,
+        'ttfb' => $ttfb,
+        'bot' => $is_bot,
+        'bot_name' => $bot_name,
+        'http_code' => $http_code,
+        'method' => isset($_SERVER['REQUEST_METHOD']) ? $_SERVER['REQUEST_METHOD'] : '-',
+    ), JSON_UNESCAPED_SLASHES) . "\n";
+
+    @file_put_contents($logfile, $entry, FILE_APPEND | LOCK_EX);
+
+    // Alte Logs aufraumen (aelter als 7 Tage)
+    static $cleanup_done = false;
+    if (!$cleanup_done && mt_rand(1, 100) === 1) {
+        $cleanup_done = true;
+        $files = glob($FPC_LOG_DIR . '/requests_*.log');
+        if ($files) {
+            $cutoff = time() - (7 * 86400);
+            foreach ($files as $f) {
+                if (filemtime($f) < $cutoff) @unlink($f);
+            }
+        }
+    }
+}
