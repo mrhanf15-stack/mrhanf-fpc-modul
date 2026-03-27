@@ -353,7 +353,7 @@ function fpc_cache_single_url($url, $cache_dir, $base_dir) {
     $ch = curl_init($url);
     curl_setopt_array($ch, array(
         CURLOPT_RETURNTRANSFER => true, CURLOPT_FOLLOWLOCATION => true, CURLOPT_TIMEOUT => 30,
-        CURLOPT_USERAGENT => 'Mozilla/5.0 (compatible; FPC-Preloader/9.0; +https://mr-hanf.de)',
+        CURLOPT_USERAGENT => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
         CURLOPT_SSL_VERIFYPEER => false, CURLOPT_COOKIE => 'fpc_bypass=1',
         CURLOPT_HTTPHEADER => array('Accept: text/html,application/xhtml+xml', 'Accept-Language: de-DE,de;q=0.9'),
     ));
@@ -461,7 +461,7 @@ function fpc_run_monitor_test($cache_dir, $monitor_log, $base_dir, $count) {
     foreach ($urls as $u) {
         $ch = curl_init('https://mr-hanf.de' . $u);
         curl_setopt_array($ch, array(CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 15, CURLOPT_SSL_VERIFYPEER => false,
-            CURLOPT_USERAGENT => 'Mozilla/5.0 (compatible; FPC-Monitor/9.0)'));
+            CURLOPT_USERAGENT => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'));
         curl_exec($ch);
         $ttfb = round(curl_getinfo($ch, CURLINFO_STARTTRANSFER_TIME) * 1000);
         $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
