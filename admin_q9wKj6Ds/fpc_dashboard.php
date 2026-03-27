@@ -1314,7 +1314,7 @@ setInterval(function() {
 function fpcLoadDashboard() {
     fpcAjax('ajax=status', function(d) {
         var ampel = d.errors_1h > 5 ? 'red' : (d.hit_rate < 70 ? 'yellow' : 'green');
-        var status = ampel === 'green' ? 'Aktiv' : (ampel === 'yellow' ? 'Eingeschraenkt' : 'Fehler');
+        var status = ampel === 'green' ? 'Aktiv' : (ampel === 'yellow' ? 'Eingeschr\u00e4nkt' : 'Fehler');
         var kpis = '';
         kpis += '<div class="fpc-kpi"><div class="fpc-kpi-label"><span class="fpc-ampel ' + ampel + '"></span>Cache Status</div><div class="fpc-kpi-value" style="color:var(--fpc-' + ampel + ')">' + status + '</div></div>';
         kpis += '<div class="fpc-kpi"><div class="fpc-kpi-label">Gecachte Seiten</div><div class="fpc-kpi-value" style="color:var(--fpc-teal)">' + d.files.toLocaleString() + '</div></div>';
