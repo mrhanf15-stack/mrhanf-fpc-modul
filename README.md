@@ -1,4 +1,4 @@
-# Mr. Hanf Full Page Cache (FPC) v8.2.0
+# Mr. Hanf Full Page Cache (FPC) v8.3.0
 
 **Cron-basiertes Full Page Cache System fuer modified eCommerce (xt:Commerce Fork)**
 
@@ -6,7 +6,7 @@
 
 Das FPC-Modul generiert statische HTML-Dateien fuer alle Shop-Seiten und laesst Apache diese **direkt** ausliefern — ohne PHP-Worker. Das Ergebnis: Ladezeiten unter 100ms fuer Gastbesucher bei minimaler Serverbelastung.
 
-## Architektur v8.2
+## Architektur v8.3
 
 ```
 Gast-Besucher  → Apache → fpc_serve.php → readfile(cache/fpc/{url}/index.html) → ~77ms
@@ -22,9 +22,10 @@ Eingeloggter   → Apache → index.php → modified eCommerce → dynamische Se
 | `fpc_serve.php` | Fallback: PHP-basierte Auslieferung (nur bei Bedarf) |
 | `fpc_flush.php` | CLI: Cache leeren (komplett, einzeln, oder abgelaufen) |
 | `fpc_session_init.php` | AJAX-Endpoint: Startet PHP-Session fuer FPC-Besucher (v8.1.0) |
+| `fpc_tracker.php` | **NEU v8.3.0**: Leichtgewichtiger Besucherstatistik-Tracker (DSGVO-konform) |
 | `admin_q9wKj6Ds/.../mrhanf_fpc.php` | Admin-Modul fuer Konfiguration + manueller Cache-Rebuild |
 | `lang/{de,en,fr,es}/.../mrhanf_fpc.php` | Sprachdateien (4 Sprachen) |
-| `admin_q9wKj6Ds/fpc_dashboard.php` | **FPC Schaltzentrale** - Dashboard mit Charts, Logs, Steuerung |
+| `admin_q9wKj6Ds/fpc_dashboard.php` | **FPC Schaltzentrale v8.3.0** - 8 Tabs: Dashboard, Steuerung, URLs, Logs, Monitoring, Health-Check, Statistik, Fehler-Log |
 | `admin_q9wKj6Ds/fpc_dashboard_install.php` | Installations-Script fuer Menueeintrag |
 | `admin_q9wKj6Ds/fpc_dashboard_menu_patch.txt` | Manueller Menueeintrag-Code fuer column_left.php |
 | `lang/{de,en}/admin/fpc_dashboard.php` | Sprachdateien fuer die Schaltzentrale |
@@ -41,7 +42,10 @@ Eingeloggter   → Apache → index.php → modified eCommerce → dynamische Se
 SHOP="/home/www/doc/28856/dcp288560004/mr-hanf.de/www"
 
 # Kern-Dateien
-cp fpc_serve.php fpc_preloader.php fpc_flush.php fpc_session_init.php fpc_healthcheck.php "$SHOP/"
+cp fpc_serve.php fpc_preloader.php fpc_flush.php fpc_session_init.php fpc_healthcheck.php fpc_tracker.php "$SHOP/"
+
+# Tracker-Verzeichnis erstellen
+mkdir -p "$SHOP/cache/fpc/tracker"
 
 # Admin-Modul
 cp admin_q9wKj6Ds/includes/modules/system/mrhanf_fpc.php \
@@ -165,6 +169,26 @@ php fpc_flush.php --expired    # Nur abgelaufene
 | 7 | Verify-After-Write | Cache-Datei wird nach Schreiben zurueckgelesen |
 
 ## Changelog
+
+### v8.3.0 (2026-03-27)
+- **NEU**: Besucherstatistik-Tracker (`fpc_tracker.php`)
+  - Leichtgewichtiges 1x1 Pixel-Tracking (DSGVO-konform)
+  - Seitenaufrufe, eindeutige Besucher, Absprungrate, Verweildauer
+  - Traffic-Quellen (Suchmaschine, Social, Direkt, Extern)
+  - Geraetetyp-Erkennung (Desktop, Mobile, Tablet)
+  - Tageszeit-Verteilung, Top-Seiten, Top-Referrer
+  - Daten werden als JSON in `cache/fpc/tracker/` gespeichert
+  - Automatische Bereinigung nach 90 Tagen
+  - Bot-Erkennung (Google, Bing, etc. werden nicht gezaehlt)
+- **NEU**: FPC Schaltzentrale v8.3.0 - jetzt mit 8 Tabs!
+  - Tab 6: **Health-Check** - Health-Score (A-F), SSL-Status, Fehler-Liste, langsame URLs, Redirect-Ketten, 90-Tage-Trend-Chart
+  - Tab 7: **Statistik** - Besucherstatistik mit Absprungrate, Verweildauer, Geraetetypen, Traffic-Quellen, Top-Seiten, Tageszeit-Verteilung
+  - Tab 8: **Fehler-Log** - PHP-Error-Log direkt im Dashboard, Severity-Filter (Critical/Error/Warning/Notice), FPC-Fehler-Filter
+  - **Quick-Actions** im Header: Cache leeren, Rebuild starten, CSV-Export ohne Tab-Wechsel
+  - **htaccess-Validator** im Steuerung-Tab: Prueft alle FPC-relevanten Regeln
+  - **CSV-Export** der gecachten URLs
+  - Alle URLs im Dashboard sind klickbar (oeffnen in neuem Tab)
+  - Robustere Button-Logik (DOMContentLoaded + Error-Boundary)
 
 ### v8.2.0 (2026-03-27)
 - **KRITISCHER FIX**: Warenkorb-Bypass-Cookie wird jetzt VOR dem Redirect gesetzt!

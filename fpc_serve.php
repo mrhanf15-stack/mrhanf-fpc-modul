@@ -1,6 +1,6 @@
 <?php
 /**
- * Mr. Hanf Full Page Cache v8.2.0 - Cache-Handler
+ * Mr. Hanf Full Page Cache v8.3.0 - Cache-Handler
  *
  * Dieses Script wird von Apache via RewriteRule [END] aufgerufen
  * und liefert gecachte HTML-Dateien per readfile() aus.
@@ -11,15 +11,15 @@
  *   - PHP-Overhead: ~5ms (validiert + readfile + exit)
  *   - Zusaetzliche Validierung zur Laufzeit benoetigt wird
  *
- * CHANGELOG v8.2.0:
- *   - NEU: AJAX-Warenkorb fuer gecachte Seiten
- *     Formular-Submit wird per JavaScript abgefangen und per AJAX gesendet.
- *     Nach Erfolg wird der Mini-Warenkorb aktualisiert, fpc_bypass Cookie
- *     gesetzt und die Free Shipping Bar getriggert - OHNE Seitenreload.
+ * CHANGELOG v8.3.0:
+ *   - NEU: Besucherstatistik-Tracker (fpc_tracker.php) Pixel-Injection
+ *     Leichtgewichtiges 1x1 Pixel-Tracking fuer Seitenaufrufe, Verweildauer,
+ *     Absprungrate, Geraetetyp und Traffic-Quellen. DSGVO-konform.
+ *   - v8.2.0: AJAX-Warenkorb fuer gecachte Seiten
  *   - v8.1.0: Session-Initializer JavaScript Injection
  *   - v8.0.9: FIX: Redirect-Loop bei Warenkorb-Aktionen behoben
  *
- * @version   8.2.0
+ * @version   8.3.0
  * @date      2026-03-27
  */
 
@@ -162,7 +162,7 @@ if (strpos($tail, $FPC_HEALTH_MARKER) === false) {
 
 header('Content-Type: text/html; charset=utf-8');
 header('X-FPC-Cache: HIT');
-header('X-FPC-Version: 8.2.0');
+header('X-FPC-Version: 8.3.0');
 header('X-FPC-Cached-At: ' . gmdate('D, d M Y H:i:s', $mtime) . ' GMT');
 header('Cache-Control: no-store, no-cache, must-revalidate');
 header('Pragma: no-cache');
@@ -179,7 +179,7 @@ header('Expires: 0');
 $html = file_get_contents($cache_file);
 
 $fpc_inject_js = <<<'FPCJS'
-<script data-fpc-inject="8.2.0">
+<script data-fpc-inject="8.3.0">
 (function(){
     'use strict';
 
@@ -428,6 +428,37 @@ $fpc_inject_js = <<<'FPCJS'
 
     // Event-Delegation auf document-Ebene (fängt alle Formulare ab)
     document.addEventListener('submit', handleCartSubmit, true);
+
+    // ========================================================
+    // 3. BESUCHERSTATISTIK-TRACKER (v8.3.0)
+    // ========================================================
+    // Leichtgewichtiges 1x1 Pixel-Tracking fuer Seitenaufrufe und Verweildauer.
+    // DSGVO-konform: Kein IP-Tracking, anonymisierter Cookie-Hash.
+
+    var pageLoadTime = Date.now();
+
+    // Pageview tracken (1x1 Pixel)
+    var trkImg = new Image();
+    trkImg.src = '/fpc_tracker.php?t=pv&p=' + encodeURIComponent(location.pathname) + '&r=' + encodeURIComponent(document.referrer) + '&_=' + Date.now();
+
+    // Verweildauer beim Verlassen senden
+    function sendLeaveEvent() {
+        var duration = Math.round((Date.now() - pageLoadTime) / 1000);
+        if (duration < 1 || duration > 3600) return;
+        // navigator.sendBeacon fuer zuverlaessiges Senden beim Schliessen
+        if (navigator.sendBeacon) {
+            navigator.sendBeacon('/fpc_tracker.php?t=leave&d=' + duration);
+        } else {
+            var img = new Image();
+            img.src = '/fpc_tracker.php?t=leave&d=' + duration + '&_=' + Date.now();
+        }
+    }
+
+    // beforeunload + visibilitychange fuer maximale Abdeckung
+    window.addEventListener('beforeunload', sendLeaveEvent);
+    document.addEventListener('visibilitychange', function() {
+        if (document.visibilityState === 'hidden') sendLeaveEvent();
+    });
 
 })();
 </script>
