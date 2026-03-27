@@ -1,24 +1,31 @@
 <?php
 /**
- * Mr. Hanf FPC Schaltzentrale v9.0.0
+ * Mr. Hanf FPC Control Center v9.0.5
  *
- * Enterprise-Level Dashboard fuer das Full Page Cache System.
+ * Enterprise-Level Dashboard for the Full Page Cache System.
  *
  * Tabs:
- *   1.  Dashboard    - System-Ampel, KPIs, Quick-Actions
- *   2.  Performance  - Hit/Miss, TTFB, Ladezeiten, Requests/min
+ *   1.  Dashboard    - System traffic light, KPIs, Quick-Actions
+ *   2.  Performance  - Hit/Miss, TTFB, Load times, Requests/min
  *   3.  Coverage     - Sitemap vs Cache, Top uncached, Pagination-Debug
- *   4.  Steuerung    - Cache leeren/rebuild, URL cachen, Live-Fortschritt
- *   5.  URLs         - Gecachte URLs durchsuchen, filtern, Pagination-Fix
- *   6.  Preloader    - Fortschritt, Queue, Speed, Hot-Categories
- *   7.  Fehler       - Top Fehler-URLs, Miss-Gruende, Langsamste Seiten
+ *   4.  Control      - Cache flush/rebuild, URL caching, Live progress
+ *   5.  URLs         - Browse cached URLs, filter, Pagination-Fix
+ *   6.  Preloader    - Progress, Queue, Speed, Hot-Categories
+ *   7.  Errors       - Top Error-URLs, Miss-Reasons, Slowest Pages
  *   8.  SEO          - Bot-Requests, Bot Hit Rate, noindex, Coverage
  *   9.  Inspector    - Live Request Inspector, Header Debug, Session Leakage
- *   10. Health       - Score, SSL, htaccess, Layer-Uebersicht
- *   11. Statistik    - Besucher, Absprungrate, Verweildauer, Geraete
- *   12. Alerts       - Schwellwerte, Benachrichtigungen, Historie
+ *   10. Health       - Score, SSL, htaccess, Layer overview
+ *   11. Statistics   - Visitors, Bounce Rate, Duration, Devices
+ *   12. Alerts       - Thresholds, Notifications, History
  *
- * @version   9.0.0
+ * v9.0.5 FIXES:
+ *   - FIX: Request-Log reads daily files from cache/fpc/logs/requests_*.log
+ *   - FIX: Sitemap parser uses /sitemap.xml with sitemapindex support
+ *   - FIX: Statistics tab reads .json tracker files (not .jsonl)
+ *   - FIX: User-Agent changed to real Chrome browser (403 fix)
+ *   - FIX: All UI text in English
+ *
+ * @version   9.0.5
  * @date      2026-03-27
  */
 
@@ -38,7 +45,8 @@ $monitor_log    = $cache_dir . 'monitor.json';
 $custom_urls_file = $cache_dir . 'custom_urls.txt';
 $healthcheck_file = $cache_dir . 'healthcheck.json';
 $tracker_dir    = $cache_dir . 'tracker/';
-$request_log    = $cache_dir . 'requests.jsonl';
+$log_dir        = $cache_dir . 'logs/';
+$request_log    = $log_dir;  // v9.0.5: Directory, not single file - reads daily files
 $alerts_config  = $cache_dir . 'alerts_config.json';
 $alerts_log     = $cache_dir . 'alerts_history.json';
 $shop_url       = 'https://mr-hanf.de';
@@ -219,6 +227,56 @@ if (isset($_GET['ajax'])) {
 // HILFSFUNKTIONEN
 // ============================================================
 
+// v9.0.5: Helper to read daily request log files from logs/ directory
+function fpc_read_request_logs($log_dir, $max_bytes = 2000000, $days = 7) {
+    $entries = array();
+    if (!is_dir($log_dir)) return $entries;
+    $files = glob($log_dir . 'requests_*.log');
+    if (!$files) return $entries;
+    // Sort by date descending (newest first)
+    rsort($files);
+    // Only read last N days
+    $files = array_slice($files, 0, $days);
+    $total_read = 0;
+    foreach ($files as $file) {
+        $fp = @fopen($file, 'r');
+        if (!$fp) continue;
+        $fsize = filesize($file);
+        if ($fsize > $max_bytes - $total_read) {
+            fseek($fp, max(0, $fsize - ($max_bytes - $total_read)));
+            fgets($fp); // skip partial line
+        }
+        while (($line = fgets($fp)) !== false) {
+            $r = @json_decode(trim($line), true);
+            if ($r && isset($r['ts'])) $entries[] = $r;
+        }
+        fclose($fp);
+        $total_read += $fsize;
+        if ($total_read >= $max_bytes) break;
+    }
+    return $entries;
+}
+
+// v9.0.5: Read today's log file only (for real-time status)
+function fpc_read_todays_log($log_dir, $max_bytes = 500000) {
+    $file = $log_dir . 'requests_' . date('Y-m-d') . '.log';
+    $entries = array();
+    if (!is_file($file)) return $entries;
+    $fp = @fopen($file, 'r');
+    if (!$fp) return $entries;
+    $fsize = filesize($file);
+    if ($fsize > $max_bytes) {
+        fseek($fp, $fsize - $max_bytes);
+        fgets($fp); // skip partial line
+    }
+    while (($line = fgets($fp)) !== false) {
+        $r = @json_decode(trim($line), true);
+        if ($r && isset($r['ts'])) $entries[] = $r;
+    }
+    fclose($fp);
+    return $entries;
+}
+
 function fpc_get_status($cache_dir, $pid_file, $log_file, $healthcheck_file, $request_log) {
     $files = 0; $size = 0; $oldest = PHP_INT_MAX; $newest = 0;
     $categories = array();
@@ -264,26 +322,18 @@ function fpc_get_status($cache_dir, $pid_file, $log_file, $healthcheck_file, $re
             $health_grade = $hc['latest']['summary']['health_grade'];
         }
     }
-    // v9: Hit/Miss aus Request-Log
+    // v9.0.5: Hit/Miss from daily request log files
     $hit_rate = 0; $total_requests = 0; $hits = 0; $errors_1h = 0;
-    if (is_file($request_log)) {
-        $one_hour_ago = time() - 3600;
-        $fp = @fopen($request_log, 'r');
-        if ($fp) {
-            fseek($fp, max(0, filesize($request_log) - 500000));
-            while (($line = fgets($fp)) !== false) {
-                $r = @json_decode(trim($line), true);
-                if (!$r || !isset($r['ts'])) continue;
-                if ($r['ts'] >= $one_hour_ago) {
-                    $total_requests++;
-                    if ($r['status'] === 'HIT') $hits++;
-                    if (isset($r['http_code']) && $r['http_code'] >= 500) $errors_1h++;
-                }
-            }
-            fclose($fp);
+    $one_hour_ago = time() - 3600;
+    $today_entries = fpc_read_todays_log($request_log);
+    foreach ($today_entries as $r) {
+        if ($r['ts'] >= $one_hour_ago) {
+            $total_requests++;
+            if (isset($r['status']) && $r['status'] === 'HIT') $hits++;
+            if (isset($r['http_code']) && $r['http_code'] >= 500) $errors_1h++;
         }
-        $hit_rate = $total_requests > 0 ? round(($hits / $total_requests) * 100, 1) : 0;
     }
+    $hit_rate = $total_requests > 0 ? round(($hits / $total_requests) * 100, 1) : 0;
     // OPCache
     $opcache = null;
     if (function_exists('opcache_get_status')) {
@@ -518,38 +568,68 @@ function fpc_trigger_healthcheck($base_dir) {
 }
 
 function fpc_get_visitor_stats($tracker_dir, $days) {
+    // v9.0.5: Reads .json files from fpc_tracker.php (NOT .jsonl)
+    // Each file is a JSON object with: pageviews, visitors, hours, pages, referrers, devices, sessions
     $result = array('total_pageviews' => 0, 'total_visitors' => 0, 'avg_duration' => 0, 'bounce_rate' => 0, 'daily' => array(), 'hours' => array_fill(0, 24, 0), 'devices' => array('desktop' => 0, 'mobile' => 0, 'tablet' => 0), 'top_pages' => array(), 'top_referrers' => array());
     if (!is_dir($tracker_dir)) return $result;
-    $since = date('Y-m-d', strtotime("-{$days} days"));
-    $all_durations = array(); $bounces = 0; $sessions = 0;
-    for ($i = 0; $i < $days; $i++) {
+    $all_durations = array(); $total_bounces = 0; $total_sessions = 0;
+    for ($i = $days - 1; $i >= 0; $i--) {
         $date = date('Y-m-d', strtotime("-{$i} days"));
-        $file = $tracker_dir . $date . '.jsonl';
+        $file = $tracker_dir . $date . '.json';
         if (!is_file($file)) continue;
-        $day_pv = 0; $day_visitors = array(); $day_bounce = 0; $day_sessions = 0;
-        $fp = @fopen($file, 'r');
-        if (!$fp) continue;
-        while (($line = fgets($fp)) !== false) {
-            $r = @json_decode(trim($line), true);
-            if (!$r) continue;
-            $day_pv++;
-            $result['total_pageviews']++;
-            if (isset($r['vid'])) $day_visitors[$r['vid']] = 1;
-            if (isset($r['hour'])) $result['hours'][(int)$r['hour']]++;
-            if (isset($r['device'])) { $d = strtolower($r['device']); if (isset($result['devices'][$d])) $result['devices'][$d]++; }
-            if (isset($r['page'])) { if (!isset($result['top_pages'][$r['page']])) $result['top_pages'][$r['page']] = 0; $result['top_pages'][$r['page']]++; }
-            if (isset($r['ref']) && !empty($r['ref'])) { $rh = parse_url($r['ref'], PHP_URL_HOST); if ($rh) { if (!isset($result['top_referrers'][$rh])) $result['top_referrers'][$rh] = 0; $result['top_referrers'][$rh]++; } }
-            if (isset($r['duration']) && $r['duration'] > 0) $all_durations[] = $r['duration'];
-            if (isset($r['bounce']) && $r['bounce']) { $bounces++; $day_bounce++; }
-            $sessions++; $day_sessions++;
+        $data = @json_decode(file_get_contents($file), true);
+        if (!$data || !is_array($data)) continue;
+        $day_pv = isset($data['pageviews']) ? (int)$data['pageviews'] : 0;
+        $day_visitors = isset($data['visitors']) ? (int)$data['visitors'] : 0;
+        $day_bounces = 0;
+        $day_sessions_count = 0;
+        // Process sessions for bounce rate and duration
+        if (!empty($data['sessions'])) {
+            foreach ($data['sessions'] as $sid => $session) {
+                $day_sessions_count++;
+                $total_sessions++;
+                $pages = isset($session['pages']) ? (int)$session['pages'] : 1;
+                if ($pages <= 1) { $day_bounces++; $total_bounces++; }
+                $dur = 0;
+                if (isset($session['duration']) && $session['duration'] > 0) $dur = $session['duration'];
+                elseif (isset($session['last_time']) && isset($session['start_time'])) $dur = $session['last_time'] - $session['start_time'];
+                if ($dur > 0 && $dur < 3600) $all_durations[] = $dur;
+            }
         }
-        fclose($fp);
-        $result['daily'][] = array('date' => $date, 'pageviews' => $day_pv, 'visitors' => count($day_visitors), 'bounce_rate' => $day_sessions > 0 ? round(($day_bounce / $day_sessions) * 100, 1) : 0);
-        $result['total_visitors'] += count($day_visitors);
+        $result['total_pageviews'] += $day_pv;
+        $result['total_visitors'] += $day_visitors;
+        // Hours
+        if (!empty($data['hours'])) {
+            foreach ($data['hours'] as $h => $cnt) { $result['hours'][(int)$h] += (int)$cnt; }
+        }
+        // Pages
+        if (!empty($data['pages'])) {
+            foreach ($data['pages'] as $p => $cnt) {
+                if (!isset($result['top_pages'][$p])) $result['top_pages'][$p] = 0;
+                $result['top_pages'][$p] += (int)$cnt;
+            }
+        }
+        // Referrers
+        if (!empty($data['referrers'])) {
+            foreach ($data['referrers'] as $r => $cnt) {
+                if (!isset($result['top_referrers'][$r])) $result['top_referrers'][$r] = 0;
+                $result['top_referrers'][$r] += (int)$cnt;
+            }
+        }
+        // Devices
+        if (!empty($data['devices'])) {
+            foreach ($data['devices'] as $d => $cnt) {
+                $d = strtolower($d);
+                if (isset($result['devices'][$d])) $result['devices'][$d] += (int)$cnt;
+            }
+        }
+        $result['daily'][] = array(
+            'date' => $date, 'pageviews' => $day_pv, 'visitors' => $day_visitors,
+            'bounce_rate' => $day_sessions_count > 0 ? round(($day_bounces / $day_sessions_count) * 100, 1) : 0
+        );
     }
-    $result['daily'] = array_reverse($result['daily']);
     $result['avg_duration'] = !empty($all_durations) ? round(array_sum($all_durations) / count($all_durations)) : 0;
-    $result['bounce_rate'] = $sessions > 0 ? round(($bounces / $sessions) * 100, 1) : 0;
+    $result['bounce_rate'] = $total_sessions > 0 ? round(($total_bounces / $total_sessions) * 100, 1) : 0;
     arsort($result['top_pages']); $result['top_pages'] = array_slice($result['top_pages'], 0, 20, true);
     arsort($result['top_referrers']); $result['top_referrers'] = array_slice($result['top_referrers'], 0, 10, true);
     return $result;
@@ -610,17 +690,14 @@ function fpc_validate_htaccess($base_dir) {
 // v9.0.0 NEUE FUNKTIONEN
 // ============================================================
 
-function fpc_get_performance_data($request_log) {
+function fpc_get_performance_data($log_dir) {
     $result = array('hit_miss' => array('hit' => 0, 'miss' => 0, 'bypass' => 0), 'avg_ttfb_hit' => 0, 'avg_ttfb_miss' => 0, 'requests_per_min' => 0, 'hourly' => array_fill(0, 24, array('hit' => 0, 'miss' => 0)), 'timeline' => array());
-    if (!is_file($request_log)) return $result;
-    $fp = @fopen($request_log, 'r');
-    if (!$fp) return $result;
+    // v9.0.5: Read from daily log files
+    $entries = fpc_read_request_logs($log_dir, 2000000, 30);
+    if (empty($entries)) return $result;
     $ttfb_hits = array(); $ttfb_misses = array(); $first_ts = PHP_INT_MAX; $last_ts = 0;
     $daily = array();
-    fseek($fp, max(0, filesize($request_log) - 2000000));
-    while (($line = fgets($fp)) !== false) {
-        $r = @json_decode(trim($line), true);
-        if (!$r || !isset($r['ts'])) continue;
+    foreach ($entries as $r) {
         if ($r['ts'] < $first_ts) $first_ts = $r['ts'];
         if ($r['ts'] > $last_ts) $last_ts = $r['ts'];
         $status = isset($r['status']) ? $r['status'] : 'MISS';
@@ -633,7 +710,6 @@ function fpc_get_performance_data($request_log) {
         if (!isset($daily[$day])) $daily[$day] = array('hit' => 0, 'miss' => 0, 'bypass' => 0);
         $daily[$day][$status === 'HIT' ? 'hit' : ($status === 'BYPASS' ? 'bypass' : 'miss')]++;
     }
-    fclose($fp);
     $result['avg_ttfb_hit'] = !empty($ttfb_hits) ? round(array_sum($ttfb_hits) / count($ttfb_hits)) : 0;
     $result['avg_ttfb_miss'] = !empty($ttfb_misses) ? round(array_sum($ttfb_misses) / count($ttfb_misses)) : 0;
     $duration = max(1, $last_ts - $first_ts);
@@ -656,22 +732,29 @@ function fpc_get_coverage_data($cache_dir, $base_dir, $shop_url) {
             }
         }
     }
-    // Sitemap parsen
+    // v9.0.5: Sitemap parsen - supports sitemapindex (like fpc_preloader.php)
     $sitemap_urls = array(); $sitemap_count = 0;
-    $sitemap_index = $shop_url . '/sitemap_index.xml';
-    $xml = @file_get_contents($sitemap_index);
-    if ($xml) {
-        $sitemaps = array();
-        if (preg_match_all('/<loc>(.*?)<\/loc>/i', $xml, $m)) {
-            foreach ($m[1] as $loc) {
-                if (strpos($loc, 'sitemap') !== false) $sitemaps[] = $loc;
-                else { $path = parse_url($loc, PHP_URL_PATH); if ($path) { $sitemap_urls[] = $path; $sitemap_count++; } }
+    $chrome_ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
+    $sitemap_url = $shop_url . '/sitemap.xml';
+    $ch = curl_init($sitemap_url);
+    curl_setopt_array($ch, array(CURLOPT_RETURNTRANSFER => true, CURLOPT_FOLLOWLOCATION => true, CURLOPT_TIMEOUT => 30, CURLOPT_SSL_VERIFYPEER => false, CURLOPT_USERAGENT => $chrome_ua));
+    $xml = curl_exec($ch); $xml_code = curl_getinfo($ch, CURLINFO_HTTP_CODE); curl_close($ch);
+    if ($xml && $xml_code == 200 && strlen($xml) > 100) {
+        // Check if sitemapindex
+        if (strpos($xml, '<sitemapindex') !== false) {
+            preg_match_all('/<loc>(.*?)<\/loc>/i', $xml, $m);
+            foreach ($m[1] as $sub_url) {
+                $ch2 = curl_init(trim($sub_url));
+                curl_setopt_array($ch2, array(CURLOPT_RETURNTRANSFER => true, CURLOPT_FOLLOWLOCATION => true, CURLOPT_TIMEOUT => 30, CURLOPT_SSL_VERIFYPEER => false, CURLOPT_USERAGENT => $chrome_ua));
+                $sub_xml = curl_exec($ch2); curl_close($ch2);
+                if ($sub_xml && preg_match_all('/<loc>(.*?)<\/loc>/i', $sub_xml, $m2)) {
+                    foreach ($m2[1] as $loc) { $path = parse_url(trim($loc), PHP_URL_PATH); if ($path) { $sitemap_urls[] = $path; $sitemap_count++; } }
+                }
             }
-        }
-        foreach (array_slice($sitemaps, 0, 10) as $sm) {
-            $smxml = @file_get_contents($sm);
-            if ($smxml && preg_match_all('/<loc>(.*?)<\/loc>/i', $smxml, $m2)) {
-                foreach ($m2[1] as $loc) { $path = parse_url($loc, PHP_URL_PATH); if ($path) { $sitemap_urls[] = $path; $sitemap_count++; } }
+        } else {
+            // Simple sitemap
+            if (preg_match_all('/<loc>(.*?)<\/loc>/i', $xml, $m)) {
+                foreach ($m[1] as $loc) { $path = parse_url(trim($loc), PHP_URL_PATH); if ($path) { $sitemap_urls[] = $path; $sitemap_count++; } }
             }
         }
     }
@@ -707,15 +790,12 @@ function fpc_get_coverage_data($cache_dir, $base_dir, $shop_url) {
     );
 }
 
-function fpc_get_seo_data($request_log, $cache_dir) {
+function fpc_get_seo_data($log_dir, $cache_dir) {
     $result = array('bot_requests' => 0, 'bot_hits' => 0, 'bot_misses' => 0, 'bot_hit_rate' => 0, 'bots' => array(), 'bot_top_urls' => array());
-    if (!is_file($request_log)) return $result;
-    $fp = @fopen($request_log, 'r');
-    if (!$fp) return $result;
-    fseek($fp, max(0, filesize($request_log) - 2000000));
-    while (($line = fgets($fp)) !== false) {
-        $r = @json_decode(trim($line), true);
-        if (!$r || !isset($r['bot']) || !$r['bot']) continue;
+    // v9.0.5: Read from daily log files
+    $entries = fpc_read_request_logs($log_dir, 2000000, 7);
+    foreach ($entries as $r) {
+        if (!isset($r['bot']) || !$r['bot']) continue;
         $result['bot_requests']++;
         $bot_name = isset($r['bot_name']) ? $r['bot_name'] : 'Unknown';
         if (!isset($result['bots'][$bot_name])) $result['bots'][$bot_name] = array('requests' => 0, 'hits' => 0);
@@ -726,21 +806,18 @@ function fpc_get_seo_data($request_log, $cache_dir) {
         if (!isset($result['bot_top_urls'][$url])) $result['bot_top_urls'][$url] = 0;
         $result['bot_top_urls'][$url]++;
     }
-    fclose($fp);
     $result['bot_hit_rate'] = $result['bot_requests'] > 0 ? round(($result['bot_hits'] / $result['bot_requests']) * 100, 1) : 0;
     arsort($result['bot_top_urls']);
     $result['bot_top_urls'] = array_slice($result['bot_top_urls'], 0, 20, true);
     return $result;
 }
 
-function fpc_get_inspector_data($request_log, $count, $filter) {
-    if (!is_file($request_log)) return array('requests' => array(), 'total' => 0);
-    $all = array(); $fp = @fopen($request_log, 'r');
-    if (!$fp) return array('requests' => array(), 'total' => 0);
-    fseek($fp, max(0, filesize($request_log) - 1000000));
-    while (($line = fgets($fp)) !== false) {
-        $r = @json_decode(trim($line), true);
-        if (!$r) continue;
+function fpc_get_inspector_data($log_dir, $count, $filter) {
+    // v9.0.5: Read from daily log files
+    $entries = fpc_read_request_logs($log_dir, 1000000, 3);
+    if (empty($entries)) return array('requests' => array(), 'total' => 0);
+    $all = array();
+    foreach ($entries as $r) {
         if ($filter) {
             if ($filter === 'miss' && (!isset($r['status']) || $r['status'] === 'HIT')) continue;
             if ($filter === 'hit' && (!isset($r['status']) || $r['status'] !== 'HIT')) continue;
@@ -750,42 +827,33 @@ function fpc_get_inspector_data($request_log, $count, $filter) {
         }
         $all[] = $r;
     }
-    fclose($fp);
     return array('requests' => array_slice(array_reverse($all), 0, $count), 'total' => count($all));
 }
 
-function fpc_get_miss_reasons($request_log) {
+function fpc_get_miss_reasons($log_dir) {
     $reasons = array(); $total_misses = 0;
-    if (!is_file($request_log)) return array('reasons' => array(), 'total' => 0);
-    $fp = @fopen($request_log, 'r');
-    if (!$fp) return array('reasons' => array(), 'total' => 0);
-    fseek($fp, max(0, filesize($request_log) - 2000000));
-    while (($line = fgets($fp)) !== false) {
-        $r = @json_decode(trim($line), true);
-        if (!$r || !isset($r['status']) || $r['status'] === 'HIT') continue;
+    // v9.0.5: Read from daily log files
+    $entries = fpc_read_request_logs($log_dir, 2000000, 7);
+    foreach ($entries as $r) {
+        if (!isset($r['status']) || $r['status'] === 'HIT') continue;
         $total_misses++;
         $reason = isset($r['reason']) ? $r['reason'] : 'unknown';
         if (!isset($reasons[$reason])) $reasons[$reason] = 0;
         $reasons[$reason]++;
     }
-    fclose($fp);
     arsort($reasons);
     return array('reasons' => $reasons, 'total' => $total_misses);
 }
 
-function fpc_get_slowest_pages($request_log, $limit) {
+function fpc_get_slowest_pages($log_dir, $limit) {
     $pages = array();
-    if (!is_file($request_log)) return array('pages' => array());
-    $fp = @fopen($request_log, 'r');
-    if (!$fp) return array('pages' => array());
-    fseek($fp, max(0, filesize($request_log) - 2000000));
-    while (($line = fgets($fp)) !== false) {
-        $r = @json_decode(trim($line), true);
-        if (!$r || !isset($r['ttfb']) || !isset($r['url'])) continue;
+    // v9.0.5: Read from daily log files
+    $entries = fpc_read_request_logs($log_dir, 2000000, 7);
+    foreach ($entries as $r) {
+        if (!isset($r['ttfb']) || !isset($r['url'])) continue;
         $url = $r['url'];
         if (!isset($pages[$url]) || $r['ttfb'] > $pages[$url]) $pages[$url] = $r['ttfb'];
     }
-    fclose($fp);
     arsort($pages);
     $result = array();
     foreach (array_slice($pages, 0, $limit, true) as $url => $ttfb) {
@@ -794,21 +862,17 @@ function fpc_get_slowest_pages($request_log, $limit) {
     return array('pages' => $result);
 }
 
-function fpc_get_error_urls($request_log, $limit) {
+function fpc_get_error_urls($log_dir, $limit) {
     $errors = array();
-    if (!is_file($request_log)) return array('urls' => array());
-    $fp = @fopen($request_log, 'r');
-    if (!$fp) return array('urls' => array());
-    fseek($fp, max(0, filesize($request_log) - 2000000));
-    while (($line = fgets($fp)) !== false) {
-        $r = @json_decode(trim($line), true);
-        if (!$r || !isset($r['http_code']) || $r['http_code'] < 400) continue;
+    // v9.0.5: Read from daily log files
+    $entries = fpc_read_request_logs($log_dir, 2000000, 7);
+    foreach ($entries as $r) {
+        if (!isset($r['http_code']) || $r['http_code'] < 400) continue;
         $key = $r['url'] . '|' . $r['http_code'];
         if (!isset($errors[$key])) $errors[$key] = array('url' => $r['url'], 'code' => $r['http_code'], 'count' => 0, 'last' => '');
         $errors[$key]['count']++;
         $errors[$key]['last'] = date('Y-m-d H:i', $r['ts']);
     }
-    fclose($fp);
     usort($errors, function($a, $b) { return $b['count'] - $a['count']; });
     return array('urls' => array_slice($errors, 0, $limit));
 }
@@ -829,9 +893,18 @@ function fpc_get_alerts_history($file) {
 function fpc_get_preloader_status($cache_dir, $pid_file, $log_file, $rebuild_log) {
     $progress = fpc_get_rebuild_progress($cache_dir, $pid_file, $rebuild_log);
     $queue_size = 0; $sitemap_urls = 0;
-    // Sitemap-Groesse schaetzen
-    $sm = @file_get_contents('https://mr-hanf.de/sitemap_index.xml');
-    if ($sm && preg_match_all('/<loc>/i', $sm, $m)) $sitemap_urls = count($m[0]);
+    // v9.0.5: Sitemap size from /sitemap.xml with sitemapindex support
+    $chrome_ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
+    $ch = curl_init('https://mr-hanf.de/sitemap.xml');
+    curl_setopt_array($ch, array(CURLOPT_RETURNTRANSFER => true, CURLOPT_FOLLOWLOCATION => true, CURLOPT_TIMEOUT => 15, CURLOPT_SSL_VERIFYPEER => false, CURLOPT_USERAGENT => $chrome_ua));
+    $sm = curl_exec($ch); curl_close($ch);
+    if ($sm && strpos($sm, '<sitemapindex') !== false) {
+        // Count sub-sitemaps and estimate URLs
+        preg_match_all('/<loc>(.*?)<\/loc>/i', $sm, $sm_m);
+        $sitemap_urls = count($sm_m[1]) * 7500; // Estimate ~7500 URLs per sub-sitemap
+    } elseif ($sm && preg_match_all('/<loc>/i', $sm, $m)) {
+        $sitemap_urls = count($m[0]);
+    }
     $cached_files = 0;
     if (is_dir($cache_dir)) {
         $iter = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($cache_dir, RecursiveDirectoryIterator::SKIP_DOTS));
@@ -843,14 +916,14 @@ function fpc_get_preloader_status($cache_dir, $pid_file, $log_file, $rebuild_log
 // ============================================================
 // SEITENAUSGABE (HTML)
 // ============================================================
-$page_title = 'FPC Schaltzentrale';
+$page_title = 'FPC Control Center';
 ?>
 <!DOCTYPE html>
-<html lang="de">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title><?php echo $page_title; ?> v9.0.0</title>
+<title><?php echo $page_title; ?> v9.0.5</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4" defer></script>
 <style>
 :root { --fpc-bg:#0d1b2a; --fpc-card:#1b2838; --fpc-border:#2a3a4a; --fpc-text:#e0e6ed; --fpc-text2:#8899aa; --fpc-teal:#00d4aa; --fpc-green:#00e676; --fpc-red:#ff4757; --fpc-orange:#ffa502; --fpc-yellow:#ffd32a; --fpc-blue:#00a8ff; }
@@ -935,7 +1008,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 
 <!-- HEADER -->
 <div class="fpc-header">
-    <h1>FPC Schaltzentrale <span>v9.0.0</span></h1>
+    <h1>FPC Control Center <span>v9.0.5</span></h1>
     <div class="fpc-quick-actions">
         <button class="fpc-quick-btn" onclick="fpcFlush()" title="Cache leeren">&#128465; Flush</button>
         <button class="fpc-quick-btn" onclick="fpcRebuild()" title="Cache neu aufbauen">&#8635; Rebuild</button>
@@ -943,7 +1016,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
     </div>
     <div>
         <span id="fpc-clock" style="color:var(--fpc-text2);font-size:12px;"></span>
-        <span class="fpc-version">v9.0.0</span>
+        <span class="fpc-version">v9.0.5</span>
     </div>
 </div>
 

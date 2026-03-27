@@ -1,13 +1,13 @@
 <?php
 defined('_VALID_XTC') or die('Direct Access to this location is not allowed.');
 
-$_fpc_menu_name = 'FPC Schaltzentrale';
+$_fpc_menu_name = 'FPC Control Center';
 if (isset($_SESSION['language_code'])) {
     switch ($_SESSION['language_code']) {
-        case 'en': $_fpc_menu_name = 'FPC Control Center'; break;
+        case 'de': $_fpc_menu_name = 'FPC Schaltzentrale'; break;
         case 'fr': $_fpc_menu_name = 'Centre de controle FPC'; break;
         case 'es': $_fpc_menu_name = 'Centro de control FPC'; break;
-        default:   $_fpc_menu_name = 'FPC Schaltzentrale'; break;
+        default:   $_fpc_menu_name = 'FPC Control Center'; break;
     }
 }
 

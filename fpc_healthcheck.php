@@ -125,7 +125,7 @@ foreach ($batches as $batch_idx => $batch) {
             CURLOPT_FOLLOWLOCATION => false,
             CURLOPT_TIMEOUT        => $timeout,
             CURLOPT_SSL_VERIFYPEER => false,
-            CURLOPT_USERAGENT      => 'FPC-HealthCheck/1.0 (Cron)',
+            CURLOPT_USERAGENT      => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
             CURLOPT_ENCODING       => '',
         ));
         curl_multi_add_handle($mh, $ch);
