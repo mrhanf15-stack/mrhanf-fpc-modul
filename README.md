@@ -21,6 +21,7 @@ Eingeloggter   → Apache → index.php → modified eCommerce → dynamische Se
 | `fpc_preloader.php` | Cron-Job: Baut Cache auf (Sitemap + DB-Kategorien) |
 | `fpc_serve.php` | Fallback: PHP-basierte Auslieferung (nur bei Bedarf) |
 | `fpc_flush.php` | CLI: Cache leeren (komplett, einzeln, oder abgelaufen) |
+| `fpc_session_init.php` | AJAX-Endpoint: Startet PHP-Session fuer FPC-Besucher (v8.1.0) |
 | `admin_q9wKj6Ds/.../mrhanf_fpc.php` | Admin-Modul fuer Konfiguration + manueller Cache-Rebuild |
 | `lang/{de,en,fr,es}/.../mrhanf_fpc.php` | Sprachdateien (4 Sprachen) |
 | `admin_q9wKj6Ds/fpc_dashboard.php` | **FPC Schaltzentrale** - Dashboard mit Charts, Logs, Steuerung |
@@ -131,6 +132,20 @@ php fpc_flush.php --expired    # Nur abgelaufene
 | 7 | Verify-After-Write | Cache-Datei wird nach Schreiben zurueckgelesen |
 
 ## Changelog
+
+### v8.1.0 (2026-03-27)
+- **KRITISCHER FIX**: Warenkorb funktioniert jetzt beim ersten Klick!
+  - **Problem**: Gecachte Seiten wurden ohne PHP-Session ausgeliefert.
+    Beim ersten Klick auf "In den Warenkorb" startete modified eine neue Session,
+    verarbeitete den Warenkorb-Eintrag aber nicht korrekt (Session noch nicht initialisiert).
+    Erst beim zweiten Klick (mit bestehender Session) funktionierte der Warenkorb.
+  - **Loesung**: `fpc_serve.php` injiziert ein kleines JavaScript-Snippet in gecachte Seiten.
+    Das Snippet ruft `/fpc_session_init.php` per AJAX auf und startet die PHP-Session
+    im Hintergrund, bevor der Besucher den Warenkorb-Button klickt.
+  - **Overhead**: ~2ms zusaetzlich in fpc_serve.php (file_get_contents statt readfile)
+  - **Neue Datei**: `fpc_session_init.php` — AJAX-Endpoint fuer Session-Initialisierung
+- **GEAENDERT**: `fpc_serve.php` verwendet jetzt file_get_contents + str_replace statt readfile
+  um das Session-Init-Script vor </body> zu injizieren
 
 ### v8.0.9 (2026-03-27) + FPC Schaltzentrale v1.0
 - **NEU**: FPC Schaltzentrale als eigenstaendige Admin-Seite

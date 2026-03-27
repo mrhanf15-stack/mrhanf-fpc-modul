@@ -1,6 +1,6 @@
 <?php
 /**
- * Mr. Hanf Full Page Cache v8.0.4 - Cache-Handler
+ * Mr. Hanf Full Page Cache v8.1.0 - Cache-Handler
  *
  * Dieses Script wird von Apache via RewriteRule [END] aufgerufen
  * und liefert gecachte HTML-Dateien per readfile() aus.
@@ -11,19 +11,17 @@
  *   - PHP-Overhead: ~5ms (validiert + readfile + exit)
  *   - Zusaetzliche Validierung zur Laufzeit benoetigt wird
  *
- * Um auf den Fallback umzuschalten, aendern Sie in .htaccess:
- *   RewriteRule ^(.+)$ cache/fpc/$1/index.html [L,T=text/html]
- * zu:
- *   RewriteRule ^(.+)$ fpc_serve.php [L,QSA]
+ * CHANGELOG v8.1.0:
+ *   - NEU: Session-Initializer JavaScript wird in gecachte Seiten injiziert
+ *     Loesung fuer: "Warenkorb funktioniert erst beim zweiten Klick"
+ *     Ursache: Gecachte Seiten hatten keine PHP-Session, daher wurde
+ *     der erste Warenkorb-POST nicht korrekt verarbeitet.
+ *     Fix: Ein kleines JS-Snippet ruft /fpc_session_init.php per AJAX auf
+ *     und startet die Session im Hintergrund, bevor der Besucher klickt.
+ *   - v8.0.9: FIX: Redirect-Loop bei Warenkorb-Aktionen behoben
  *
- * @version   8.0.9
+ * @version   8.1.0
  * @date      2026-03-27
- *
- * CHANGELOG v8.0.9:
- *   - FIX: Redirect-Loop bei Warenkorb-Aktionen behoben
- *     Ursache: fpc_bypass Cookie hatte leere Domain und kein SameSite
- *     Fix: Cookie-Pruefung und Auslieferung unveraendert, aber
- *     95_fpc_bypass_cookie.php setzt jetzt korrekte Cookie-Attribute
  */
 
 // ============================================================
@@ -165,11 +163,64 @@ if (strpos($tail, $FPC_HEALTH_MARKER) === false) {
 
 header('Content-Type: text/html; charset=utf-8');
 header('X-FPC-Cache: HIT');
-header('X-FPC-Version: 8.0.9');
+header('X-FPC-Version: 8.1.0');
 header('X-FPC-Cached-At: ' . gmdate('D, d M Y H:i:s', $mtime) . ' GMT');
 header('Cache-Control: no-store, no-cache, must-revalidate');
 header('Pragma: no-cache');
 header('Expires: 0');
 
-readfile($cache_file);
+// ============================================================
+// v8.1.0: SESSION-INITIALIZER INJECTION
+// ============================================================
+// Lese die gecachte Datei und injiziere ein kleines JavaScript-Snippet
+// direkt vor </body>. Das Snippet ruft /fpc_session_init.php per AJAX auf
+// und startet die PHP-Session im Hintergrund.
+//
+// Warum nicht einfach readfile()?
+//   - readfile() kann keinen Code injizieren
+//   - Wir muessen das JS-Snippet VOR </body> einfuegen
+//   - Der Overhead ist minimal (~2ms fuer file_get_contents + str_replace)
+//
+// Warum nicht im Preloader das JS schon einbauen?
+//   - Der Preloader cached die Seite wie sie vom Shop kommt
+//   - Aenderungen am JS-Snippet wuerden einen kompletten Cache-Rebuild erfordern
+//   - Injection zur Laufzeit ist flexibler und sofort wirksam
+
+$html = file_get_contents($cache_file);
+
+// Session-Init Script - wird nur ausgefuehrt wenn noch kein MODsid Cookie existiert
+$session_init_js = <<<'SESSIONJS'
+<script data-fpc-session-init="1">
+(function(){
+    // Nur ausfuehren wenn noch keine Session existiert (kein MODsid Cookie)
+    if (document.cookie.indexOf('MODsid=') !== -1) return;
+    
+    // AJAX-Call zum Session-Initializer
+    var xhr = new XMLHttpRequest();
+    xhr.open('GET', '/fpc_session_init.php?t=' + Date.now(), true);
+    xhr.withCredentials = true; // Cookies mitsenden/empfangen
+    xhr.timeout = 5000; // 5s Timeout
+    xhr.onload = function() {
+        if (xhr.status === 200) {
+            try {
+                var data = JSON.parse(xhr.responseText);
+                if (data.ok) {
+                    // Session gestartet - Formulare sind jetzt funktionsfaehig
+                    document.documentElement.setAttribute('data-fpc-session', 'ready');
+                }
+            } catch(e) {}
+        }
+    };
+    xhr.onerror = function() {};
+    xhr.ontimeout = function() {};
+    xhr.send();
+})();
+</script>
+SESSIONJS;
+
+// Injiziere vor </body>
+$html = str_replace('</body>', $session_init_js . "\n</body>", $html);
+
+// Ausgabe
+echo $html;
 exit;
