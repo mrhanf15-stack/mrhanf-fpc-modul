@@ -92,7 +92,25 @@ if (!in_array($active_tab, $allowed_tabs)) $active_tab = 'dashboard';
 // AJAX-ENDPUNKTE
 // ============================================================
 if (isset($_GET['ajax'])) {
+    // v10.2.2: Error Suppression fuer saubere JSON-Antworten
+    error_reporting(0);
+    ini_set('display_errors', '0');
     header('Content-Type: application/json; charset=utf-8');
+
+    /**
+     * v10.2.2: Sichere JSON-Ausgabe Funktion
+     * Faengt PHP-Warnungen ab und gibt immer sauberes JSON zurueck
+     */
+    function fpc_json_exit($data) {
+        // Alles was vorher (versehentlich) ausgegeben wurde, verwerfen
+        if (ob_get_level() > 0) ob_end_clean();
+        echo json_encode($data, JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
+    // Output Buffer starten um PHP-Warnungen/Notices abzufangen
+    ob_start();
+
     switch ($_GET['ajax']) {
 
         case 'status':
@@ -375,39 +393,31 @@ if (isset($_GET['ajax'])) {
         // v10.0.0: AI Analyzer Endpoints
         case 'ai_analysis':
             $force = isset($_GET['force']) && $_GET['force'] === '1';
-            echo json_encode(fpc_ai_analysis($base_dir, $force));
-            exit;
+            fpc_json_exit(fpc_ai_analysis($base_dir, $force));
 
         case 'ai_chat':
             $data = json_decode(file_get_contents('php://input'), true);
-            echo json_encode(fpc_ai_chat($base_dir, $data));
-            exit;
+            fpc_json_exit(fpc_ai_chat($base_dir, $data));
 
         case 'ai_chat_history':
-            echo json_encode(fpc_ai_chat_history($base_dir));
-            exit;
+            fpc_json_exit(fpc_ai_chat_history($base_dir));
 
         case 'ai_chat_clear':
-            echo json_encode(fpc_ai_chat_clear($base_dir));
-            exit;
+            fpc_json_exit(fpc_ai_chat_clear($base_dir));
 
         case 'ai_quick_summary':
-            echo json_encode(fpc_ai_quick_summary($base_dir));
-            exit;
+            fpc_json_exit(fpc_ai_quick_summary($base_dir));
 
         // v10.2.1: AI Prompt Management
         case 'ai_prompt_load':
-            echo json_encode(fpc_ai_prompt_load($base_dir));
-            exit;
+            fpc_json_exit(fpc_ai_prompt_load($base_dir));
 
         case 'ai_prompt_save':
             $data = json_decode(file_get_contents('php://input'), true);
-            echo json_encode(fpc_ai_prompt_save($base_dir, $data));
-            exit;
+            fpc_json_exit(fpc_ai_prompt_save($base_dir, $data));
 
         case 'ai_prompt_reset':
-            echo json_encode(fpc_ai_prompt_reset($base_dir));
-            exit;
+            fpc_json_exit(fpc_ai_prompt_reset($base_dir));
 
         // v10.0.1: File Editor (htaccess, robots.txt)
         case 'file_read':
@@ -563,17 +573,29 @@ function fpc_ai_init($base_dir) {
 }
 
 function fpc_ai_analysis($base_dir, $force = false) {
-    $ai = fpc_ai_init($base_dir);
-    set_time_limit(120);
-    return $ai->runAnalysis($force);
+    try {
+        $ai = fpc_ai_init($base_dir);
+        set_time_limit(120);
+        return $ai->runAnalysis($force);
+    } catch (Exception $e) {
+        return array('error' => true, 'msg' => 'AI Analyse Fehler: ' . $e->getMessage());
+    } catch (Error $e) {
+        return array('error' => true, 'msg' => 'AI Analyse Fatal: ' . $e->getMessage());
+    }
 }
 
 function fpc_ai_chat($base_dir, $data) {
-    $ai = fpc_ai_init($base_dir);
-    set_time_limit(120);
-    $msg = isset($data['message']) ? $data['message'] : '';
-    if (empty($msg)) return array('error' => true, 'msg' => 'Nachricht darf nicht leer sein');
-    return $ai->chat($msg);
+    try {
+        $ai = fpc_ai_init($base_dir);
+        set_time_limit(120);
+        $msg = isset($data['message']) ? $data['message'] : '';
+        if (empty($msg)) return array('error' => true, 'msg' => 'Nachricht darf nicht leer sein');
+        return $ai->chat($msg);
+    } catch (Exception $e) {
+        return array('error' => true, 'msg' => 'AI Chat Fehler: ' . $e->getMessage());
+    } catch (Error $e) {
+        return array('error' => true, 'msg' => 'AI Chat Fatal: ' . $e->getMessage());
+    }
 }
 
 function fpc_ai_chat_history($base_dir) {
