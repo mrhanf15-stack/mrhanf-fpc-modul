@@ -1,14 +1,14 @@
 <?php
 /**
- * Mr. Hanf FPC - SISTRIX Integration v1.0
+ * Mr. Hanf FPC - SISTRIX Integration v1.1
  *
- * Fetches visibility index, rankings, keywords, competitors
- * from SISTRIX API and caches results locally.
+ * Fetches visibility index and available data from SISTRIX API.
+ * Handles unavailable endpoints gracefully (package limitations).
  *
  * Requirements:
  *   - SISTRIX API Key (from sistrix.de > Account > API)
  *
- * @version   1.0.0
+ * @version   1.1.0
  * @date      2026-03-28
  */
 
@@ -39,6 +39,7 @@ class FPC_Sistrix {
 
     /**
      * Make SISTRIX API request
+     * Returns parsed JSON or error array
      */
     private function apiRequest($endpoint, $params = []) {
         $params['api_key'] = $this->api_key;
@@ -50,18 +51,34 @@ class FPC_Sistrix {
         curl_setopt_array($ch, [
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_TIMEOUT => 30,
-            CURLOPT_USERAGENT => 'FPC-Dashboard/1.0',
+            CURLOPT_USERAGENT => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
         ]);
 
         $response = curl_exec($ch);
         $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
         curl_close($ch);
 
-        if ($code >= 400) {
-            return ['error' => true, 'http_code' => $code, 'response' => $response];
+        if ($response === false || $code >= 400) {
+            return ['error' => true, 'http_code' => $code, 'msg' => 'HTTP ' . $code];
         }
 
-        return json_decode($response, true);
+        $data = json_decode($response, true);
+        if (!is_array($data)) {
+            return ['error' => true, 'msg' => 'Invalid JSON response'];
+        }
+
+        // Check for SISTRIX error responses
+        if (isset($data['status']) && $data['status'] === 'fail') {
+            $err_msg = isset($data['error'][0]['error_message']) ? $data['error'][0]['error_message'] : 'Unknown error';
+            $err_code = isset($data['error'][0]['error_code']) ? $data['error'][0]['error_code'] : '';
+            return ['error' => true, 'error_code' => $err_code, 'msg' => $err_msg, 'unavailable' => ($err_code == '5001')];
+        }
+        if (isset($data['status']) && $data['status'] === 'error') {
+            $err_msg = isset($data['error'][0]['error_message']) ? $data['error'][0]['error_message'] : 'Unknown error';
+            return ['error' => true, 'msg' => $err_msg, 'unavailable' => true];
+        }
+
+        return $data;
     }
 
     private function getCached($key, $fetcher) {
@@ -77,19 +94,8 @@ class FPC_Sistrix {
     }
 
     /**
-     * Visibility Index (current + history)
-     */
-    public function getVisibilityIndex() {
-        return $this->getCached("visibility", function() {
-            return $this->apiRequest('domain.sichtbarkeitsindex', [
-                'domain' => $this->domain,
-                'history' => 'true',
-            ]);
-        });
-    }
-
-    /**
-     * Current Visibility Index value only
+     * Current Visibility Index value
+     * Returns: answer[0].sichtbarkeitsindex[0] = {domain, date, value}
      */
     public function getCurrentVisibility() {
         return $this->getCached("visibility_current", function() {
@@ -100,19 +106,21 @@ class FPC_Sistrix {
     }
 
     /**
-     * SEO Keywords ranking in Top 100
+     * Visibility Index history
+     * Returns: answer[0].sichtbarkeitsindex[] = [{domain, date, value}, ...]
      */
-    public function getKeywords($limit = 100) {
-        return $this->getCached("keywords_{$limit}", function() use ($limit) {
-            return $this->apiRequest('domain.seo.top10', [
+    public function getVisibilityHistory() {
+        return $this->getCached("visibility_history", function() {
+            return $this->apiRequest('domain.sichtbarkeitsindex', [
                 'domain' => $this->domain,
-                'num' => $limit,
+                'history' => 'true',
             ]);
         });
     }
 
     /**
      * Ranking distribution (Top 10, 11-20, 21-100)
+     * Note: May not be available in all SISTRIX packages
      */
     public function getRankingDistribution() {
         return $this->getCached("ranking_dist", function() {
@@ -123,19 +131,21 @@ class FPC_Sistrix {
     }
 
     /**
-     * Top ranking URLs
+     * Keyword count
+     * Note: May not be available in all SISTRIX packages
      */
-    public function getTopUrls($limit = 50) {
-        return $this->getCached("top_urls_{$limit}", function() use ($limit) {
-            return $this->apiRequest('domain.pages', [
+    public function getKeywordCount() {
+        return $this->getCached("kwcount", function() {
+            return $this->apiRequest('domain.kwcount.seo', [
                 'domain' => $this->domain,
-                'num' => $limit,
+                'history' => 'true',
             ]);
         });
     }
 
     /**
-     * Competitors (similar domains)
+     * Competitors
+     * Note: May not be available in all SISTRIX packages
      */
     public function getCompetitors($limit = 20) {
         return $this->getCached("competitors_{$limit}", function() use ($limit) {
@@ -147,43 +157,16 @@ class FPC_Sistrix {
     }
 
     /**
-     * Keyword changes (winners/losers)
+     * Top pages
+     * Note: May not be available in all SISTRIX packages
      */
-    public function getKeywordChanges() {
-        return $this->getCached("keyword_changes", function() {
-            return $this->apiRequest('domain.kwchange.seo', [
+    public function getTopPages($limit = 50) {
+        return $this->getCached("top_pages_{$limit}", function() use ($limit) {
+            return $this->apiRequest('domain.pages', [
                 'domain' => $this->domain,
-                'num' => 50,
+                'num' => $limit,
             ]);
         });
-    }
-
-    /**
-     * Page speed / Core Web Vitals
-     */
-    public function getCoreWebVitals() {
-        return $this->getCached("cwv", function() {
-            return $this->apiRequest('domain.cwv', [
-                'domain' => $this->domain,
-            ]);
-        });
-    }
-
-    /**
-     * Get all data for dashboard display
-     */
-    public function getDashboardData() {
-        return [
-            'visibility'    => $this->getCurrentVisibility(),
-            'vi_history'    => $this->getVisibilityIndex(),
-            'keywords'      => $this->getKeywords(100),
-            'ranking_dist'  => $this->getRankingDistribution(),
-            'top_urls'      => $this->getTopUrls(50),
-            'competitors'   => $this->getCompetitors(20),
-            'keyword_changes' => $this->getKeywordChanges(),
-            'cwv'           => $this->getCoreWebVitals(),
-            'timestamp'     => date('Y-m-d H:i:s'),
-        ];
     }
 
     /**
@@ -191,5 +174,36 @@ class FPC_Sistrix {
      */
     public function getCredits() {
         return $this->apiRequest('credits');
+    }
+
+    /**
+     * Get all available data for dashboard display
+     * Gracefully handles unavailable endpoints
+     */
+    public function getDashboardData() {
+        $data = [
+            'domain'        => $this->domain,
+            'timestamp'     => date('Y-m-d H:i:s'),
+        ];
+
+        // These always work with any SISTRIX plan
+        $data['visibility'] = $this->getCurrentVisibility();
+        $data['vi_history'] = $this->getVisibilityHistory();
+        $data['credits']    = $this->getCredits();
+
+        // These may not be available - try each and mark as unavailable
+        $optional = [
+            'ranking_dist' => function() { return $this->getRankingDistribution(); },
+            'kwcount'      => function() { return $this->getKeywordCount(); },
+            'competitors'  => function() { return $this->getCompetitors(20); },
+            'top_pages'    => function() { return $this->getTopPages(50); },
+        ];
+
+        foreach ($optional as $key => $fetcher) {
+            $result = $fetcher();
+            $data[$key] = $result;
+        }
+
+        return $data;
     }
 }

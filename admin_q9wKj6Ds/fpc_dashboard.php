@@ -1,6 +1,6 @@
 <?php
 /**
- * Mr. Hanf FPC Control Center v9.1.1
+ * Mr. Hanf FPC Control Center v9.1.2
  *
  * Enterprise-Level Dashboard for the Full Page Cache System.
  *
@@ -58,8 +58,7 @@
  *   - FIX: Statistics tab reads .json tracker files (not .jsonl)
  *   - FIX: User-Agent changed to real Chrome browser (403 fix)
  *   - FIX: All UI text in English
- *
- * @version   9.0.5
+ * @version   9.1.2
  * @date      2026-03-27
  */
 
@@ -1185,7 +1184,7 @@ $page_title = 'FPC Control Center';
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title><?php echo $page_title; ?> v9.1.0</title>
+<title><?php echo $page_title; ?> v9.1.2</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4" defer></script>
 <style>
 :root { --fpc-bg:#0d1b2a; --fpc-card:#1b2838; --fpc-border:#2a3a4a; --fpc-text:#e0e6ed; --fpc-text2:#8899aa; --fpc-teal:#00d4aa; --fpc-green:#00e676; --fpc-red:#ff4757; --fpc-orange:#ffa502; --fpc-yellow:#ffd32a; --fpc-blue:#00a8ff; }
@@ -1270,7 +1269,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 
 <!-- HEADER -->
 <div class="fpc-header">
-    <h1>FPC Control Center <span>v9.1.1</span></h1>
+    <h1>FPC Control Center <span>v9.1.2</span></h1>
     <div class="fpc-quick-actions">
         <button class="fpc-quick-btn" onclick="fpcFlush()" title="Flush Cache">&#128465; Flush</button>
         <button class="fpc-quick-btn" onclick="fpcRebuild()" title="Rebuild Cache">&#8635; Rebuild</button>
@@ -1278,7 +1277,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
     </div>
     <div>
         <span id="fpc-clock" style="color:var(--fpc-text2);font-size:12px;"></span>
-        <span class="fpc-version">v9.1.1</span>
+        <span class="fpc-version">v9.1.2</span>
     </div>
 </div>
 
@@ -1639,14 +1638,14 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
         <div class="fpc-kpis" id="sx-kpis"></div>
         <div class="fpc-charts">
             <div class="fpc-chart-box"><h3>Visibility Index History</h3><canvas id="chart-sx-visibility" height="200"></canvas></div>
-            <div class="fpc-chart-box"><h3>Ranking Distribution</h3><canvas id="chart-sx-ranking" height="200"></canvas></div>
+            <div class="fpc-chart-box" id="sx-ranking-box"><h3>Ranking Distribution</h3><canvas id="chart-sx-ranking" height="200"></canvas><div id="sx-ranking-msg"></div></div>
         </div>
-        <div class="fpc-section-title">Top Keywords</div>
-        <div id="sx-keywords" style="overflow-x:auto;"></div>
-        <div class="fpc-section-title" style="margin-top:20px;">Keyword Winners / Losers</div>
-        <div id="sx-changes" style="overflow-x:auto;"></div>
+        <div class="fpc-section-title">Keyword Count History</div>
+        <div id="sx-kwcount" style="overflow-x:auto;"></div>
         <div class="fpc-section-title" style="margin-top:20px;">Top Competitors</div>
         <div id="sx-competitors" style="overflow-x:auto;"></div>
+        <div class="fpc-section-title" style="margin-top:20px;">Top Pages</div>
+        <div id="sx-toppages" style="overflow-x:auto;"></div>
     </div>
     <div id="sx-error" style="display:none;"></div>
 </div>
@@ -1655,7 +1654,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 
 <script>
 // ============================================================
-// JAVASCRIPT v9.1.0
+// JAVASCRIPT v9.1.2
 // ============================================================
 var BASE = '<?php echo basename(__FILE__); ?>';
 var chartInstances = {};
@@ -2622,83 +2621,136 @@ function fpcLoadSistrix() {
         }
         if (d.error) {
             document.getElementById('sx-error').style.display = 'block';
-            document.getElementById('sx-error').innerHTML = '<div style="background:var(--fpc-card);border:1px solid var(--fpc-red);border-radius:10px;padding:20px;margin:20px 0;"><strong style="color:var(--fpc-red);">Error:</strong> ' + d.msg + '</div>';
+            document.getElementById('sx-error').innerHTML = '<div style="background:var(--fpc-card);border:1px solid var(--fpc-red);border-radius:10px;padding:20px;margin:20px 0;"><strong style="color:var(--fpc-red);">Error:</strong> ' + (d.msg || 'Unknown error') + '</div>';
             return;
         }
         document.getElementById('sx-content').style.display = 'block';
 
-        // KPIs
-        var vi = d.visibility;
-        var viVal = '—';
-        if (vi && vi.answer && vi.answer[0] && vi.answer[0].sichtbarkeitsindex !== undefined) {
-            viVal = parseFloat(vi.answer[0].sichtbarkeitsindex).toFixed(2);
+        // Helper: show "not available" message for unavailable features
+        function sxUnavailable(elId, msg) {
+            var el = document.getElementById(elId);
+            if (el) el.innerHTML = '<div style="background:var(--fpc-card);border:1px solid var(--fpc-border);border-radius:8px;padding:16px;color:var(--fpc-text2);font-size:13px;"><strong>Not available</strong> in your SISTRIX plan. ' + (msg || 'Upgrade your SISTRIX package to access this feature.') + '</div>';
         }
+
+        // ---- VISIBILITY INDEX (always available) ----
+        var vi = d.visibility;
+        var viVal = '\u2014', viDate = '\u2014';
+        if (vi && vi.answer && vi.answer[0] && vi.answer[0].sichtbarkeitsindex) {
+            var siArr = vi.answer[0].sichtbarkeitsindex;
+            if (siArr[0]) {
+                viVal = parseFloat(siArr[0].value).toFixed(4);
+                viDate = siArr[0].date || '\u2014';
+            }
+        }
+
+        // Credits
+        var creditsUsed = '\u2014', creditsTotal = '\u2014';
+        var cr = d.credits;
+        if (cr && cr.answer && cr.answer[0] && cr.answer[0].credits) {
+            creditsTotal = cr.answer[0].credits[0].value || '\u2014';
+        }
+        if (cr && cr.credits && cr.credits[0]) {
+            creditsUsed = cr.credits[0].used || 0;
+        }
+
         document.getElementById('sx-kpis').innerHTML =
             fpcKpiBox('Visibility Index', viVal, 'teal') +
-            fpcKpiBox('Domain', d.configured ? 'mr-hanf.de' : '—', 'blue') +
-            fpcKpiBox('Last Update', d.timestamp || '—', 'text2');
+            fpcKpiBox('Domain', d.domain || 'mr-hanf.de', 'blue') +
+            fpcKpiBox('Last Update', viDate, 'text2') +
+            fpcKpiBox('API Credits', creditsUsed + ' / ' + creditsTotal, 'orange') +
+            fpcKpiBox('Data Fetched', d.timestamp || '\u2014', 'text2');
 
-        // Visibility History chart
+        // ---- VISIBILITY HISTORY CHART (always available) ----
         var viHist = d.vi_history;
-        if (viHist && viHist.answer) {
+        if (viHist && viHist.answer && viHist.answer[0] && viHist.answer[0].sichtbarkeitsindex) {
+            var items = viHist.answer[0].sichtbarkeitsindex;
             var labels = [], values = [];
-            viHist.answer.forEach(function(p) {
+            items.forEach(function(p) {
                 if (p.date) labels.push(p.date.substring(0,10));
-                if (p.sichtbarkeitsindex !== undefined) values.push(parseFloat(p.sichtbarkeitsindex));
+                if (p.value !== undefined) values.push(parseFloat(p.value));
             });
+            // Reverse so oldest is first
+            labels.reverse();
+            values.reverse();
             fpcChart('chart-sx-visibility', 'line', labels, [
-                {label: 'Visibility Index', data: values, borderColor: '#00d4aa', backgroundColor: 'rgba(0,212,170,0.1)', fill: true}
+                {label: 'Visibility Index', data: values, borderColor: '#00d4aa', backgroundColor: 'rgba(0,212,170,0.1)', fill: true, tension: 0.3}
             ]);
         }
 
-        // Ranking Distribution
+        // ---- RANKING DISTRIBUTION (may be unavailable) ----
         var rd = d.ranking_dist;
-        if (rd && rd.answer && rd.answer[0]) {
-            var rdData = rd.answer[0];
-            var rdLabels = ['Top 10', '11-20', '21-50', '51-100'];
-            var rdValues = [
-                parseInt(rdData['1-10'] || 0),
-                parseInt(rdData['11-20'] || 0),
-                parseInt(rdData['21-50'] || 0),
-                parseInt(rdData['51-100'] || 0)
-            ];
-            fpcChart('chart-sx-ranking', 'bar', rdLabels, [{label: 'Keywords', data: rdValues, backgroundColor: ['#00e676','#00d4aa','#ffa502','#ff4757']}]);
+        if (rd && rd.error && rd.unavailable) {
+            document.getElementById('sx-ranking-msg').innerHTML = '<div style="padding:12px;color:var(--fpc-text2);font-size:12px;text-align:center;">Not available in your SISTRIX plan</div>';
+            document.getElementById('chart-sx-ranking').style.display = 'none';
+        } else if (rd && rd.answer && rd.answer[0] && rd.answer[0].ranking_distribution) {
+            var rdArr = rd.answer[0].ranking_distribution;
+            if (rdArr[0]) {
+                var rdLabels = ['Top 10', '11-20', '21-50', '51-100'];
+                var rdValues = [
+                    parseInt(rdArr[0]['1-10'] || 0),
+                    parseInt(rdArr[0]['11-20'] || 0),
+                    parseInt(rdArr[0]['21-50'] || 0),
+                    parseInt(rdArr[0]['51-100'] || 0)
+                ];
+                fpcChart('chart-sx-ranking', 'bar', rdLabels, [{label: 'Keywords', data: rdValues, backgroundColor: ['#00e676','#00d4aa','#ffa502','#ff4757']}]);
+            }
+        } else if (rd && rd.error) {
+            document.getElementById('sx-ranking-msg').innerHTML = '<div style="padding:12px;color:var(--fpc-text2);font-size:12px;text-align:center;">Not available in your SISTRIX plan</div>';
+            document.getElementById('chart-sx-ranking').style.display = 'none';
         }
 
-        // Keywords table
-        var kw = d.keywords;
-        if (kw && kw.answer) {
-            var html = '<table class="fpc-table"><thead><tr><th>Keyword</th><th>Position</th><th>URL</th><th>Search Volume</th><th>Competition</th></tr></thead><tbody>';
-            kw.answer.slice(0, 50).forEach(function(r) {
-                html += '<tr><td>' + (r.keyword || '') + '</td><td>' + (r.position || '') + '</td><td title="' + (r.url||'') + '">' + (r.url||'').substring(0,50) + '</td><td>' + (r.traffic||'') + '</td><td>' + (r.competition||'') + '</td></tr>';
-            });
+        // ---- KEYWORD COUNT (may be unavailable) ----
+        var kwc = d.kwcount;
+        if (kwc && kwc.error) {
+            sxUnavailable('sx-kwcount');
+        } else if (kwc && kwc.answer && kwc.answer[0]) {
+            var html = '<table class="fpc-table"><thead><tr><th>Date</th><th>Keywords in Top 100</th></tr></thead><tbody>';
+            var kwArr = kwc.answer[0].kwcount_seo || kwc.answer[0];
+            if (Array.isArray(kwArr)) {
+                kwArr.slice(0, 30).forEach(function(r) {
+                    html += '<tr><td>' + (r.date || '') + '</td><td>' + (r.value || '') + '</td></tr>';
+                });
+            }
             html += '</tbody></table>';
-            document.getElementById('sx-keywords').innerHTML = html;
+            document.getElementById('sx-kwcount').innerHTML = html;
+        } else {
+            sxUnavailable('sx-kwcount');
         }
 
-        // Keyword Changes
-        var kc = d.keyword_changes;
-        if (kc && kc.answer) {
-            var html = '<table class="fpc-table"><thead><tr><th>Keyword</th><th>Old Position</th><th>New Position</th><th>Change</th></tr></thead><tbody>';
-            kc.answer.slice(0, 30).forEach(function(r) {
-                var change = (r.position_old || 0) - (r.position_new || 0);
-                var color = change > 0 ? 'var(--fpc-green)' : (change < 0 ? 'var(--fpc-red)' : 'var(--fpc-text2)');
-                var arrow = change > 0 ? '&#9650;' : (change < 0 ? '&#9660;' : '&#9654;');
-                html += '<tr><td>' + (r.keyword || '') + '</td><td>' + (r.position_old || '—') + '</td><td>' + (r.position_new || '—') + '</td><td style="color:' + color + ';font-weight:bold;">' + arrow + ' ' + Math.abs(change) + '</td></tr>';
-            });
-            html += '</tbody></table>';
-            document.getElementById('sx-changes').innerHTML = html;
-        }
-
-        // Competitors table
+        // ---- COMPETITORS (may be unavailable) ----
         var comp = d.competitors;
-        if (comp && comp.answer) {
+        if (comp && comp.error) {
+            sxUnavailable('sx-competitors');
+        } else if (comp && comp.answer) {
             var html = '<table class="fpc-table"><thead><tr><th>Domain</th><th>Visibility</th><th>Common Keywords</th></tr></thead><tbody>';
             comp.answer.slice(0, 15).forEach(function(r) {
-                html += '<tr><td>' + (r.domain || '') + '</td><td>' + (r.sichtbarkeitsindex || '') + '</td><td>' + (r.match || '') + '</td></tr>';
+                var row = r.domain || r;
+                if (typeof row === 'object' && row.domain) {
+                    html += '<tr><td>' + (row.domain || '') + '</td><td>' + (row.sichtbarkeitsindex || '') + '</td><td>' + (row.match || '') + '</td></tr>';
+                }
             });
             html += '</tbody></table>';
             document.getElementById('sx-competitors').innerHTML = html;
+        } else {
+            sxUnavailable('sx-competitors');
+        }
+
+        // ---- TOP PAGES (may be unavailable) ----
+        var tp = d.top_pages;
+        if (tp && tp.error) {
+            sxUnavailable('sx-toppages');
+        } else if (tp && tp.answer) {
+            var html = '<table class="fpc-table"><thead><tr><th>URL</th><th>Visibility</th></tr></thead><tbody>';
+            tp.answer.slice(0, 30).forEach(function(r) {
+                var row = r.page || r;
+                if (typeof row === 'object' && row.url) {
+                    html += '<tr><td title="' + row.url + '">' + row.url.substring(0,80) + '</td><td>' + (row.sichtbarkeitsindex || '') + '</td></tr>';
+                }
+            });
+            html += '</tbody></table>';
+            document.getElementById('sx-toppages').innerHTML = html;
+        } else {
+            sxUnavailable('sx-toppages');
         }
     });
 }
