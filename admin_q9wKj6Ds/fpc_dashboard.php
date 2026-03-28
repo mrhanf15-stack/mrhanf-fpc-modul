@@ -1,6 +1,6 @@
 <?php
 /**
- * Mr. Hanf FPC Control Center v9.1.4
+ * Mr. Hanf FPC Control Center v9.1.5
  *
  * Enterprise-Level Dashboard for the Full Page Cache System.
  *
@@ -1184,7 +1184,7 @@ $page_title = 'FPC Control Center';
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title><?php echo $page_title; ?> v9.1.4</title>
+<title><?php echo $page_title; ?> v9.1.5</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4" defer></script>
 <style>
 :root { --fpc-bg:#0d1b2a; --fpc-card:#1b2838; --fpc-border:#2a3a4a; --fpc-text:#e0e6ed; --fpc-text2:#8899aa; --fpc-teal:#00d4aa; --fpc-green:#00e676; --fpc-red:#ff4757; --fpc-orange:#ffa502; --fpc-yellow:#ffd32a; --fpc-blue:#00a8ff; }
@@ -1270,7 +1270,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 
 <!-- HEADER -->
 <div class="fpc-header">
-    <h1>FPC Control Center <span>v9.1.4</span></h1>
+    <h1>FPC Control Center <span>v9.1.5</span></h1>
     <div class="fpc-quick-actions">
         <button class="fpc-quick-btn" onclick="fpcFlush()" title="Flush Cache">&#128465; Flush</button>
         <button class="fpc-quick-btn" onclick="fpcRebuild()" title="Rebuild Cache">&#8635; Rebuild</button>
@@ -1278,7 +1278,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
     </div>
     <div>
         <span id="fpc-clock" style="color:var(--fpc-text2);font-size:12px;"></span>
-        <span class="fpc-version">v9.1.4</span>
+        <span class="fpc-version">v9.1.5</span>
     </div>
 </div>
 
@@ -1637,16 +1637,22 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
     </div>
     <div id="sx-content" style="display:none;">
         <div class="fpc-kpis" id="sx-kpis"></div>
-        <div class="fpc-charts">
-            <div class="fpc-chart-box"><h3>Visibility Index History</h3><canvas id="chart-sx-visibility" height="200"></canvas></div>
-            <div class="fpc-chart-box" id="sx-ranking-box"><h3>Ranking Distribution</h3><canvas id="chart-sx-ranking" height="200"></canvas><div id="sx-ranking-msg"></div></div>
+        <div style="background:var(--fpc-card);border-radius:10px;padding:20px;border:1px solid var(--fpc-border);margin-bottom:20px;">
+            <h3 style="font-size:14px;color:var(--fpc-text2);margin-bottom:12px;">Visibility Index History</h3>
+            <div style="height:300px;position:relative;"><canvas id="chart-sx-visibility"></canvas></div>
         </div>
-        <div class="fpc-section-title">Keyword Count History</div>
-        <div id="sx-kwcount" style="overflow-x:auto;"></div>
-        <div class="fpc-section-title" style="margin-top:20px;">Top Competitors</div>
-        <div id="sx-competitors" style="overflow-x:auto;"></div>
-        <div class="fpc-section-title" style="margin-top:20px;">Top Pages</div>
-        <div id="sx-toppages" style="overflow-x:auto;"></div>
+        <div id="sx-history-table" style="overflow-x:auto;"></div>
+        <div id="sx-upgrade-hint" style="background:var(--fpc-card);border:1px solid var(--fpc-border);border-radius:10px;padding:20px;margin-top:20px;">
+            <h3 style="color:var(--fpc-orange);font-size:14px;margin-bottom:8px;">Want more data?</h3>
+            <p style="color:var(--fpc-text2);font-size:13px;margin-bottom:8px;">Your SISTRIX Plus plan includes the <strong>Visibility Index</strong>. Upgrade to <strong>Professional</strong> to unlock:</p>
+            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px;margin-top:12px;">
+                <div style="background:#0a1420;padding:10px;border-radius:6px;color:var(--fpc-text2);font-size:12px;">Ranking Distribution</div>
+                <div style="background:#0a1420;padding:10px;border-radius:6px;color:var(--fpc-text2);font-size:12px;">Keyword Rankings</div>
+                <div style="background:#0a1420;padding:10px;border-radius:6px;color:var(--fpc-text2);font-size:12px;">Top Competitors</div>
+                <div style="background:#0a1420;padding:10px;border-radius:6px;color:var(--fpc-text2);font-size:12px;">Top Pages by Visibility</div>
+            </div>
+            <p style="color:var(--fpc-text2);font-size:12px;margin-top:12px;">Alternatively, use the <strong>GSC tab</strong> for free keyword and ranking data from Google Search Console.</p>
+        </div>
     </div>
     <div id="sx-error" style="display:none;"></div>
 </div>
@@ -1655,7 +1661,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 
 <script>
 // ============================================================
-// JAVASCRIPT v9.1.4
+// JAVASCRIPT v9.1.5
 // ============================================================
 var BASE = '<?php echo basename(__FILE__); ?>';
 var chartInstances = {};
@@ -2647,13 +2653,7 @@ function fpcLoadSistrix() {
         }
         document.getElementById('sx-content').style.display = 'block';
 
-        // Helper: show "not available" message for unavailable features
-        function sxUnavailable(elId, msg) {
-            var el = document.getElementById(elId);
-            if (el) el.innerHTML = '<div style="background:var(--fpc-card);border:1px solid var(--fpc-border);border-radius:8px;padding:16px;color:var(--fpc-text2);font-size:13px;"><strong>Not available</strong> in your SISTRIX plan. ' + (msg || 'Upgrade your SISTRIX package to access this feature.') + '</div>';
-        }
-
-        // ---- VISIBILITY INDEX (always available) ----
+        // ---- VISIBILITY INDEX ----
         var vi = d.visibility;
         var viVal = '\u2014', viDate = '\u2014';
         if (vi && vi.answer && vi.answer[0] && vi.answer[0].sichtbarkeitsindex) {
@@ -2674,104 +2674,86 @@ function fpcLoadSistrix() {
             creditsUsed = cr.credits[0].used || 0;
         }
 
-        document.getElementById('sx-kpis').innerHTML =
-            fpcKpiBox('Visibility Index', viVal, 'teal') +
-            fpcKpiBox('Domain', d.domain || 'mr-hanf.de', 'blue') +
-            fpcKpiBox('Last Update', viDate, 'text2') +
-            fpcKpiBox('API Credits', creditsUsed + ' / ' + creditsTotal, 'orange') +
-            fpcKpiBox('Data Fetched', d.timestamp || '\u2014', 'text2');
-
-        // ---- VISIBILITY HISTORY CHART (always available) ----
+        // Calculate trend from history
+        var trendHtml = '\u2014';
         var viHist = d.vi_history;
+        var labels = [], values = [];
         if (viHist && viHist.answer && viHist.answer[0] && viHist.answer[0].sichtbarkeitsindex) {
             var items = viHist.answer[0].sichtbarkeitsindex;
-            var labels = [], values = [];
             items.forEach(function(p) {
                 if (p.date) labels.push(p.date.substring(0,10));
                 if (p.value !== undefined) values.push(parseFloat(p.value));
             });
-            // Reverse so oldest is first
             labels.reverse();
             values.reverse();
-            fpcChart('chart-sx-visibility', 'line', labels, [
-                {label: 'Visibility Index', data: values, borderColor: '#00d4aa', backgroundColor: 'rgba(0,212,170,0.1)', fill: true, tension: 0.3}
-            ]);
-        }
-
-        // ---- RANKING DISTRIBUTION (may be unavailable) ----
-        var rd = d.ranking_dist;
-        if (rd && rd.error && rd.unavailable) {
-            document.getElementById('sx-ranking-msg').innerHTML = '<div style="padding:12px;color:var(--fpc-text2);font-size:12px;text-align:center;">Not available in your SISTRIX plan</div>';
-            document.getElementById('chart-sx-ranking').style.display = 'none';
-        } else if (rd && rd.answer && rd.answer[0] && rd.answer[0].ranking_distribution) {
-            var rdArr = rd.answer[0].ranking_distribution;
-            if (rdArr[0]) {
-                var rdLabels = ['Top 10', '11-20', '21-50', '51-100'];
-                var rdValues = [
-                    parseInt(rdArr[0]['1-10'] || 0),
-                    parseInt(rdArr[0]['11-20'] || 0),
-                    parseInt(rdArr[0]['21-50'] || 0),
-                    parseInt(rdArr[0]['51-100'] || 0)
-                ];
-                fpcChart('chart-sx-ranking', 'bar', rdLabels, [{label: 'Keywords', data: rdValues, backgroundColor: ['#00e676','#00d4aa','#ffa502','#ff4757']}]);
+            if (values.length >= 2) {
+                var prev = values[values.length - 2];
+                var curr = values[values.length - 1];
+                var diff = curr - prev;
+                var pct = prev > 0 ? ((diff / prev) * 100).toFixed(1) : '0.0';
+                var arrow = diff >= 0 ? '&#9650;' : '&#9660;';
+                var color = diff >= 0 ? 'var(--fpc-green)' : 'var(--fpc-red)';
+                trendHtml = '<span style="color:' + color + '">' + arrow + ' ' + (diff >= 0 ? '+' : '') + diff.toFixed(4) + ' (' + (diff >= 0 ? '+' : '') + pct + '%)</span>';
             }
-        } else if (rd && rd.error) {
-            document.getElementById('sx-ranking-msg').innerHTML = '<div style="padding:12px;color:var(--fpc-text2);font-size:12px;text-align:center;">Not available in your SISTRIX plan</div>';
-            document.getElementById('chart-sx-ranking').style.display = 'none';
         }
 
-        // ---- KEYWORD COUNT (may be unavailable) ----
-        var kwc = d.kwcount;
-        if (kwc && kwc.error) {
-            sxUnavailable('sx-kwcount');
-        } else if (kwc && kwc.answer && kwc.answer[0]) {
-            var html = '<table class="fpc-table"><thead><tr><th>Date</th><th>Keywords in Top 100</th></tr></thead><tbody>';
-            var kwArr = kwc.answer[0].kwcount_seo || kwc.answer[0];
-            if (Array.isArray(kwArr)) {
-                kwArr.slice(0, 30).forEach(function(r) {
-                    html += '<tr><td>' + (r.date || '') + '</td><td>' + (r.value || '') + '</td></tr>';
-                });
-            }
-            html += '</tbody></table>';
-            document.getElementById('sx-kwcount').innerHTML = html;
-        } else {
-            sxUnavailable('sx-kwcount');
-        }
+        document.getElementById('sx-kpis').innerHTML =
+            fpcKpiBox('Visibility Index', viVal, 'teal') +
+            fpcKpiBox('Weekly Trend', trendHtml, 'text2') +
+            fpcKpiBox('Data Points', values.length + ' weeks', 'blue') +
+            fpcKpiBox('Last Update', viDate, 'text2') +
+            fpcKpiBox('API Credits Used', creditsUsed + ' / ' + creditsTotal, 'orange');
 
-        // ---- COMPETITORS (may be unavailable) ----
-        var comp = d.competitors;
-        if (comp && comp.error) {
-            sxUnavailable('sx-competitors');
-        } else if (comp && comp.answer) {
-            var html = '<table class="fpc-table"><thead><tr><th>Domain</th><th>Visibility</th><th>Common Keywords</th></tr></thead><tbody>';
-            comp.answer.slice(0, 15).forEach(function(r) {
-                var row = r.domain || r;
-                if (typeof row === 'object' && row.domain) {
-                    html += '<tr><td>' + (row.domain || '') + '</td><td>' + (row.sichtbarkeitsindex || '') + '</td><td>' + (row.match || '') + '</td></tr>';
+        // ---- VISIBILITY HISTORY CHART ----
+        if (values.length > 0) {
+            fpcMakeChart('chart-sx-visibility', {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Visibility Index',
+                        data: values,
+                        borderColor: '#00d4aa',
+                        backgroundColor: 'rgba(0,212,170,0.15)',
+                        fill: true,
+                        tension: 0.3,
+                        pointRadius: 2,
+                        pointHoverRadius: 5,
+                        borderWidth: 2
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: { mode: 'index', intersect: false }
+                    },
+                    scales: {
+                        x: { ticks: { maxTicksAutoSkip: true, maxRotation: 45, font: { size: 10 } }, grid: { color: '#1a2736' } },
+                        y: { beginAtZero: false, grid: { color: '#1a2736' }, ticks: { font: { size: 11 } } }
+                    }
                 }
             });
-            html += '</tbody></table>';
-            document.getElementById('sx-competitors').innerHTML = html;
-        } else {
-            sxUnavailable('sx-competitors');
         }
 
-        // ---- TOP PAGES (may be unavailable) ----
-        var tp = d.top_pages;
-        if (tp && tp.error) {
-            sxUnavailable('sx-toppages');
-        } else if (tp && tp.answer) {
-            var html = '<table class="fpc-table"><thead><tr><th>URL</th><th>Visibility</th></tr></thead><tbody>';
-            tp.answer.slice(0, 30).forEach(function(r) {
-                var row = r.page || r;
-                if (typeof row === 'object' && row.url) {
-                    html += '<tr><td title="' + row.url + '">' + row.url.substring(0,80) + '</td><td>' + (row.sichtbarkeitsindex || '') + '</td></tr>';
+        // ---- HISTORY TABLE (last 12 weeks) ----
+        if (values.length > 0) {
+            var html = '<div class="fpc-section-title">Recent Visibility History</div>';
+            html += '<table class="fpc-table"><thead><tr><th>Date</th><th>Visibility Index</th><th>Change</th></tr></thead><tbody>';
+            var showCount = Math.min(values.length, 12);
+            for (var i = values.length - 1; i >= values.length - showCount; i--) {
+                var change = '\u2014';
+                if (i > 0) {
+                    var ch = values[i] - values[i-1];
+                    var chColor = ch >= 0 ? 'var(--fpc-green)' : 'var(--fpc-red)';
+                    var chArrow = ch >= 0 ? '&#9650;' : '&#9660;';
+                    change = '<span style="color:' + chColor + '">' + chArrow + ' ' + (ch >= 0 ? '+' : '') + ch.toFixed(4) + '</span>';
                 }
-            });
+                html += '<tr><td>' + labels[i] + '</td><td style="font-weight:700;color:var(--fpc-teal);">' + values[i].toFixed(4) + '</td><td>' + change + '</td></tr>';
+            }
             html += '</tbody></table>';
-            document.getElementById('sx-toppages').innerHTML = html;
-        } else {
-            sxUnavailable('sx-toppages');
+            document.getElementById('sx-history-table').innerHTML = html;
         }
     });
 }
