@@ -349,27 +349,38 @@ PROMPT;
         }
 
         // 3. GA4 Daten (wenn verfuegbar)
+        // v10.2.4: Cache-Dir Parameter + bessere Fehlerbehandlung
         try {
             require_once $this->base_dir . 'fpc_ga4.php';
             $creds = @json_decode(file_get_contents($this->base_dir . 'cache/fpc/api_credentials.json'), true);
-            if (!empty($creds['ga4_service_account']) && !empty($creds['ga4_property_id']) && is_file($this->base_dir . $creds['ga4_service_account'])) {
-                $ga4 = new FPC_GoogleAnalytics4($this->base_dir . $creds['ga4_service_account'], $creds['ga4_property_id']);
+            $ga4_sa = isset($creds['ga4_service_account']) ? $creds['ga4_service_account'] : '';
+            $ga4_prop = isset($creds['ga4_property_id']) ? $creds['ga4_property_id'] : '';
+            $ga4_sa_path = $this->base_dir . $ga4_sa;
+            if (!empty($ga4_sa) && !empty($ga4_prop) && is_file($ga4_sa_path)) {
+                $ga4_cache = $this->base_dir . 'cache/fpc/ga4/';
+                $ga4 = new FPC_GoogleAnalytics4($ga4_sa_path, $ga4_prop, $ga4_cache);
                 $ga4_comp = $ga4->getPeriodComparison(30);
-                $data['ga4'] = array(
-                    'sessions' => isset($ga4_comp['current']['sessions']) ? $ga4_comp['current']['sessions'] : 0,
-                    'users' => isset($ga4_comp['current']['totalUsers']) ? $ga4_comp['current']['totalUsers'] : 0,
-                    'pageviews' => isset($ga4_comp['current']['screenPageViews']) ? $ga4_comp['current']['screenPageViews'] : 0,
-                    'bounce_rate' => round((isset($ga4_comp['current']['bounceRate']) ? $ga4_comp['current']['bounceRate'] : 0) * 100, 1) . '%',
-                    'avg_duration' => round(isset($ga4_comp['current']['averageSessionDuration']) ? $ga4_comp['current']['averageSessionDuration'] : 0) . 's',
-                );
-                // E-Commerce Daten separat laden
-                try {
-                    $ecom = $ga4->getEcommerceOverview(30);
-                    if (is_array($ecom)) {
-                        $data['ga4']['revenue'] = isset($ecom['totalRevenue']) ? $ecom['totalRevenue'] : 0;
-                        $data['ga4']['transactions'] = isset($ecom['transactions']) ? $ecom['transactions'] : 0;
-                    }
-                } catch (Exception $e2) { /* E-Commerce optional */ }
+                if (is_array($ga4_comp) && isset($ga4_comp['current'])) {
+                    $data['ga4'] = array(
+                        'sessions' => isset($ga4_comp['current']['sessions']) ? $ga4_comp['current']['sessions'] : 0,
+                        'users' => isset($ga4_comp['current']['totalUsers']) ? $ga4_comp['current']['totalUsers'] : 0,
+                        'pageviews' => isset($ga4_comp['current']['screenPageViews']) ? $ga4_comp['current']['screenPageViews'] : 0,
+                        'bounce_rate' => round((isset($ga4_comp['current']['bounceRate']) ? $ga4_comp['current']['bounceRate'] : 0) * 100, 1) . '%',
+                        'avg_duration' => round(isset($ga4_comp['current']['averageSessionDuration']) ? $ga4_comp['current']['averageSessionDuration'] : 0) . 's',
+                    );
+                    // E-Commerce Daten separat laden
+                    try {
+                        $ecom = $ga4->getEcommerceOverview(30);
+                        if (is_array($ecom)) {
+                            $data['ga4']['revenue'] = isset($ecom['totalRevenue']) ? $ecom['totalRevenue'] : 0;
+                            $data['ga4']['transactions'] = isset($ecom['transactions']) ? $ecom['transactions'] : 0;
+                        }
+                    } catch (Exception $e2) { /* E-Commerce optional */ }
+                } else {
+                    $data['ga4'] = array('error' => 'getPeriodComparison lieferte keine Daten', 'raw' => $ga4_comp);
+                }
+            } else {
+                $data['ga4'] = array('not_configured' => true, 'reason' => empty($ga4_sa) ? 'Service Account fehlt' : (empty($ga4_prop) ? 'Property ID fehlt' : 'Service Account Datei nicht gefunden: ' . $ga4_sa_path));
             }
         } catch (Exception $e) {
             $data['ga4'] = array('error' => $e->getMessage());

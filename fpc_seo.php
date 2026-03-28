@@ -666,7 +666,14 @@ class FpcSeo {
                 case 'redirect': $redirects_count++; break;
             }
             if (!$r['has_fpc_cache']) $no_cache++;
-            if ($r['canonical_match'] === false) $canonical_mismatches++;
+            // v10.2.4: Sub-Kategorie-Architektur nicht als Mismatch zaehlen
+            if ($r['canonical_match'] === false && !empty($r['canonical'])) {
+                $url_slug = basename(parse_url($r['url'], PHP_URL_PATH));
+                $can_slug = basename(parse_url($r['canonical'], PHP_URL_PATH));
+                if ($url_slug !== $can_slug || empty($url_slug)) {
+                    $canonical_mismatches++;
+                }
+            }
         }
 
         // Score-Berechnung: 100 - Abzuege
