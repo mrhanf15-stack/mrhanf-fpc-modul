@@ -22,7 +22,7 @@
  *   - v8.2.0: AJAX-Warenkorb fuer gecachte Seiten
  *   - v8.1.0: Session-Initializer JavaScript Injection
  *
- * @version   9.0.0
+ * @version   10.0.0
  * @date      2026-03-27
  */
 
@@ -109,6 +109,50 @@ if ($uri === '') {
     $uri = '/';
 }
 
+// ============================================================
+// v10.0.0: SEO REDIRECT CHECK (vor Cache-Pruefung)
+// ============================================================
+// Prueft ob fuer die aktuelle URI ein Redirect definiert ist.
+// Wenn ja: HTTP-Redirect senden und Request beenden.
+$fpc_seo_file = __DIR__ . '/fpc_seo.php';
+if (is_file($fpc_seo_file)) {
+    try {
+        require_once $fpc_seo_file;
+        $fpc_seo = new FpcSeo(__DIR__ . '/');
+        $fpc_redirect = $fpc_seo->findRedirect($uri);
+        if ($fpc_redirect) {
+            $fpc_redir_code = intval($fpc_redirect['type']);
+            if ($fpc_redir_code === 410) {
+                // 410 Gone - Seite existiert nicht mehr
+                header('HTTP/1.1 410 Gone');
+                header('X-FPC-SEO: GONE');
+                $fpc_cache_status = 'REDIRECT';
+                $fpc_miss_reason = 'SEO_410_GONE';
+                $fpc_http_code = 410;
+                fpc_log_request($fpc_request_start, $fpc_cache_status, $fpc_miss_reason, $fpc_is_bot, $fpc_bot_name, $fpc_http_code);
+                echo '<!DOCTYPE html><html><head><title>410 Gone</title></head><body><h1>410 Gone</h1><p>Diese Seite existiert nicht mehr.</p></body></html>';
+                exit;
+            }
+            // 301, 302, 307 Redirect
+            if (!in_array($fpc_redir_code, array(301, 302, 307))) $fpc_redir_code = 301;
+            $fpc_redir_target = $fpc_redirect['target'];
+            // Relative URLs zu absoluten machen
+            if (strpos($fpc_redir_target, 'http') !== 0) {
+                $fpc_redir_target = 'https://' . $_SERVER['HTTP_HOST'] . $fpc_redir_target;
+            }
+            header('Location: ' . $fpc_redir_target, true, $fpc_redir_code);
+            header('X-FPC-SEO: REDIRECT-' . $fpc_redir_code);
+            $fpc_cache_status = 'REDIRECT';
+            $fpc_miss_reason = 'SEO_REDIRECT_' . $fpc_redir_code;
+            $fpc_http_code = $fpc_redir_code;
+            fpc_log_request($fpc_request_start, $fpc_cache_status, $fpc_miss_reason, $fpc_is_bot, $fpc_bot_name, $fpc_http_code);
+            exit;
+        }
+    } catch (Exception $e) {
+        // SEO-Fehler darf Cache nicht blockieren - still ignorieren
+    }
+}
+
 // --- Zweite Sicherheitsstufe: URL-basierte Ausschlussliste ---
 $excluded_paths = array(
     '/vergleich',           // Produktvergleich (sessionabhaengig)
@@ -153,6 +197,13 @@ if ($real_cache === false) {
 // Cache-Datei existiert?
 if (!is_file($cache_file)) {
     $fpc_miss_reason = 'FILE_NOT_FOUND';
+    // v10.0.0: 404-Logging fuer SEO
+    if (isset($fpc_seo) && $fpc_seo instanceof FpcSeo) {
+        try {
+            $fpc_referer = isset($_SERVER['HTTP_REFERER']) ? $_SERVER['HTTP_REFERER'] : '';
+            $fpc_seo->log404($uri, $fpc_referer, $fpc_ua);
+        } catch (Exception $e) {}
+    }
     fpc_log_request($fpc_request_start, $fpc_cache_status, $fpc_miss_reason, $fpc_is_bot, $fpc_bot_name, $fpc_http_code);
     return false;
 }
@@ -217,7 +268,7 @@ if (strpos($tail, $FPC_HEALTH_MARKER) === false) {
 
 header('Content-Type: text/html; charset=utf-8');
 header('X-FPC-Cache: HIT');
-header('X-FPC-Version: 9.0.0');
+header('X-FPC-Version: 10.0.0');
 $fpc_cache_status = 'HIT';
 $fpc_miss_reason = '';
 header('X-FPC-Cached-At: ' . gmdate('D, d M Y H:i:s', $mtime) . ' GMT');

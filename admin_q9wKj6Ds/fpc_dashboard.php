@@ -1,6 +1,6 @@
 <?php
 /**
- * Mr. Hanf FPC Control Center v9.3.0
+ * Mr. Hanf FPC Control Center v10.0.0
  *
  * Enterprise-Level Dashboard for the Full Page Cache System.
  *
@@ -295,6 +295,105 @@ if (isset($_GET['ajax'])) {
         case 'load_api_credentials':
             echo json_encode(fpc_load_api_credentials($cache_dir));
             exit;
+
+        // v10.0.0: SEO Engine Endpoints
+        case 'seo_overview':
+            echo json_encode(fpc_seo_overview($base_dir));
+            exit;
+
+        case 'seo_redirects':
+            echo json_encode(fpc_seo_redirects($base_dir, $_GET));
+            exit;
+
+        case 'seo_redirect_add':
+            $data = json_decode(file_get_contents('php://input'), true);
+            echo json_encode(fpc_seo_redirect_add($base_dir, $data));
+            exit;
+
+        case 'seo_redirect_update':
+            $data = json_decode(file_get_contents('php://input'), true);
+            echo json_encode(fpc_seo_redirect_update($base_dir, $data));
+            exit;
+
+        case 'seo_redirect_delete':
+            $id = isset($_GET['id']) ? intval($_GET['id']) : 0;
+            echo json_encode(fpc_seo_redirect_delete($base_dir, $id));
+            exit;
+
+        case 'seo_canonicals':
+            echo json_encode(fpc_seo_canonicals($base_dir));
+            exit;
+
+        case 'seo_canonical_add':
+            $data = json_decode(file_get_contents('php://input'), true);
+            echo json_encode(fpc_seo_canonical_add($base_dir, $data));
+            exit;
+
+        case 'seo_canonical_delete':
+            $id = isset($_GET['id']) ? intval($_GET['id']) : 0;
+            echo json_encode(fpc_seo_canonical_delete($base_dir, $id));
+            exit;
+
+        case 'seo_404_log':
+            echo json_encode(fpc_seo_404_log($base_dir, $_GET));
+            exit;
+
+        case 'seo_404_resolve':
+            $data = json_decode(file_get_contents('php://input'), true);
+            echo json_encode(fpc_seo_404_resolve($base_dir, $data));
+            exit;
+
+        case 'seo_404_dismiss':
+            $id = isset($_GET['id']) ? intval($_GET['id']) : 0;
+            echo json_encode(fpc_seo_404_dismiss($base_dir, $id));
+            exit;
+
+        case 'seo_scan':
+            $mode = isset($_GET['mode']) ? $_GET['mode'] : 'fast';
+            echo json_encode(fpc_seo_scan($base_dir, $mode));
+            exit;
+
+        case 'seo_scan_results':
+            echo json_encode(fpc_seo_scan_results($base_dir, $_GET));
+            exit;
+
+        case 'seo_problems':
+            echo json_encode(fpc_seo_problems($base_dir, $cache_dir));
+            exit;
+
+        case 'seo_export_csv':
+            header('Content-Type: text/csv');
+            header('Content-Disposition: attachment; filename=redirects_export.csv');
+            echo fpc_seo_export_csv($base_dir);
+            exit;
+
+        case 'seo_import_csv':
+            $csv = file_get_contents('php://input');
+            echo json_encode(fpc_seo_import_csv($base_dir, $csv));
+            exit;
+
+        // v10.0.0: AI Analyzer Endpoints
+        case 'ai_analysis':
+            $force = isset($_GET['force']) && $_GET['force'] === '1';
+            echo json_encode(fpc_ai_analysis($base_dir, $force));
+            exit;
+
+        case 'ai_chat':
+            $data = json_decode(file_get_contents('php://input'), true);
+            echo json_encode(fpc_ai_chat($base_dir, $data));
+            exit;
+
+        case 'ai_chat_history':
+            echo json_encode(fpc_ai_chat_history($base_dir));
+            exit;
+
+        case 'ai_chat_clear':
+            echo json_encode(fpc_ai_chat_clear($base_dir));
+            exit;
+
+        case 'ai_quick_summary':
+            echo json_encode(fpc_ai_quick_summary($base_dir));
+            exit;
     }
     exit;
 }
@@ -302,6 +401,160 @@ if (isset($_GET['ajax'])) {
 // ============================================================
 // HILFSFUNKTIONEN
 // ============================================================
+
+// v10.0.0: SEO Engine Backend Functions
+function fpc_seo_init($base_dir) {
+    require_once $base_dir . 'fpc_seo.php';
+    return new FpcSeo($base_dir);
+}
+
+function fpc_seo_overview($base_dir) {
+    $seo = fpc_seo_init($base_dir);
+    return $seo->getIstZustand();
+}
+
+function fpc_seo_redirects($base_dir, $params) {
+    $seo = fpc_seo_init($base_dir);
+    return $seo->getRedirects($params);
+}
+
+function fpc_seo_redirect_add($base_dir, $data) {
+    $seo = fpc_seo_init($base_dir);
+    return $seo->addRedirect(
+        isset($data['source']) ? $data['source'] : '',
+        isset($data['target']) ? $data['target'] : '',
+        isset($data['type']) ? $data['type'] : '301',
+        isset($data['is_regex']) ? $data['is_regex'] : false,
+        isset($data['note']) ? $data['note'] : ''
+    );
+}
+
+function fpc_seo_redirect_update($base_dir, $data) {
+    $seo = fpc_seo_init($base_dir);
+    $id = isset($data['id']) ? intval($data['id']) : 0;
+    return $seo->updateRedirect($id, $data);
+}
+
+function fpc_seo_redirect_delete($base_dir, $id) {
+    $seo = fpc_seo_init($base_dir);
+    return $seo->deleteRedirect($id);
+}
+
+function fpc_seo_canonicals($base_dir) {
+    $seo = fpc_seo_init($base_dir);
+    return $seo->getCanonicals();
+}
+
+function fpc_seo_canonical_add($base_dir, $data) {
+    $seo = fpc_seo_init($base_dir);
+    return $seo->addCanonical(
+        isset($data['page_url']) ? $data['page_url'] : '',
+        isset($data['canonical_url']) ? $data['canonical_url'] : '',
+        isset($data['note']) ? $data['note'] : ''
+    );
+}
+
+function fpc_seo_canonical_delete($base_dir, $id) {
+    $seo = fpc_seo_init($base_dir);
+    return $seo->deleteCanonical($id);
+}
+
+function fpc_seo_404_log($base_dir, $params) {
+    $seo = fpc_seo_init($base_dir);
+    return $seo->get404Log($params);
+}
+
+function fpc_seo_404_resolve($base_dir, $data) {
+    $seo = fpc_seo_init($base_dir);
+    $id = isset($data['id']) ? intval($data['id']) : 0;
+    $target = isset($data['target']) ? $data['target'] : '';
+    return $seo->resolve404($id, $target);
+}
+
+function fpc_seo_404_dismiss($base_dir, $id) {
+    $seo = fpc_seo_init($base_dir);
+    return $seo->dismiss404($id);
+}
+
+function fpc_seo_scan($base_dir, $mode) {
+    $seo = fpc_seo_init($base_dir);
+    set_time_limit(300);
+    return $seo->runAutoScan($mode, $mode === 'fast' ? 100 : 500);
+}
+
+function fpc_seo_scan_results($base_dir, $params) {
+    $seo = fpc_seo_init($base_dir);
+    return $seo->getScanResults($params);
+}
+
+function fpc_seo_problems($base_dir, $cache_dir) {
+    $seo = fpc_seo_init($base_dir);
+    // Try to get GSC and GA4 data for cross-API correlation
+    $gsc_data = null;
+    $ga4_data = null;
+    try {
+        $creds = fpc_load_api_credentials($cache_dir);
+        if (!empty($creds['gsc_service_account']) && is_file($base_dir . $creds['gsc_service_account'])) {
+            require_once $base_dir . 'fpc_gsc.php';
+            $gsc = new FpcGsc($base_dir . $creds['gsc_service_account'], $creds['gsc_site_url']);
+            $gsc_data = $gsc->getOverview(28);
+        }
+    } catch (Exception $e) {}
+    try {
+        $creds = fpc_load_api_credentials($cache_dir);
+        if (!empty($creds['ga4_service_account']) && !empty($creds['ga4_property_id'])) {
+            require_once $base_dir . 'fpc_ga4.php';
+            $ga4 = new FpcGa4($base_dir . $creds['ga4_service_account'], $creds['ga4_property_id']);
+            $ga4_data = $ga4->getOverview(30);
+        }
+    } catch (Exception $e) {}
+    return $seo->getCrossApiProblems($gsc_data, $ga4_data, null);
+}
+
+function fpc_seo_export_csv($base_dir) {
+    $seo = fpc_seo_init($base_dir);
+    return $seo->exportRedirectsCsv();
+}
+
+function fpc_seo_import_csv($base_dir, $csv) {
+    $seo = fpc_seo_init($base_dir);
+    return $seo->importRedirectsCsv($csv);
+}
+
+// v10.0.0: AI Analyzer Backend Functions
+function fpc_ai_init($base_dir) {
+    require_once $base_dir . 'fpc_ai.php';
+    return new FpcAi($base_dir);
+}
+
+function fpc_ai_analysis($base_dir, $force = false) {
+    $ai = fpc_ai_init($base_dir);
+    set_time_limit(120);
+    return $ai->runAnalysis($force);
+}
+
+function fpc_ai_chat($base_dir, $data) {
+    $ai = fpc_ai_init($base_dir);
+    set_time_limit(120);
+    $msg = isset($data['message']) ? $data['message'] : '';
+    if (empty($msg)) return array('error' => true, 'msg' => 'Nachricht darf nicht leer sein');
+    return $ai->chat($msg);
+}
+
+function fpc_ai_chat_history($base_dir) {
+    $ai = fpc_ai_init($base_dir);
+    return $ai->getChatHistory();
+}
+
+function fpc_ai_chat_clear($base_dir) {
+    $ai = fpc_ai_init($base_dir);
+    return $ai->clearChatHistory();
+}
+
+function fpc_ai_quick_summary($base_dir) {
+    $ai = fpc_ai_init($base_dir);
+    return $ai->getQuickSummary();
+}
 
 // v9.0.5: Helper to read daily request log files from logs/ directory
 function fpc_read_request_logs($log_dir, $max_bytes = 2000000, $days = 7) {
@@ -1111,6 +1364,8 @@ function fpc_load_api_credentials($cache_dir) {
         'ga4_property_id' => '',
         'sistrix_api_key' => '',
         'sistrix_domain' => 'mr-hanf.de',
+        'openai_api_key' => '',
+        'openai_model' => 'gpt-4.1-mini',
     );
     if (!is_file($file)) return $defaults;
     $data = @json_decode(file_get_contents($file), true);
@@ -1120,7 +1375,7 @@ function fpc_load_api_credentials($cache_dir) {
 function fpc_save_api_credentials($cache_dir, $creds) {
     $file = $cache_dir . 'api_credentials.json';
     // Only save known keys
-    $allowed = array('gsc_service_account','gsc_site_url','ga4_service_account','ga4_property_id','sistrix_api_key','sistrix_domain');
+    $allowed = array('gsc_service_account','gsc_site_url','ga4_service_account','ga4_property_id','sistrix_api_key','sistrix_domain','openai_api_key','openai_model');
     $save = array();
     foreach ($allowed as $k) {
         $save[$k] = isset($creds[$k]) ? trim($creds[$k]) : '';
@@ -1448,7 +1703,117 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 
 <!-- ========== TAB 8: SEO ========== -->
 <div class="fpc-panel <?php echo $active_tab === 'seo' ? 'active' : ''; ?>" id="panel-seo">
+
+    <!-- SEO HEALTH SCORE BANNER -->
+    <div id="seo-health-banner" style="background:var(--fpc-card);border-radius:12px;padding:24px;border:1px solid var(--fpc-border);margin-bottom:20px;">
+        <div style="display:flex;align-items:center;gap:24px;flex-wrap:wrap;">
+            <div id="seo-health-score" style="width:120px;height:120px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:32px;font-weight:bold;border:4px solid var(--fpc-teal);color:var(--fpc-teal);">--</div>
+            <div style="flex:1;min-width:200px;">
+                <h2 style="color:var(--fpc-text);margin:0 0 8px 0;">SEO Health Score</h2>
+                <div id="seo-health-alerts" style="font-size:13px;color:var(--fpc-text2);">Lade Daten...</div>
+            </div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                <button class="fpc-btn green" onclick="fpcSeoRunScan('fast')">&#9654; Quick Scan (100 URLs)</button>
+                <button class="fpc-btn teal" onclick="fpcSeoRunScan('full')">&#128269; Full Scan</button>
+                <button class="fpc-btn blue" onclick="fpcSeoExportCsv()">&#128190; Export CSV</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- SEO KPIs -->
     <div class="fpc-kpis" id="seo-kpis"></div>
+
+    <!-- HEALTH TREND CHART -->
+    <div style="background:var(--fpc-card);border-radius:10px;padding:20px;border:1px solid var(--fpc-border);margin-bottom:20px;">
+        <h3 style="color:var(--fpc-text);margin:0 0 12px 0;">Health Score Trend</h3>
+        <canvas id="chart-seo-health-trend" height="80"></canvas>
+    </div>
+
+    <!-- KI ANALYSE + CHAT -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:20px;">
+        <!-- KI Analyse -->
+        <div style="background:var(--fpc-card);border-radius:10px;padding:20px;border:1px solid var(--fpc-border);">
+            <h3 style="color:var(--fpc-purple);margin:0 0 12px 0;">&#129302; KI-Analyse (OpenAI)</h3>
+            <div id="seo-ai-status" style="font-size:12px;color:var(--fpc-text2);margin-bottom:12px;"></div>
+            <div style="display:flex;gap:8px;margin-bottom:12px;">
+                <button class="fpc-btn purple" onclick="fpcSeoAiAnalysis(false)" id="btn-ai-analyze">&#9889; Analyse starten</button>
+                <button class="fpc-btn orange" onclick="fpcSeoAiAnalysis(true)">&#8635; Neu analysieren</button>
+            </div>
+            <div id="seo-ai-result" style="max-height:400px;overflow-y:auto;font-size:13px;color:var(--fpc-text2);"></div>
+        </div>
+        <!-- KI Chat -->
+        <div style="background:var(--fpc-card);border-radius:10px;padding:20px;border:1px solid var(--fpc-border);display:flex;flex-direction:column;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+                <h3 style="color:var(--fpc-blue);margin:0;">&#128172; SEO Chat</h3>
+                <button class="fpc-btn red" onclick="fpcSeoChatClear()" style="font-size:11px;padding:4px 8px;">Chat leeren</button>
+            </div>
+            <div id="seo-chat-messages" style="flex:1;max-height:350px;overflow-y:auto;margin-bottom:12px;font-size:13px;"></div>
+            <div style="display:flex;gap:8px;">
+                <input type="text" class="fpc-input" id="seo-chat-input" placeholder="Stelle eine SEO-Frage..." style="flex:1;" onkeypress="if(event.key==='Enter')fpcSeoChatSend()">
+                <button class="fpc-btn blue" onclick="fpcSeoChatSend()">Senden</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- CROSS-API PROBLEME -->
+    <div class="fpc-section-title" style="color:var(--fpc-red);">&#9888; Erkannte Probleme (Cross-API)</div>
+    <div id="seo-problems" style="margin-bottom:20px;"></div>
+
+    <!-- REDIRECTS -->
+    <div class="fpc-section-title">&#8594; Redirect Manager</div>
+    <div style="background:var(--fpc-card);border-radius:10px;padding:20px;border:1px solid var(--fpc-border);margin-bottom:20px;">
+        <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;align-items:end;">
+            <div style="flex:1;min-width:200px;"><label style="color:var(--fpc-text2);font-size:11px;display:block;margin-bottom:4px;">Source URL</label><input type="text" class="fpc-input" id="redir-source" placeholder="/alte-seite/" style="width:100%;"></div>
+            <div style="flex:1;min-width:200px;"><label style="color:var(--fpc-text2);font-size:11px;display:block;margin-bottom:4px;">Target URL</label><input type="text" class="fpc-input" id="redir-target" placeholder="/neue-seite/" style="width:100%;"></div>
+            <div style="width:80px;"><label style="color:var(--fpc-text2);font-size:11px;display:block;margin-bottom:4px;">Typ</label><select class="fpc-input" id="redir-type" style="width:100%;"><option value="301">301</option><option value="302">302</option><option value="307">307</option><option value="410">410</option></select></div>
+            <div style="width:60px;"><label style="color:var(--fpc-text2);font-size:11px;display:block;margin-bottom:4px;">Regex</label><input type="checkbox" id="redir-regex"></div>
+            <div style="flex:1;min-width:150px;"><label style="color:var(--fpc-text2);font-size:11px;display:block;margin-bottom:4px;">Notiz</label><input type="text" class="fpc-input" id="redir-note" placeholder="Optional" style="width:100%;"></div>
+            <button class="fpc-btn green" onclick="fpcSeoRedirectAdd()">+ Hinzufuegen</button>
+        </div>
+        <div style="margin-bottom:8px;"><input type="text" class="fpc-input" id="redir-search" placeholder="Redirects durchsuchen..." oninput="fpcSeoLoadRedirects()" style="width:300px;"></div>
+        <div id="seo-redirects-table"></div>
+    </div>
+
+    <!-- CANONICAL OVERRIDES -->
+    <div class="fpc-section-title">&#128279; Canonical Overrides</div>
+    <div style="background:var(--fpc-card);border-radius:10px;padding:20px;border:1px solid var(--fpc-border);margin-bottom:20px;">
+        <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;align-items:end;">
+            <div style="flex:1;min-width:200px;"><label style="color:var(--fpc-text2);font-size:11px;display:block;margin-bottom:4px;">Seiten-URL</label><input type="text" class="fpc-input" id="canon-page" placeholder="/seite/" style="width:100%;"></div>
+            <div style="flex:1;min-width:200px;"><label style="color:var(--fpc-text2);font-size:11px;display:block;margin-bottom:4px;">Canonical URL</label><input type="text" class="fpc-input" id="canon-url" placeholder="https://mr-hanf.de/richtige-seite/" style="width:100%;"></div>
+            <div style="flex:1;min-width:150px;"><label style="color:var(--fpc-text2);font-size:11px;display:block;margin-bottom:4px;">Notiz</label><input type="text" class="fpc-input" id="canon-note" placeholder="Optional" style="width:100%;"></div>
+            <button class="fpc-btn green" onclick="fpcSeoCanonicalAdd()">+ Hinzufuegen</button>
+        </div>
+        <div id="seo-canonicals-table"></div>
+    </div>
+
+    <!-- 404 LOG -->
+    <div class="fpc-section-title" style="color:var(--fpc-orange);">&#128683; 404 Fehler-Log</div>
+    <div style="background:var(--fpc-card);border-radius:10px;padding:20px;border:1px solid var(--fpc-border);margin-bottom:20px;">
+        <div style="display:flex;gap:8px;margin-bottom:12px;">
+            <button class="fpc-btn orange active" onclick="fpcSeoLoad404('unresolved')" id="btn-404-unresolved">Offen</button>
+            <button class="fpc-btn teal" onclick="fpcSeoLoad404('resolved')" id="btn-404-resolved">Geloest</button>
+            <button class="fpc-btn red" onclick="fpcSeoLoad404('dismissed')" id="btn-404-dismissed">Ignoriert</button>
+            <input type="text" class="fpc-input" id="404-search" placeholder="404 URLs suchen..." oninput="fpcSeoLoad404()" style="width:250px;margin-left:auto;">
+        </div>
+        <div id="seo-404-table"></div>
+    </div>
+
+    <!-- SCAN ERGEBNISSE -->
+    <div class="fpc-section-title">&#128269; Scan-Ergebnisse</div>
+    <div style="background:var(--fpc-card);border-radius:10px;padding:20px;border:1px solid var(--fpc-border);margin-bottom:20px;">
+        <div style="display:flex;gap:8px;margin-bottom:12px;">
+            <button class="fpc-btn teal active" onclick="fpcSeoLoadScanResults('')">Alle</button>
+            <button class="fpc-btn green" onclick="fpcSeoLoadScanResults('ok')">OK</button>
+            <button class="fpc-btn orange" onclick="fpcSeoLoadScanResults('warning')">Warnings</button>
+            <button class="fpc-btn red" onclick="fpcSeoLoadScanResults('error')">Errors</button>
+            <button class="fpc-btn blue" onclick="fpcSeoLoadScanResults('redirect')">Redirects</button>
+            <input type="text" class="fpc-input" id="scan-search" placeholder="URLs suchen..." oninput="fpcSeoLoadScanResults()" style="width:250px;margin-left:auto;">
+        </div>
+        <div id="seo-scan-table"></div>
+    </div>
+
+    <!-- BOT DATA (original SEO tab content) -->
+    <div class="fpc-section-title">&#129302; Bot-Analyse (FPC Request Log)</div>
     <div class="fpc-charts">
         <div class="fpc-chart-box"><h3>Bot Requests by Crawler</h3><canvas id="chart-seo-bots" height="200"></canvas></div>
         <div class="fpc-chart-box"><h3>Bot Hit Rate</h3><canvas id="chart-seo-hitrate" height="200"></canvas></div>
@@ -2271,17 +2636,72 @@ function fpcLoadFehler() {
 }
 
 // ============================================================
-// TAB 8: SEO
+// TAB 8: SEO - FULL SEO CONTROL CENTER
 // ============================================================
+var seo404Filter = 'unresolved';
+var seoScanFilter = '';
+
 function fpcLoadSeo() {
-    fpcAjax('ajax=seo_data', function(d) {
+    // 1. Overview laden (Health, KPIs)
+    fpcAjax('ajax=seo_overview', function(d) {
+        var h = d.health || {};
+        var score = h.score || 0;
+        var scoreColor = score >= 80 ? 'var(--fpc-green)' : (score >= 60 ? 'var(--fpc-orange)' : 'var(--fpc-red)');
+        var el = document.getElementById('seo-health-score');
+        el.textContent = score + '%';
+        el.style.borderColor = scoreColor;
+        el.style.color = scoreColor;
+
+        // KPIs
         var kpis = '';
-        kpis += '<div class="fpc-kpi"><div class="fpc-kpi-label">Bot-Requests</div><div class="fpc-kpi-value" style="color:var(--fpc-blue)">' + d.bot_requests + '</div></div>';
-        kpis += '<div class="fpc-kpi"><div class="fpc-kpi-label">Bot Hit Rate</div><div class="fpc-kpi-value" style="color:' + (d.bot_hit_rate >= 80 ? 'var(--fpc-green)' : 'var(--fpc-orange)') + '">' + d.bot_hit_rate + '%</div></div>';
-        kpis += '<div class="fpc-kpi"><div class="fpc-kpi-label">Bot HITs</div><div class="fpc-kpi-value" style="color:var(--fpc-green)">' + d.bot_hits + '</div></div>';
-        kpis += '<div class="fpc-kpi"><div class="fpc-kpi-label">Bot MISSes</div><div class="fpc-kpi-value" style="color:var(--fpc-red)">' + d.bot_misses + '</div></div>';
+        kpis += fpcKpiBox('Aktive Redirects', d.redirects ? d.redirects.active : 0, 'var(--fpc-teal)');
+        kpis += fpcKpiBox('Redirect Hits', d.redirects ? fpcNum(d.redirects.total_hits) : 0, 'var(--fpc-blue)');
+        kpis += fpcKpiBox('Canonicals', d.canonicals ? d.canonicals.active : 0, 'var(--fpc-purple)');
+        kpis += fpcKpiBox('Offene 404s', d.log_404 ? d.log_404.unresolved : 0, d.log_404 && d.log_404.unresolved > 10 ? 'var(--fpc-red)' : 'var(--fpc-orange)');
+        kpis += fpcKpiBox('404 Hits gesamt', d.log_404 ? fpcNum(d.log_404.total_hits) : 0, 'var(--fpc-orange)');
+        kpis += fpcKpiBox('Scan URLs', d.scan ? d.scan.total_results : 0, 'var(--fpc-text)');
+        kpis += fpcKpiBox('Scan Errors', h.errors || 0, h.errors > 0 ? 'var(--fpc-red)' : 'var(--fpc-green)');
+        kpis += fpcKpiBox('Canonical Mismatches', h.canonical_mismatches || 0, h.canonical_mismatches > 0 ? 'var(--fpc-orange)' : 'var(--fpc-green)');
         document.getElementById('seo-kpis').innerHTML = kpis;
-        if (typeof Chart !== 'undefined') {
+
+        // Alerts
+        var alerts = '';
+        if (h.errors > 0) alerts += '<span style="color:var(--fpc-red);">&#9888; ' + h.errors + ' HTTP-Fehler</span> ';
+        if (h.canonical_mismatches > 0) alerts += '<span style="color:var(--fpc-orange);">&#9888; ' + h.canonical_mismatches + ' Canonical Mismatches</span> ';
+        if ((d.log_404 ? d.log_404.unresolved : 0) > 10) alerts += '<span style="color:var(--fpc-orange);">&#9888; ' + d.log_404.unresolved + ' offene 404s</span> ';
+        if (!alerts) alerts = '<span style="color:var(--fpc-green);">Alles in Ordnung!</span>';
+        document.getElementById('seo-health-alerts').innerHTML = alerts;
+
+        // Health Trend Chart
+        if (d.scan && d.scan.history && d.scan.history.length > 1 && typeof Chart !== 'undefined') {
+            var labels = d.scan.history.map(function(h) { return h.date ? h.date.substring(0, 10) : ''; });
+            var scores = d.scan.history.map(function(h) { return h.score; });
+            fpcMakeChart('chart-seo-health-trend', {
+                type: 'line',
+                data: { labels: labels, datasets: [{ label: 'Health Score', data: scores, borderColor: '#00e676', backgroundColor: 'rgba(0,230,118,0.1)', fill: true, tension: 0.3 }] },
+                options: { responsive: true, scales: { y: { min: 0, max: 100 } }, plugins: { legend: { display: false } } }
+            });
+        }
+    });
+
+    // 2. Redirects laden
+    fpcSeoLoadRedirects();
+
+    // 3. Canonicals laden
+    fpcSeoLoadCanonicals();
+
+    // 4. 404 Log laden
+    fpcSeoLoad404('unresolved');
+
+    // 5. Scan-Ergebnisse laden
+    fpcSeoLoadScanResults('');
+
+    // 6. Probleme laden
+    fpcSeoLoadProblems();
+
+    // 7. Bot-Daten laden (original)
+    fpcAjax('ajax=seo_data', function(d) {
+        if (typeof Chart !== 'undefined' && d.bots) {
             var botNames = Object.keys(d.bots);
             var botReqs = botNames.map(function(n) { return d.bots[n].requests; });
             fpcMakeChart('chart-seo-bots', { type: 'bar', data: { labels: botNames, datasets: [{ label: 'Requests', data: botReqs, backgroundColor: '#00a8ff' }] }, options: { responsive: true, indexAxis: 'y' } });
@@ -2289,12 +2709,335 @@ function fpcLoadSeo() {
             var botMisses = botNames.map(function(n) { return d.bots[n].requests - d.bots[n].hits; });
             fpcMakeChart('chart-seo-hitrate', { type: 'bar', data: { labels: botNames, datasets: [{ label: 'HIT', data: botHits, backgroundColor: '#00e676' }, { label: 'MISS', data: botMisses, backgroundColor: '#ff4757' }] }, options: { responsive: true, scales: { x: { stacked: true }, y: { stacked: true } } } });
         }
-        var html = '<table class="fpc-table"><thead><tr><th>URL</th><th>Bot-Requests</th></tr></thead><tbody>';
-        for (var url in d.bot_top_urls) { html += '<tr><td>' + url + '</td><td>' + d.bot_top_urls[url] + '</td></tr>'; }
-        html += '</tbody></table>';
-        if (Object.keys(d.bot_top_urls).length === 0) html = '<p style="color:var(--fpc-text2)">No bot data yet. Request logging must be enabled.</p>';
-        document.getElementById('seo-top-urls').innerHTML = html;
+        if (d.bot_top_urls) {
+            var html = '<table class="fpc-table"><thead><tr><th>URL</th><th>Bot-Requests</th></tr></thead><tbody>';
+            for (var url in d.bot_top_urls) { html += '<tr><td>' + url + '</td><td>' + d.bot_top_urls[url] + '</td></tr>'; }
+            html += '</tbody></table>';
+            if (Object.keys(d.bot_top_urls).length === 0) html = '<p style="color:var(--fpc-text2)">No bot data yet.</p>';
+            document.getElementById('seo-top-urls').innerHTML = html;
+        }
     });
+
+    // 8. AI Quick Summary
+    fpcAjax('ajax=ai_quick_summary', function(d) {
+        if (d.ai_configured) {
+            document.getElementById('seo-ai-status').innerHTML = '<span style="color:var(--fpc-green);">OpenAI API konfiguriert (Modell: ' + (d.model || 'gpt-4.1-mini') + ')</span>';
+        } else {
+            document.getElementById('seo-ai-status').innerHTML = '<span style="color:var(--fpc-orange);">OpenAI API nicht konfiguriert. Gehe zu Settings > API Credentials.</span>';
+        }
+    });
+
+    // 9. Chat History laden
+    fpcSeoChatLoadHistory();
+}
+
+// --- REDIRECTS ---
+function fpcSeoLoadRedirects() {
+    var search = document.getElementById('redir-search') ? document.getElementById('redir-search').value : '';
+    fpcAjax('ajax=seo_redirects&search=' + encodeURIComponent(search), function(d) {
+        if (!d || d.length === 0) { document.getElementById('seo-redirects-table').innerHTML = '<p style="color:var(--fpc-text2)">Keine Redirects vorhanden.</p>'; return; }
+        var html = '<table class="fpc-table"><thead><tr><th>Source</th><th>Target</th><th>Typ</th><th>Regex</th><th>Hits</th><th>Letzter Hit</th><th>Notiz</th><th>Aktiv</th><th>Aktion</th></tr></thead><tbody>';
+        d.forEach(function(r) {
+            html += '<tr>';
+            html += '<td style="max-width:250px;overflow:hidden;text-overflow:ellipsis;" title="' + r.source + '">' + r.source + '</td>';
+            html += '<td style="max-width:250px;overflow:hidden;text-overflow:ellipsis;" title="' + r.target + '">' + r.target + '</td>';
+            html += '<td><span class="fpc-badge ' + (r.type === '301' ? 'hit' : 'bypass') + '">' + r.type + '</span></td>';
+            html += '<td>' + (r.is_regex ? 'Ja' : 'Nein') + '</td>';
+            html += '<td>' + (r.hit_count || 0) + '</td>';
+            html += '<td style="font-size:11px;">' + (r.last_hit || '-') + '</td>';
+            html += '<td style="font-size:11px;">' + (r.note || '') + '</td>';
+            html += '<td>' + (r.active ? '<span style="color:var(--fpc-green)">Ja</span>' : '<span style="color:var(--fpc-red)">Nein</span>') + '</td>';
+            html += '<td><button class="fpc-btn red" style="padding:2px 6px;font-size:11px;" onclick="fpcSeoRedirectDelete(' + r.id + ')">X</button></td>';
+            html += '</tr>';
+        });
+        html += '</tbody></table>';
+        html += '<p style="color:var(--fpc-text2);font-size:12px;margin-top:4px;">' + d.length + ' Redirects</p>';
+        document.getElementById('seo-redirects-table').innerHTML = html;
+    });
+}
+
+function fpcSeoRedirectAdd() {
+    var data = {
+        source: document.getElementById('redir-source').value,
+        target: document.getElementById('redir-target').value,
+        type: document.getElementById('redir-type').value,
+        is_regex: document.getElementById('redir-regex').checked,
+        note: document.getElementById('redir-note').value
+    };
+    fpcAjaxPostJson('seo_redirect_add', data, function(r) {
+        fpcToast(r.msg, !r.ok);
+        if (r.ok) {
+            document.getElementById('redir-source').value = '';
+            document.getElementById('redir-target').value = '';
+            document.getElementById('redir-note').value = '';
+            fpcSeoLoadRedirects();
+        }
+    });
+}
+
+function fpcSeoRedirectDelete(id) {
+    if (!confirm('Redirect wirklich loeschen?')) return;
+    fpcAjax('ajax=seo_redirect_delete&id=' + id, function(r) { fpcToast(r.msg, !r.ok); fpcSeoLoadRedirects(); });
+}
+
+// --- CANONICALS ---
+function fpcSeoLoadCanonicals() {
+    fpcAjax('ajax=seo_canonicals', function(d) {
+        if (!d || d.length === 0) { document.getElementById('seo-canonicals-table').innerHTML = '<p style="color:var(--fpc-text2)">Keine Canonical Overrides vorhanden.</p>'; return; }
+        var html = '<table class="fpc-table"><thead><tr><th>Seiten-URL</th><th>Canonical URL</th><th>Aktiv</th><th>Notiz</th><th>Aktion</th></tr></thead><tbody>';
+        d.forEach(function(c) {
+            html += '<tr>';
+            html += '<td>' + c.page_url + '</td>';
+            html += '<td>' + c.canonical_url + '</td>';
+            html += '<td>' + (c.active ? '<span style="color:var(--fpc-green)">Ja</span>' : '<span style="color:var(--fpc-red)">Nein</span>') + '</td>';
+            html += '<td style="font-size:11px;">' + (c.note || '') + '</td>';
+            html += '<td><button class="fpc-btn red" style="padding:2px 6px;font-size:11px;" onclick="fpcSeoCanonicalDelete(' + c.id + ')">X</button></td>';
+            html += '</tr>';
+        });
+        html += '</tbody></table>';
+        document.getElementById('seo-canonicals-table').innerHTML = html;
+    });
+}
+
+function fpcSeoCanonicalAdd() {
+    var data = {
+        page_url: document.getElementById('canon-page').value,
+        canonical_url: document.getElementById('canon-url').value,
+        note: document.getElementById('canon-note').value
+    };
+    fpcAjaxPostJson('seo_canonical_add', data, function(r) {
+        fpcToast(r.msg, !r.ok);
+        if (r.ok) {
+            document.getElementById('canon-page').value = '';
+            document.getElementById('canon-url').value = '';
+            document.getElementById('canon-note').value = '';
+            fpcSeoLoadCanonicals();
+        }
+    });
+}
+
+function fpcSeoCanonicalDelete(id) {
+    if (!confirm('Canonical Override loeschen?')) return;
+    fpcAjax('ajax=seo_canonical_delete&id=' + id, function(r) { fpcToast(r.msg, !r.ok); fpcSeoLoadCanonicals(); });
+}
+
+// --- 404 LOG ---
+function fpcSeoLoad404(filter) {
+    if (filter) seo404Filter = filter;
+    var search = document.getElementById('404-search') ? document.getElementById('404-search').value : '';
+    var params = 'ajax=seo_404_log&search=' + encodeURIComponent(search);
+    if (seo404Filter === 'unresolved') params += '&resolved=false&dismissed=false';
+    else if (seo404Filter === 'resolved') params += '&resolved=true';
+    else if (seo404Filter === 'dismissed') params += '&dismissed=true';
+
+    fpcAjax(params, function(d) {
+        if (!d || d.length === 0) { document.getElementById('seo-404-table').innerHTML = '<p style="color:var(--fpc-green)">Keine 404-Fehler in dieser Kategorie.</p>'; return; }
+        var html = '<table class="fpc-table"><thead><tr><th>URL</th><th>Hits</th><th>Erstmals</th><th>Letzter Hit</th><th>Referers</th><th>Aktion</th></tr></thead><tbody>';
+        d.forEach(function(e) {
+            html += '<tr>';
+            html += '<td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;" title="' + e.url + '">' + e.url + '</td>';
+            html += '<td><strong style="color:' + (e.hit_count > 50 ? 'var(--fpc-red)' : e.hit_count > 10 ? 'var(--fpc-orange)' : 'var(--fpc-text)') + '">' + e.hit_count + '</strong></td>';
+            html += '<td style="font-size:11px;">' + (e.first_seen || '') + '</td>';
+            html += '<td style="font-size:11px;">' + (e.last_hit || '') + '</td>';
+            html += '<td style="font-size:11px;max-width:200px;overflow:hidden;text-overflow:ellipsis;">' + (e.referers ? e.referers.join(', ') : '-') + '</td>';
+            if (!e.resolved && !e.dismissed) {
+                html += '<td style="white-space:nowrap;"><button class="fpc-btn green" style="padding:2px 6px;font-size:11px;" onclick="fpcSeo404Resolve(' + e.id + ',\'' + e.url.replace(/'/g, "\\'") + '\')">Redirect</button> ';
+                html += '<button class="fpc-btn red" style="padding:2px 6px;font-size:11px;" onclick="fpcSeo404Dismiss(' + e.id + ')">Ignorieren</button></td>';
+            } else {
+                html += '<td style="font-size:11px;color:var(--fpc-text2);">' + (e.resolved ? 'Resolved -> ' + (e.resolved_to || '') : 'Dismissed') + '</td>';
+            }
+            html += '</tr>';
+        });
+        html += '</tbody></table>';
+        html += '<p style="color:var(--fpc-text2);font-size:12px;margin-top:4px;">' + d.length + ' Eintraege</p>';
+        document.getElementById('seo-404-table').innerHTML = html;
+    });
+}
+
+function fpcSeo404Resolve(id, url) {
+    var target = prompt('Redirect-Ziel fuer ' + url + ':', '/');
+    if (target === null) return;
+    fpcAjaxPostJson('seo_404_resolve', { id: id, target: target }, function(r) {
+        fpcToast(r.msg, !r.ok);
+        fpcSeoLoad404();
+        fpcSeoLoadRedirects();
+    });
+}
+
+function fpcSeo404Dismiss(id) {
+    fpcAjax('ajax=seo_404_dismiss&id=' + id, function(r) { fpcToast(r.msg, !r.ok); fpcSeoLoad404(); });
+}
+
+// --- SCAN ---
+function fpcSeoRunScan(mode) {
+    fpcToast('Scan gestartet (' + mode + ')... Bitte warten.');
+    fpcAjax('ajax=seo_scan&mode=' + mode, function(d) {
+        if (d.ok) {
+            fpcToast(d.scanned + ' URLs gescannt. Health Score: ' + (d.health_score ? d.health_score.score : '?') + '%');
+            fpcLoadSeo();
+        } else {
+            fpcToast(d.error || 'Scan fehlgeschlagen', true);
+        }
+    });
+}
+
+function fpcSeoLoadScanResults(filter) {
+    if (filter !== undefined) seoScanFilter = filter;
+    var search = document.getElementById('scan-search') ? document.getElementById('scan-search').value : '';
+    fpcAjax('ajax=seo_scan_results&status=' + encodeURIComponent(seoScanFilter) + '&search=' + encodeURIComponent(search), function(d) {
+        if (!d || d.length === 0) { document.getElementById('seo-scan-table').innerHTML = '<p style="color:var(--fpc-text2)">Keine Scan-Ergebnisse. Starte einen Scan.</p>'; return; }
+        var html = '<table class="fpc-table"><thead><tr><th>URL</th><th>HTTP</th><th>Canonical</th><th>FPC Cache</th><th>Response (ms)</th><th>Status</th><th>Issues</th></tr></thead><tbody>';
+        d.forEach(function(r) {
+            var statusCls = r.status === 'ok' ? 'hit' : (r.status === 'warning' ? 'bypass' : 'miss');
+            html += '<tr>';
+            html += '<td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;" title="' + r.url + '">' + r.url + '</td>';
+            html += '<td><span class="fpc-badge ' + (r.http_status < 300 ? 'hit' : r.http_status < 400 ? 'bypass' : 'miss') + '">' + r.http_status + '</span></td>';
+            html += '<td>' + (r.canonical_match === true ? '<span style="color:var(--fpc-green)">OK</span>' : r.canonical_match === false ? '<span style="color:var(--fpc-red)">Mismatch</span>' : '-') + '</td>';
+            html += '<td>' + (r.has_fpc_cache ? '<span style="color:var(--fpc-green)">HIT</span>' : '<span style="color:var(--fpc-orange)">MISS</span>') + '</td>';
+            html += '<td>' + r.response_time_ms + '</td>';
+            html += '<td><span class="fpc-badge ' + statusCls + '">' + r.status + '</span></td>';
+            html += '<td style="font-size:11px;">' + (r.issues ? r.issues.join(', ') : '') + '</td>';
+            html += '</tr>';
+        });
+        html += '</tbody></table>';
+        html += '<p style="color:var(--fpc-text2);font-size:12px;margin-top:4px;">' + d.length + ' Ergebnisse</p>';
+        document.getElementById('seo-scan-table').innerHTML = html;
+    });
+}
+
+// --- PROBLEME ---
+function fpcSeoLoadProblems() {
+    fpcAjax('ajax=seo_problems', function(d) {
+        if (!d || d.length === 0) { document.getElementById('seo-problems').innerHTML = '<p style="color:var(--fpc-green)">Keine Cross-API Probleme erkannt.</p>'; return; }
+        var html = '<div style="background:var(--fpc-card);border-radius:10px;padding:16px;border:1px solid var(--fpc-border);">';
+        d.forEach(function(p, i) {
+            if (i >= 20) return;
+            var sevColor = p.severity === 'critical' ? 'var(--fpc-red)' : 'var(--fpc-orange)';
+            html += '<div style="padding:10px 0;border-bottom:1px solid var(--fpc-border);">';
+            html += '<span style="color:' + sevColor + ';font-weight:bold;">' + (p.severity === 'critical' ? '&#9888; KRITISCH' : '&#9888; WARNUNG') + '</span> ';
+            html += '<span style="color:var(--fpc-text);font-weight:bold;">[' + p.type + ']</span> ';
+            html += '<span style="color:var(--fpc-text2);">' + p.description + '</span>';
+            if (p.url) html += '<br><code style="color:var(--fpc-teal);font-size:12px;">' + p.url + '</code>';
+            if (p.suggestion) html += '<br><span style="color:var(--fpc-blue);font-size:12px;">Vorschlag: ' + p.suggestion + '</span>';
+            html += '</div>';
+        });
+        html += '</div>';
+        html += '<p style="color:var(--fpc-text2);font-size:12px;margin-top:4px;">' + d.length + ' Probleme erkannt</p>';
+        document.getElementById('seo-problems').innerHTML = html;
+    });
+}
+
+// --- AI ANALYSE ---
+function fpcSeoAiAnalysis(force) {
+    document.getElementById('seo-ai-result').innerHTML = '<p style="color:var(--fpc-text2);">Analyse laeuft... (kann 10-30 Sekunden dauern)</p>';
+    document.getElementById('btn-ai-analyze').disabled = true;
+    fpcAjax('ajax=ai_analysis' + (force ? '&force=1' : ''), function(d) {
+        document.getElementById('btn-ai-analyze').disabled = false;
+        if (d.error) {
+            document.getElementById('seo-ai-result').innerHTML = '<p style="color:var(--fpc-red);">' + d.msg + '</p>';
+            return;
+        }
+        var html = '';
+        if (d.type === 'analysis' && d.data) {
+            var a = d.data;
+            if (a.summary) html += '<p style="color:var(--fpc-text);font-weight:bold;margin-bottom:8px;">' + a.summary + '</p>';
+            if (a.score_assessment) html += '<p style="color:var(--fpc-text2);margin-bottom:12px;">' + a.score_assessment + '</p>';
+            if (a.critical_issues && a.critical_issues.length > 0) {
+                html += '<h4 style="color:var(--fpc-red);margin:12px 0 8px 0;">Kritische Probleme:</h4>';
+                a.critical_issues.forEach(function(issue) {
+                    var impactColor = issue.impact === 'high' ? 'var(--fpc-red)' : issue.impact === 'medium' ? 'var(--fpc-orange)' : 'var(--fpc-text2)';
+                    html += '<div style="padding:8px;margin-bottom:6px;background:rgba(255,71,87,0.1);border-radius:6px;border-left:3px solid ' + impactColor + ';">';
+                    html += '<strong>' + issue.title + '</strong><br>';
+                    html += '<span style="font-size:12px;">' + issue.description + '</span>';
+                    if (issue.affected_url) html += '<br><code style="font-size:11px;">' + issue.affected_url + '</code>';
+                    if (issue.action_details && issue.action_details.source) {
+                        html += '<br><button class="fpc-btn green" style="padding:2px 8px;font-size:11px;margin-top:4px;" onclick="fpcSeoApplyAiAction(\'' + issue.action_details.source.replace(/'/g, "\\'") + '\',\'' + issue.action_details.target.replace(/'/g, "\\'") + '\',\'' + (issue.action_details.type || '301') + '\')">Redirect anwenden</button>';
+                    }
+                    html += '</div>';
+                });
+            }
+            if (a.recommendations && a.recommendations.length > 0) {
+                html += '<h4 style="color:var(--fpc-blue);margin:12px 0 8px 0;">Empfehlungen:</h4>';
+                a.recommendations.forEach(function(rec) {
+                    html += '<div style="padding:6px;margin-bottom:4px;border-left:3px solid var(--fpc-blue);padding-left:10px;">';
+                    html += '<strong>' + rec.title + '</strong> <span style="font-size:11px;color:var(--fpc-text2);">[Prioritaet: ' + rec.priority + ' | Aufwand: ' + rec.effort + ']</span>';
+                    html += '<br><span style="font-size:12px;">' + rec.description + '</span>';
+                    html += '</div>';
+                });
+            }
+            if (a.positive_findings && a.positive_findings.length > 0) {
+                html += '<h4 style="color:var(--fpc-green);margin:12px 0 8px 0;">Positive Befunde:</h4>';
+                a.positive_findings.forEach(function(f) { html += '<p style="color:var(--fpc-green);font-size:12px;">&#10003; ' + f + '</p>'; });
+            }
+        } else {
+            html = '<div style="white-space:pre-wrap;">' + (d.raw || 'Keine Analyse-Daten') + '</div>';
+        }
+        html += '<p style="color:var(--fpc-text2);font-size:11px;margin-top:8px;">Analysiert: ' + (d.timestamp || '') + '</p>';
+        document.getElementById('seo-ai-result').innerHTML = html;
+    });
+}
+
+function fpcSeoApplyAiAction(source, target, type) {
+    fpcAjaxPostJson('seo_redirect_add', { source: source, target: target, type: type, note: 'KI-Empfehlung' }, function(r) {
+        fpcToast(r.msg, !r.ok);
+        fpcSeoLoadRedirects();
+    });
+}
+
+// --- AI CHAT ---
+function fpcSeoChatSend() {
+    var input = document.getElementById('seo-chat-input');
+    var msg = input.value.trim();
+    if (!msg) return;
+    input.value = '';
+
+    var container = document.getElementById('seo-chat-messages');
+    container.innerHTML += '<div style="margin-bottom:8px;text-align:right;"><span style="background:var(--fpc-blue);color:#fff;padding:6px 12px;border-radius:12px 12px 0 12px;display:inline-block;max-width:80%;">' + msg + '</span></div>';
+    container.innerHTML += '<div id="chat-typing" style="margin-bottom:8px;"><span style="background:var(--fpc-card);border:1px solid var(--fpc-border);color:var(--fpc-text2);padding:6px 12px;border-radius:12px 12px 12px 0;display:inline-block;">Denke nach...</span></div>';
+    container.scrollTop = container.scrollHeight;
+
+    fpcAjaxPostJson('ai_chat', { message: msg }, function(d) {
+        var typing = document.getElementById('chat-typing');
+        if (typing) typing.remove();
+        if (d.error) {
+            container.innerHTML += '<div style="margin-bottom:8px;"><span style="background:rgba(255,71,87,0.2);color:var(--fpc-red);padding:6px 12px;border-radius:12px 12px 12px 0;display:inline-block;">' + d.msg + '</span></div>';
+        } else {
+            var answer = (d.answer || '').replace(/\n/g, '<br>');
+            container.innerHTML += '<div style="margin-bottom:8px;"><span style="background:var(--fpc-card);border:1px solid var(--fpc-border);color:var(--fpc-text);padding:6px 12px;border-radius:12px 12px 12px 0;display:inline-block;max-width:80%;text-align:left;">' + answer + '</span></div>';
+        }
+        container.scrollTop = container.scrollHeight;
+    });
+}
+
+function fpcSeoChatLoadHistory() {
+    fpcAjax('ajax=ai_chat_history', function(d) {
+        if (!d || d.length === 0) {
+            document.getElementById('seo-chat-messages').innerHTML = '<p style="color:var(--fpc-text2);text-align:center;margin-top:40px;">Stelle eine SEO-Frage...</p>';
+            return;
+        }
+        var html = '';
+        d.forEach(function(h) {
+            html += '<div style="margin-bottom:8px;text-align:right;"><span style="background:var(--fpc-blue);color:#fff;padding:6px 12px;border-radius:12px 12px 0 12px;display:inline-block;max-width:80%;">' + h.question + '</span></div>';
+            var answer = (h.answer || '').replace(/\n/g, '<br>');
+            html += '<div style="margin-bottom:8px;"><span style="background:var(--fpc-card);border:1px solid var(--fpc-border);color:var(--fpc-text);padding:6px 12px;border-radius:12px 12px 12px 0;display:inline-block;max-width:80%;text-align:left;">' + answer + '</span></div>';
+        });
+        document.getElementById('seo-chat-messages').innerHTML = html;
+        var container = document.getElementById('seo-chat-messages');
+        container.scrollTop = container.scrollHeight;
+    });
+}
+
+function fpcSeoChatClear() {
+    if (!confirm('Chat-Verlauf wirklich loeschen?')) return;
+    fpcAjax('ajax=ai_chat_clear', function(r) {
+        fpcToast(r.msg, !r.ok);
+        document.getElementById('seo-chat-messages').innerHTML = '<p style="color:var(--fpc-text2);text-align:center;margin-top:40px;">Stelle eine SEO-Frage...</p>';
+    });
+}
+
+// --- CSV EXPORT ---
+function fpcSeoExportCsv() {
+    window.open(BASE + '?ajax=seo_export_csv', '_blank');
 }
 </script>
 <script>
@@ -3375,6 +4118,19 @@ function fpcLoadApiCredentials() {
         html += '<input type="text" class="fpc-input" id="cred-sx-domain" value="' + (d.sistrix_domain || 'mr-hanf.de') + '" style="width:100%;">';
         html += '<small style="color:var(--fpc-text2);font-size:11px;">Domain to analyze</small></div>';
 
+        html += '<div style="grid-column:1/-1;"><hr style="border-color:var(--fpc-border);margin:8px 0;"><h4 style="color:var(--fpc-purple);margin:0 0 8px 0;">KI-Analyse (OpenAI)</h4></div>';
+
+        html += '<div><label style="color:var(--fpc-text2);font-size:12px;display:block;margin-bottom:4px;">OpenAI API Key</label>';
+        html += '<input type="password" class="fpc-input" id="cred-openai-key" value="' + (d.openai_api_key || '') + '" placeholder="sk-..." style="width:100%;">';
+        html += '<small style="color:var(--fpc-text2);font-size:11px;">Von platform.openai.com > API Keys</small></div>';
+
+        html += '<div><label style="color:var(--fpc-text2);font-size:12px;display:block;margin-bottom:4px;">OpenAI Modell</label>';
+        html += '<select class="fpc-input" id="cred-openai-model" style="width:100%;">';
+        var models = ['gpt-4.1-mini','gpt-4.1-nano','gpt-4o-mini','gpt-4o','gpt-4.1'];
+        models.forEach(function(m) { html += '<option value="' + m + '"' + (d.openai_model === m ? ' selected' : '') + '>' + m + '</option>'; });
+        html += '</select>';
+        html += '<small style="color:var(--fpc-text2);font-size:11px;">gpt-4.1-mini empfohlen (guenstig + gut)</small></div>';
+
         html += '</div>';
         document.getElementById('settings-api-creds').innerHTML = html;
     });
@@ -3388,6 +4144,8 @@ function fpcSaveApiCredentials() {
         ga4_property_id: document.getElementById('cred-ga4-prop').value,
         sistrix_api_key: document.getElementById('cred-sx-key').value,
         sistrix_domain: document.getElementById('cred-sx-domain').value,
+        openai_api_key: document.getElementById('cred-openai-key').value,
+        openai_model: document.getElementById('cred-openai-model').value,
     };
     fpcAjaxPostJson('save_api_credentials', creds, function(r) { fpcToast(r.msg, !r.ok); });
 }
