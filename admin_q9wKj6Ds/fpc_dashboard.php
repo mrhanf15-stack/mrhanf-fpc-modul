@@ -1,6 +1,6 @@
 <?php
 /**
- * Mr. Hanf FPC Control Center v9.1.5
+ * Mr. Hanf FPC Control Center v9.1.6
  *
  * Enterprise-Level Dashboard for the Full Page Cache System.
  *
@@ -1585,9 +1585,11 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
     </div>
     <div id="gsc-content" style="display:none;">
         <div class="fpc-kpis" id="gsc-kpis"></div>
-        <div class="fpc-charts">
-            <div class="fpc-chart-box"><h3>Daily Clicks & Impressions (28 Days)</h3><canvas id="chart-gsc-daily" height="200"></canvas></div>
-            <div class="fpc-chart-box"><h3>Average Position & CTR (28 Days)</h3><canvas id="chart-gsc-position" height="200"></canvas></div>
+        <div style="margin-bottom:16px;">
+            <div class="fpc-chart-box" style="width:100%;"><h3>Daily Clicks & Impressions (28 Days)</h3><canvas id="chart-gsc-daily" height="250"></canvas></div>
+        </div>
+        <div style="margin-bottom:16px;">
+            <div class="fpc-chart-box" style="width:100%;"><h3>Average Position & CTR (28 Days)</h3><canvas id="chart-gsc-position" height="250"></canvas></div>
         </div>
         <div class="fpc-section-title">Top Search Queries</div>
         <div id="gsc-queries" style="overflow-x:auto;"></div>
