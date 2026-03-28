@@ -1,6 +1,6 @@
 <?php
 /**
- * Mr. Hanf FPC Control Center v9.2.0
+ * Mr. Hanf FPC Control Center v9.3.0
  *
  * Enterprise-Level Dashboard for the Full Page Cache System.
  *
@@ -274,9 +274,10 @@ if (isset($_GET['ajax'])) {
             echo json_encode(fpc_get_gsc_inspection($cache_dir, $base_dir, $urls ?: []));
             exit;
 
-        // v9.1.0: Google Analytics 4
+        // v9.2.0: Google Analytics 4 (extended)
         case 'ga4_data':
-            echo json_encode(fpc_get_ga4_data($cache_dir, $base_dir));
+            $ga4_days = isset($_GET['days']) ? intval($_GET['days']) : 30;
+            echo json_encode(fpc_get_ga4_data($cache_dir, $base_dir, $ga4_days));
             exit;
 
         // v9.1.0: SISTRIX
@@ -1162,17 +1163,19 @@ function fpc_get_gsc_inspection($cache_dir, $base_dir, $urls) {
     }
 }
 
-function fpc_get_ga4_data($cache_dir, $base_dir) {
+function fpc_get_ga4_data($cache_dir, $base_dir, $days = 30) {
     $creds = fpc_load_api_credentials($cache_dir);
     $sa_file = $creds['ga4_service_account'];
     $prop_id = $creds['ga4_property_id'];
     if (empty($sa_file) || empty($prop_id) || !is_file($base_dir . $sa_file)) {
         return array('error' => true, 'msg' => 'Google Analytics 4 not configured. Go to Settings > API Credentials to set Service Account path and Property ID.', 'configured' => false);
     }
+    $allowed_days = array(7, 28, 30, 90, 180, 365);
+    if (!in_array($days, $allowed_days)) $days = 30;
     try {
         require_once($base_dir . 'fpc_ga4.php');
         $ga4 = new FPC_GoogleAnalytics4($base_dir . $sa_file, $prop_id, $cache_dir . 'ga4/');
-        $data = $ga4->getDashboardData(30);
+        $data = $ga4->getDashboardData($days);
         $data['configured'] = true;
         return $data;
     } catch (Exception $e) {
@@ -1675,29 +1678,114 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
     <div id="gsc-error" style="display:none;"></div>
 </div>
 
-<!-- ========== TAB 15: GOOGLE ANALYTICS 4 ========== -->
+<!-- ========== TAB 15: GOOGLE ANALYTICS 4 v2.0 ========== -->
 <div class="fpc-panel <?php echo $active_tab === 'analytics' ? 'active' : ''; ?>" id="panel-analytics">
     <div id="ga4-setup" style="display:none;">
         <div style="background:var(--fpc-card);border-radius:10px;padding:30px;border:1px solid var(--fpc-border);max-width:600px;margin:40px auto;text-align:center;">
             <h3 style="color:var(--fpc-teal);margin-bottom:16px;">Google Analytics 4 Setup</h3>
-            <p style="color:var(--fpc-text2);margin-bottom:20px;">To use this feature, configure a Google Service Account and GA4 Property ID.<br>Go to <strong>Settings tab > API Credentials</strong> to set up.</p>
+            <p style="color:var(--fpc-text2);margin-bottom:20px;">To use this feature, configure a Google Service Account and GA4 Property ID.<br>Go to <strong>Settings tab &gt; API Credentials</strong> to set up.</p>
             <a href="?tab=settings" class="fpc-btn green" style="text-decoration:none;">Go to Settings</a>
         </div>
     </div>
     <div id="ga4-content" style="display:none;">
+        <!-- Time Range Selector -->
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px;flex-wrap:wrap;">
+            <span style="color:var(--fpc-text2);font-size:13px;">Zeitraum:</span>
+            <button class="fpc-btn small ga4-range" data-days="7" onclick="fpcGa4SetRange(7)">7 Tage</button>
+            <button class="fpc-btn small ga4-range active" data-days="30" onclick="fpcGa4SetRange(30)">30 Tage</button>
+            <button class="fpc-btn small ga4-range" data-days="90" onclick="fpcGa4SetRange(90)">3 Monate</button>
+            <button class="fpc-btn small ga4-range" data-days="180" onclick="fpcGa4SetRange(180)">6 Monate</button>
+            <button class="fpc-btn small ga4-range" data-days="365" onclick="fpcGa4SetRange(365)">12 Monate</button>
+            <span id="ga4-loading" style="display:none;color:var(--fpc-teal);font-size:12px;margin-left:8px;">Loading...</span>
+            <span id="ga4-timestamp" style="color:var(--fpc-text2);font-size:11px;margin-left:auto;"></span>
+        </div>
+
+        <!-- Realtime Banner -->
+        <div id="ga4-realtime" style="background:linear-gradient(135deg,#0d1b2a,#1b2838);border:1px solid var(--fpc-teal);border-radius:10px;padding:16px;margin-bottom:16px;display:flex;align-items:center;gap:16px;flex-wrap:wrap;"></div>
+
+        <!-- KPIs -->
         <div class="fpc-kpis" id="ga4-kpis"></div>
-        <div class="fpc-charts">
-            <div class="fpc-chart-box"><h3>Daily Sessions & Users (30 Days)</h3><canvas id="chart-ga4-daily" height="200"></canvas></div>
-            <div class="fpc-chart-box"><h3>Traffic by Device</h3><canvas id="chart-ga4-devices" height="200"></canvas></div>
+
+        <!-- Chart: Daily Sessions & Users (full width) -->
+        <div style="margin-bottom:16px;">
+            <div class="fpc-chart-box" style="width:100%;"><h3 id="ga4-chart1-title">Sessions &amp; Users</h3><canvas id="chart-ga4-daily" height="250"></canvas></div>
         </div>
-        <div class="fpc-charts">
-            <div class="fpc-chart-box"><h3>Traffic Sources</h3><canvas id="chart-ga4-sources" height="200"></canvas></div>
-            <div class="fpc-chart-box"><h3>Hourly Traffic (Today)</h3><canvas id="chart-ga4-hourly" height="200"></canvas></div>
+
+        <!-- Chart: Pageviews & Bounce Rate (full width) -->
+        <div style="margin-bottom:16px;">
+            <div class="fpc-chart-box" style="width:100%;"><h3 id="ga4-chart2-title">Pageviews &amp; Bounce Rate</h3><canvas id="chart-ga4-pv-bounce" height="250"></canvas></div>
         </div>
-        <div class="fpc-section-title">Top Pages by Pageviews</div>
-        <div id="ga4-pages" style="overflow-x:auto;"></div>
-        <div class="fpc-section-title" style="margin-top:20px;">Top Countries</div>
-        <div id="ga4-countries" style="overflow-x:auto;"></div>
+
+        <!-- Row: Devices + Channel Groups -->
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">
+            <div class="fpc-chart-box"><h3>Ger&auml;te-Verteilung</h3><canvas id="chart-ga4-devices" height="200"></canvas></div>
+            <div class="fpc-chart-box"><h3>Channel Groups</h3><canvas id="chart-ga4-channels" height="200"></canvas></div>
+        </div>
+
+        <!-- Row: New vs Returning + Hourly -->
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">
+            <div class="fpc-chart-box"><h3>Neu vs. Wiederkehrend</h3><canvas id="chart-ga4-newret" height="200"></canvas></div>
+            <div class="fpc-chart-box"><h3>Stunden-Verteilung (7 Tage)</h3><canvas id="chart-ga4-hourly" height="200"></canvas></div>
+        </div>
+
+        <!-- Row: Day of Week + Browsers -->
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">
+            <div class="fpc-chart-box"><h3>Wochentag-Verteilung</h3><canvas id="chart-ga4-dow" height="200"></canvas></div>
+            <div class="fpc-chart-box"><h3>Browser</h3><canvas id="chart-ga4-browsers" height="200"></canvas></div>
+        </div>
+
+        <!-- E-Commerce Section -->
+        <div class="fpc-section-title" style="color:var(--fpc-green);">E-Commerce &Uuml;bersicht</div>
+        <div class="fpc-kpis" id="ga4-ecom-kpis"></div>
+
+        <!-- E-Commerce Revenue Chart -->
+        <div style="margin-bottom:16px;">
+            <div class="fpc-chart-box" style="width:100%;"><h3>Umsatz &amp; Transaktionen</h3><canvas id="chart-ga4-revenue" height="250"></canvas></div>
+        </div>
+
+        <!-- Shopping Funnel -->
+        <div style="margin-bottom:16px;">
+            <div class="fpc-chart-box" style="width:100%;"><h3>Shopping Funnel</h3><canvas id="chart-ga4-funnel" height="200"></canvas></div>
+        </div>
+
+        <!-- Top Products -->
+        <div class="fpc-section-title">Top Produkte (nach Umsatz)</div>
+        <div id="ga4-products" style="overflow-x:auto;margin-bottom:16px;"></div>
+
+        <!-- Traffic Sources Table -->
+        <div class="fpc-section-title">Traffic Quellen (Source / Medium)</div>
+        <div id="ga4-sources" style="overflow-x:auto;margin-bottom:16px;"></div>
+
+        <!-- Landing Pages -->
+        <div class="fpc-section-title">Top Landing Pages</div>
+        <div id="ga4-landing" style="overflow-x:auto;margin-bottom:16px;"></div>
+
+        <!-- Top Pages -->
+        <div class="fpc-section-title">Top Seiten (nach Pageviews)</div>
+        <div id="ga4-pages" style="overflow-x:auto;margin-bottom:16px;"></div>
+
+        <!-- Countries -->
+        <div class="fpc-section-title">Top L&auml;nder</div>
+        <div id="ga4-countries" style="overflow-x:auto;margin-bottom:16px;"></div>
+
+        <!-- Events -->
+        <div class="fpc-section-title">Events &Uuml;bersicht</div>
+        <div id="ga4-events" style="overflow-x:auto;margin-bottom:16px;"></div>
+
+        <!-- Key Events / Conversions -->
+        <div class="fpc-section-title">Key Events (Conversions)</div>
+        <div id="ga4-keyevents" style="overflow-x:auto;margin-bottom:16px;"></div>
+
+        <!-- Technology: OS + Screen -->
+        <div class="fpc-section-title">Technologie</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">
+            <div id="ga4-os" style="overflow-x:auto;"></div>
+            <div id="ga4-screens" style="overflow-x:auto;"></div>
+        </div>
+
+        <!-- Languages -->
+        <div class="fpc-section-title">Sprachen</div>
+        <div id="ga4-languages" style="overflow-x:auto;margin-bottom:16px;"></div>
     </div>
     <div id="ga4-error" style="display:none;"></div>
 </div>
@@ -2770,10 +2858,48 @@ function fpcGscRunInspection(urls) {
 }
 
 // ============================================================
-// TAB 15: GOOGLE ANALYTICS 4
+// TAB 15: GOOGLE ANALYTICS 4 v2.0 (MAXIMUM API)
 // ============================================================
-function fpcLoadGA4() {
-    fpcAjax('ajax=ga4_data', function(d) {
+var ga4CurrentDays = 30;
+
+function fpcGa4SetRange(days) {
+    ga4CurrentDays = days;
+    document.querySelectorAll('.ga4-range').forEach(function(b) { b.classList.remove('active'); });
+    document.querySelector('.ga4-range[data-days="' + days + '"]').classList.add('active');
+    fpcLoadGA4(days);
+}
+
+function ga4Val(row, idx) { return row.metricValues ? parseFloat(row.metricValues[idx].value) : 0; }
+function ga4Dim(row, idx) { return row.dimensionValues ? row.dimensionValues[idx || 0].value : ''; }
+function ga4Date(d) { return d.length === 8 ? d.substring(0,4)+'-'+d.substring(4,6)+'-'+d.substring(6,8) : d; }
+function ga4Pct(v) { return (v * 100).toFixed(1) + '%'; }
+function ga4Dur(s) { var m = Math.floor(s/60); return m > 0 ? m + 'm ' + Math.round(s%60) + 's' : Math.round(s) + 's'; }
+function ga4Eur(v) { return Number(v).toLocaleString('de-DE', {minimumFractionDigits: 2, maximumFractionDigits: 2}) + ' EUR'; }
+var ga4TrendArrow = function(cur, prev) {
+    if (!prev || prev === 0) return '';
+    var pct = ((cur - prev) / Math.abs(prev) * 100).toFixed(1);
+    var good = pct > 0;
+    var color = good ? 'var(--fpc-green)' : 'var(--fpc-red)';
+    var arrow = pct > 0 ? '&#9650;' : '&#9660;';
+    return ' <span style="font-size:11px;color:' + color + ';">' + arrow + ' ' + Math.abs(pct) + '%</span>';
+};
+var ga4TrendArrowInverse = function(cur, prev) {
+    if (!prev || prev === 0) return '';
+    var pct = ((cur - prev) / Math.abs(prev) * 100).toFixed(1);
+    var good = pct < 0;
+    var color = good ? 'var(--fpc-green)' : 'var(--fpc-red)';
+    var arrow = pct > 0 ? '&#9650;' : '&#9660;';
+    return ' <span style="font-size:11px;color:' + color + ';">' + arrow + ' ' + Math.abs(pct) + '%</span>';
+};
+
+function fpcLoadGA4(days) {
+    days = days || ga4CurrentDays;
+    var loading = document.getElementById('ga4-loading');
+    if (loading) loading.style.display = 'inline';
+
+    fpcAjax('ajax=ga4_data&days=' + days, function(d) {
+        if (loading) loading.style.display = 'none';
+
         if (!d.configured) {
             document.getElementById('ga4-setup').style.display = 'block';
             document.getElementById('ga4-content').style.display = 'none';
@@ -2785,100 +2911,314 @@ function fpcLoadGA4() {
             return;
         }
         document.getElementById('ga4-content').style.display = 'block';
+        document.getElementById('ga4-error').style.display = 'none';
 
-        // Parse GA4 daily traffic
-        var daily = d.daily_traffic;
-        if (daily && daily.rows) {
-            var labels = [], sessions = [], users = [], pageviews = [];
-            var totalSessions = 0, totalUsers = 0, totalPV = 0, avgBounce = 0;
-            daily.rows.forEach(function(r) {
-                var date = r.dimensionValues ? r.dimensionValues[0].value : '';
-                if (date.length === 8) date = date.substring(0,4) + '-' + date.substring(4,6) + '-' + date.substring(6,8);
-                labels.push(date);
-                var s = r.metricValues ? parseInt(r.metricValues[0].value) : 0;
-                var u = r.metricValues ? parseInt(r.metricValues[1].value) : 0;
-                var pv = r.metricValues ? parseInt(r.metricValues[2].value) : 0;
-                sessions.push(s); users.push(u); pageviews.push(pv);
-                totalSessions += s; totalUsers += u; totalPV += pv;
-                avgBounce += r.metricValues ? parseFloat(r.metricValues[3].value) : 0;
-            });
-            avgBounce = daily.rows.length > 0 ? (avgBounce / daily.rows.length * 100) : 0;
-
-            document.getElementById('ga4-kpis').innerHTML =
-                fpcKpiBox('Sessions (30d)', fpcNum(totalSessions), 'teal') +
-                fpcKpiBox('Users (30d)', fpcNum(totalUsers), 'blue') +
-                fpcKpiBox('Pageviews (30d)', fpcNum(totalPV), 'green') +
-                fpcKpiBox('Avg Bounce Rate', avgBounce.toFixed(1) + '%', avgBounce < 50 ? 'green' : 'orange');
-
-            fpcChart('chart-ga4-daily', 'line', labels, [
-                {label: 'Sessions', data: sessions, borderColor: '#00d4aa', backgroundColor: 'rgba(0,212,170,0.1)', fill: true},
-                {label: 'Users', data: users, borderColor: '#00a8ff', backgroundColor: 'rgba(0,168,255,0.1)', fill: true}
-            ]);
+        // Timestamp
+        if (d.timestamp) {
+            document.getElementById('ga4-timestamp').textContent = 'Stand: ' + d.timestamp + (d.date_range ? ' | ' + d.date_range.start + ' bis ' + d.date_range.end : '');
         }
 
-        // Devices pie chart
+        // ---- REALTIME BANNER ----
+        var rt = d.realtime;
+        var rtTotal = 0;
+        if (rt && rt.rows) { rt.rows.forEach(function(r) { rtTotal += ga4Val(r, 0); }); }
+        var rtDev = d.realtime_device;
+        var rtDevHtml = '';
+        if (rtDev && rtDev.rows) {
+            rtDev.rows.forEach(function(r) {
+                rtDevHtml += '<span style="color:var(--fpc-text2);font-size:12px;">' + ga4Dim(r) + ': <strong style="color:var(--fpc-teal);">' + Math.round(ga4Val(r,0)) + '</strong></span> ';
+            });
+        }
+        document.getElementById('ga4-realtime').innerHTML =
+            '<div style="font-size:14px;color:var(--fpc-text2);">LIVE</div>' +
+            '<div style="font-size:28px;font-weight:700;color:var(--fpc-teal);animation:pulse 2s infinite;">' + rtTotal + '</div>' +
+            '<div style="font-size:13px;color:var(--fpc-text2);">aktive Nutzer jetzt</div>' +
+            '<div style="margin-left:auto;">' + rtDevHtml + '</div>';
+
+        // ---- COMPARISON KPIs ----
+        var comp = d.comparison;
+        var curTotals = null, prevTotals = null;
+        if (comp && comp.totals && comp.totals.length >= 2) {
+            curTotals = comp.totals[0].metricValues || [];
+            prevTotals = comp.totals[1].metricValues || [];
+        }
+        var cV = function(idx) { return curTotals && curTotals[idx] ? parseFloat(curTotals[idx].value) : 0; };
+        var pV = function(idx) { return prevTotals && prevTotals[idx] ? parseFloat(prevTotals[idx].value) : 0; };
+
+        document.getElementById('ga4-kpis').innerHTML =
+            fpcKpiBox('Sessions', fpcNum(Math.round(cV(0))) + ga4TrendArrow(cV(0), pV(0)), 'teal') +
+            fpcKpiBox('Users', fpcNum(Math.round(cV(1))) + ga4TrendArrow(cV(1), pV(1)), 'blue') +
+            fpcKpiBox('New Users', fpcNum(Math.round(cV(2))) + ga4TrendArrow(cV(2), pV(2)), 'green') +
+            fpcKpiBox('Pageviews', fpcNum(Math.round(cV(3))) + ga4TrendArrow(cV(3), pV(3)), 'orange') +
+            fpcKpiBox('Engagement', ga4Pct(cV(4)) + ga4TrendArrow(cV(4), pV(4)), cV(4) > 0.5 ? 'green' : 'orange') +
+            fpcKpiBox('Bounce Rate', ga4Pct(cV(5)) + ga4TrendArrowInverse(cV(5), pV(5)), cV(5) < 0.5 ? 'green' : 'red') +
+            fpcKpiBox('Avg Duration', ga4Dur(cV(6)), 'teal') +
+            fpcKpiBox('Sessions/User', cV(7).toFixed(2), 'blue');
+
+        // ---- CHART 1: Daily Sessions & Users ----
+        var daily = d.daily_traffic;
+        document.getElementById('ga4-chart1-title').textContent = 'Sessions & Users (' + days + ' Tage)';
+        if (daily && daily.rows) {
+            var labels=[], sess=[], users=[], newU=[];
+            daily.rows.forEach(function(r) {
+                labels.push(ga4Date(ga4Dim(r)));
+                sess.push(ga4Val(r,0)); users.push(ga4Val(r,1)); newU.push(ga4Val(r,2));
+            });
+            fpcChart('chart-ga4-daily', 'line', labels, [
+                {label:'Sessions', data:sess, borderColor:'#00d4aa', backgroundColor:'rgba(0,212,170,0.1)', fill:true, tension:0.3, pointRadius: days>90?0:2},
+                {label:'Users', data:users, borderColor:'#00a8ff', backgroundColor:'rgba(0,168,255,0.1)', fill:true, tension:0.3, pointRadius: days>90?0:2},
+                {label:'New Users', data:newU, borderColor:'#a855f7', backgroundColor:'rgba(168,85,247,0.05)', fill:false, tension:0.3, pointRadius: days>90?0:2, borderDash:[5,5]}
+            ], {scales:{y:{beginAtZero:true}}});
+        }
+
+        // ---- CHART 2: Pageviews & Bounce Rate ----
+        document.getElementById('ga4-chart2-title').textContent = 'Pageviews & Bounce Rate (' + days + ' Tage)';
+        if (daily && daily.rows) {
+            var labels2=[], pvs=[], bounces=[];
+            daily.rows.forEach(function(r) {
+                labels2.push(ga4Date(ga4Dim(r)));
+                pvs.push(ga4Val(r,3));
+                bounces.push(ga4Val(r,6)*100);
+            });
+            fpcChart('chart-ga4-pv-bounce', 'line', labels2, [
+                {label:'Pageviews', data:pvs, borderColor:'#00d4aa', backgroundColor:'rgba(0,212,170,0.1)', fill:true, tension:0.3, pointRadius: days>90?0:2},
+                {label:'Bounce Rate %', data:bounces, borderColor:'#ff6b35', backgroundColor:'rgba(255,107,53,0.1)', fill:false, yAxisID:'y1', tension:0.3, pointRadius: days>90?0:2}
+            ], {scales:{y:{position:'left', title:{display:true,text:'Pageviews'}}, y1:{position:'right', grid:{drawOnChartArea:false}, title:{display:true,text:'Bounce Rate %'}}}});
+        }
+
+        // ---- CHART: Devices (Donut) ----
         var devices = d.devices;
         if (devices && devices.rows) {
-            var devLabels = [], devData = [], devColors = ['#00d4aa','#00a8ff','#ffa502','#ff4757'];
-            devices.rows.forEach(function(r) {
-                devLabels.push(r.dimensionValues ? r.dimensionValues[0].value : '');
-                devData.push(r.metricValues ? parseInt(r.metricValues[0].value) : 0);
-            });
-            fpcChart('chart-ga4-devices', 'doughnut', devLabels, [{data: devData, backgroundColor: devColors}]);
+            var devL=[], devD=[], devC=['#00d4aa','#00a8ff','#ff6b35','#a855f7'];
+            devices.rows.forEach(function(r) { devL.push(ga4Dim(r)); devD.push(ga4Val(r,0)); });
+            fpcChart('chart-ga4-devices', 'doughnut', devL, [{data:devD, backgroundColor:devC, borderWidth:0}],
+                {plugins:{legend:{position:'bottom',labels:{color:'#8899aa'}}}});
         }
 
-        // Traffic Sources bar chart
-        var sources = d.traffic_sources;
-        if (sources && sources.rows) {
-            var srcLabels = [], srcData = [];
-            sources.rows.slice(0, 10).forEach(function(r) {
-                srcLabels.push(r.dimensionValues ? r.dimensionValues[0].value : '');
-                srcData.push(r.metricValues ? parseInt(r.metricValues[0].value) : 0);
-            });
-            fpcChart('chart-ga4-sources', 'bar', srcLabels, [{label: 'Sessions', data: srcData, backgroundColor: '#00d4aa'}]);
+        // ---- CHART: Channel Groups (Bar) ----
+        var channels = d.channel_groups;
+        if (channels && channels.rows) {
+            var chL=[], chD=[], chC=['#00d4aa','#00a8ff','#ff6b35','#a855f7','#f59e0b','#ef4444','#10b981','#6366f1','#ec4899'];
+            channels.rows.forEach(function(r) { chL.push(ga4Dim(r)); chD.push(ga4Val(r,0)); });
+            fpcChart('chart-ga4-channels', 'bar', chL, [{label:'Sessions', data:chD, backgroundColor:chC.slice(0,chL.length), borderWidth:0}],
+                {plugins:{legend:{display:false}}, scales:{y:{beginAtZero:true}}, indexAxis:'y'});
         }
 
-        // Hourly chart
+        // ---- CHART: New vs Returning (Donut) ----
+        var nvr = d.new_vs_returning;
+        if (nvr && nvr.rows) {
+            var nvrL=[], nvrD=[];
+            nvr.rows.forEach(function(r) { nvrL.push(ga4Dim(r)==='new'?'Neue Nutzer':'Wiederkehrend'); nvrD.push(ga4Val(r,0)); });
+            fpcChart('chart-ga4-newret', 'doughnut', nvrL, [{data:nvrD, backgroundColor:['#00d4aa','#00a8ff'], borderWidth:0}],
+                {plugins:{legend:{position:'bottom',labels:{color:'#8899aa'}}}});
+        }
+
+        // ---- CHART: Hourly (Bar) ----
         var hourly = d.hourly;
         if (hourly && hourly.rows) {
-            var hLabels = [], hSessions = [], hPV = [];
-            for (var h = 0; h < 24; h++) { hLabels.push(h + ':00'); hSessions.push(0); hPV.push(0); }
+            var hL=[], hS=[], hPV=[];
+            for(var h=0;h<24;h++){hL.push(h+':00');hS.push(0);hPV.push(0);}
             hourly.rows.forEach(function(r) {
-                var hour = r.dimensionValues ? parseInt(r.dimensionValues[0].value) : 0;
-                hSessions[hour] = r.metricValues ? parseInt(r.metricValues[0].value) : 0;
-                hPV[hour] = r.metricValues ? parseInt(r.metricValues[1].value) : 0;
+                var hr=parseInt(ga4Dim(r));
+                hS[hr]=ga4Val(r,0); hPV[hr]=ga4Val(r,1);
             });
-            fpcChart('chart-ga4-hourly', 'bar', hLabels, [
-                {label: 'Sessions', data: hSessions, backgroundColor: '#00d4aa'},
-                {label: 'Pageviews', data: hPV, backgroundColor: '#00a8ff'}
-            ]);
+            fpcChart('chart-ga4-hourly', 'bar', hL, [
+                {label:'Sessions', data:hS, backgroundColor:'rgba(0,212,170,0.7)'},
+                {label:'Pageviews', data:hPV, backgroundColor:'rgba(0,168,255,0.7)'}
+            ], {scales:{y:{beginAtZero:true}}});
         }
 
-        // Top Pages table
+        // ---- CHART: Day of Week ----
+        var dow = d.day_of_week;
+        if (dow && dow.rows) {
+            var dowNames = ['Sonntag','Montag','Dienstag','Mittwoch','Donnerstag','Freitag','Samstag'];
+            var dowL=[], dowS=[], dowR=[];
+            for(var i=0;i<7;i++){dowL.push(dowNames[i]);dowS.push(0);dowR.push(0);}
+            dow.rows.forEach(function(r) {
+                var di=parseInt(ga4Dim(r));
+                dowS[di]=ga4Val(r,0); dowR[di]=ga4Val(r,4);
+            });
+            fpcChart('chart-ga4-dow', 'bar', dowL, [
+                {label:'Sessions', data:dowS, backgroundColor:'rgba(0,212,170,0.7)'},
+                {label:'Revenue', data:dowR, backgroundColor:'rgba(245,158,11,0.7)', yAxisID:'y1'}
+            ], {scales:{y:{position:'left',beginAtZero:true}, y1:{position:'right',grid:{drawOnChartArea:false},beginAtZero:true}}});
+        }
+
+        // ---- CHART: Browsers ----
+        var browsers = d.browsers;
+        if (browsers && browsers.rows) {
+            var bL=[], bD=[], bC=['#00d4aa','#00a8ff','#ff6b35','#a855f7','#f59e0b','#ef4444','#10b981','#6366f1'];
+            browsers.rows.slice(0,8).forEach(function(r) { bL.push(ga4Dim(r)); bD.push(ga4Val(r,0)); });
+            fpcChart('chart-ga4-browsers', 'doughnut', bL, [{data:bD, backgroundColor:bC, borderWidth:0}],
+                {plugins:{legend:{position:'bottom',labels:{color:'#8899aa',font:{size:10}}}}});
+        }
+
+        // ---- E-COMMERCE KPIs ----
+        var ecom = d.ecommerce;
+        var funnel = d.shopping_funnel;
+        if (ecom && ecom.rows) {
+            var totalRev=0, totalTx=0, totalAOV=0, totalCarts=0, totalCheckouts=0, totalItemViews=0;
+            ecom.rows.forEach(function(r) {
+                totalTx += ga4Val(r,0);
+                totalRev += ga4Val(r,1);
+                totalCarts += ga4Val(r,4);
+                totalCheckouts += ga4Val(r,5);
+                totalItemViews += ga4Val(r,6);
+            });
+            totalAOV = totalTx > 0 ? totalRev / totalTx : 0;
+            var c2v = funnel && funnel.totals && funnel.totals[0] ? parseFloat(funnel.totals[0].metricValues[5].value) : 0;
+            var p2v = funnel && funnel.totals && funnel.totals[0] ? parseFloat(funnel.totals[0].metricValues[6].value) : 0;
+
+            document.getElementById('ga4-ecom-kpis').innerHTML =
+                fpcKpiBox('Umsatz', ga4Eur(totalRev) + ga4TrendArrow(cV(9), pV(9)), 'green') +
+                fpcKpiBox('Transaktionen', fpcNum(Math.round(totalTx)) + ga4TrendArrow(cV(8), pV(8)), 'teal') +
+                fpcKpiBox('AOV', ga4Eur(totalAOV), 'blue') +
+                fpcKpiBox('Cart-to-View', ga4Pct(c2v), c2v > 0.05 ? 'green' : 'orange') +
+                fpcKpiBox('Purchase-to-View', ga4Pct(p2v), p2v > 0.02 ? 'green' : 'orange') +
+                fpcKpiBox('Add to Carts', fpcNum(Math.round(totalCarts)), 'orange');
+
+            // Revenue Chart
+            var revL=[], revD=[], txD=[];
+            ecom.rows.forEach(function(r) {
+                revL.push(ga4Date(ga4Dim(r)));
+                revD.push(ga4Val(r,1));
+                txD.push(ga4Val(r,0));
+            });
+            fpcChart('chart-ga4-revenue', 'line', revL, [
+                {label:'Umsatz (EUR)', data:revD, borderColor:'#10b981', backgroundColor:'rgba(16,185,129,0.1)', fill:true, tension:0.3, pointRadius: days>90?0:2},
+                {label:'Transaktionen', data:txD, borderColor:'#f59e0b', backgroundColor:'rgba(245,158,11,0.1)', fill:false, yAxisID:'y1', tension:0.3, pointRadius: days>90?0:2}
+            ], {scales:{y:{position:'left',title:{display:true,text:'EUR'}}, y1:{position:'right',grid:{drawOnChartArea:false},title:{display:true,text:'Transaktionen'}}}});
+        }
+
+        // ---- SHOPPING FUNNEL ----
+        if (funnel && funnel.totals && funnel.totals[0]) {
+            var ft = funnel.totals[0].metricValues;
+            var funnelData = [
+                parseFloat(ft[0].value), // itemViews
+                parseFloat(ft[1].value), // addToCarts
+                parseFloat(ft[2].value), // checkouts
+                parseFloat(ft[3].value), // purchases
+            ];
+            var funnelLabels = ['Produkt angesehen', 'In Warenkorb', 'Checkout', 'Kauf'];
+            var funnelColors = ['rgba(0,168,255,0.7)', 'rgba(245,158,11,0.7)', 'rgba(168,85,247,0.7)', 'rgba(16,185,129,0.7)'];
+            fpcChart('chart-ga4-funnel', 'bar', funnelLabels, [{label:'Anzahl', data:funnelData, backgroundColor:funnelColors, borderWidth:0}],
+                {plugins:{legend:{display:false}}, scales:{y:{beginAtZero:true}}});
+        }
+
+        // ---- TOP PRODUCTS TABLE ----
+        var products = d.top_products;
+        if (products && products.rows && products.rows.length) {
+            var html = '<table class="fpc-table"><thead><tr><th>#</th><th>Produkt</th><th>Views</th><th>Add to Cart</th><th>Purchases</th><th>Umsatz</th><th>Cart/View</th><th>Purchase/View</th></tr></thead><tbody>';
+            products.rows.forEach(function(r, i) {
+                html += '<tr><td>'+(i+1)+'</td><td>'+ga4Dim(r)+'</td><td>'+fpcNum(ga4Val(r,0))+'</td><td>'+fpcNum(ga4Val(r,1))+'</td><td>'+fpcNum(ga4Val(r,2))+'</td><td>'+ga4Eur(ga4Val(r,3))+'</td><td>'+ga4Pct(ga4Val(r,5))+'</td><td>'+ga4Pct(ga4Val(r,6))+'</td></tr>';
+            });
+            html += '</tbody></table>';
+            document.getElementById('ga4-products').innerHTML = html;
+        } else {
+            document.getElementById('ga4-products').innerHTML = '<p style="color:var(--fpc-text2);">Keine E-Commerce Daten</p>';
+        }
+
+        // ---- TRAFFIC SOURCES TABLE ----
+        var sources = d.traffic_sources;
+        if (sources && sources.rows) {
+            var html = '<table class="fpc-table"><thead><tr><th>#</th><th>Source / Medium</th><th>Sessions</th><th>Users</th><th>New Users</th><th>Bounce</th><th>Engagement</th><th>Avg Duration</th><th>Conversions</th><th>Purchases</th><th>Revenue</th></tr></thead><tbody>';
+            sources.rows.forEach(function(r, i) {
+                html += '<tr><td>'+(i+1)+'</td><td>'+ga4Dim(r)+'</td><td>'+fpcNum(ga4Val(r,0))+'</td><td>'+fpcNum(ga4Val(r,1))+'</td><td>'+fpcNum(ga4Val(r,2))+'</td><td>'+ga4Pct(ga4Val(r,3))+'</td><td>'+ga4Pct(ga4Val(r,4))+'</td><td>'+ga4Dur(ga4Val(r,5))+'</td><td>'+fpcNum(ga4Val(r,6))+'</td><td>'+fpcNum(ga4Val(r,7))+'</td><td>'+ga4Eur(ga4Val(r,8))+'</td></tr>';
+            });
+            html += '</tbody></table>';
+            document.getElementById('ga4-sources').innerHTML = html;
+        }
+
+        // ---- LANDING PAGES TABLE ----
+        var landing = d.landing_pages;
+        if (landing && landing.rows) {
+            var html = '<table class="fpc-table"><thead><tr><th>#</th><th>Landing Page</th><th>Sessions</th><th>Users</th><th>Bounce</th><th>Engagement</th><th>Avg Duration</th><th>Conversions</th><th>Purchases</th><th>Revenue</th></tr></thead><tbody>';
+            landing.rows.forEach(function(r, i) {
+                var p = ga4Dim(r); if(p.length>60) p=p.substring(0,57)+'...';
+                html += '<tr><td>'+(i+1)+'</td><td title="'+ga4Dim(r)+'"><a href="https://mr-hanf.de'+ga4Dim(r)+'" target="_blank" style="color:var(--fpc-teal);text-decoration:none;">'+p+'</a></td><td>'+fpcNum(ga4Val(r,0))+'</td><td>'+fpcNum(ga4Val(r,1))+'</td><td>'+ga4Pct(ga4Val(r,2))+'</td><td>'+ga4Pct(ga4Val(r,4))+'</td><td>'+ga4Dur(ga4Val(r,3))+'</td><td>'+fpcNum(ga4Val(r,5))+'</td><td>'+fpcNum(ga4Val(r,6))+'</td><td>'+ga4Eur(ga4Val(r,7))+'</td></tr>';
+            });
+            html += '</tbody></table>';
+            document.getElementById('ga4-landing').innerHTML = html;
+        }
+
+        // ---- TOP PAGES TABLE ----
         var pages = d.top_pages;
         if (pages && pages.rows) {
-            var html = '<table class="fpc-table"><thead><tr><th>Page</th><th>Pageviews</th><th>Sessions</th><th>Bounce Rate</th><th>Avg Duration</th></tr></thead><tbody>';
-            pages.rows.forEach(function(r) {
-                var path = r.dimensionValues ? r.dimensionValues[0].value : '';
-                var pv = r.metricValues ? r.metricValues[0].value : '0';
-                var sess = r.metricValues ? r.metricValues[1].value : '0';
-                var bounce = r.metricValues ? (parseFloat(r.metricValues[2].value)*100).toFixed(1) : '0';
-                var dur = r.metricValues ? parseFloat(r.metricValues[3].value).toFixed(0) : '0';
-                html += '<tr><td title="' + path + '">' + path.substring(0,60) + '</td><td>' + pv + '</td><td>' + sess + '</td><td>' + bounce + '%</td><td>' + dur + 's</td></tr>';
+            var html = '<table class="fpc-table"><thead><tr><th>#</th><th>Seite</th><th>Pageviews</th><th>Sessions</th><th>Users</th><th>Bounce</th><th>Engagement</th><th>Avg Duration</th><th>Conversions</th></tr></thead><tbody>';
+            pages.rows.forEach(function(r, i) {
+                var p = ga4Dim(r); if(p.length>60) p=p.substring(0,57)+'...';
+                html += '<tr><td>'+(i+1)+'</td><td title="'+ga4Dim(r)+'"><a href="https://mr-hanf.de'+ga4Dim(r)+'" target="_blank" style="color:var(--fpc-teal);text-decoration:none;">'+p+'</a></td><td>'+fpcNum(ga4Val(r,0))+'</td><td>'+fpcNum(ga4Val(r,1))+'</td><td>'+fpcNum(ga4Val(r,2))+'</td><td>'+ga4Pct(ga4Val(r,3))+'</td><td>'+ga4Pct(ga4Val(r,5))+'</td><td>'+ga4Dur(ga4Val(r,4))+'</td><td>'+fpcNum(ga4Val(r,6))+'</td></tr>';
             });
             html += '</tbody></table>';
             document.getElementById('ga4-pages').innerHTML = html;
         }
 
-        // Countries table
+        // ---- COUNTRIES TABLE ----
         var countries = d.countries;
         if (countries && countries.rows) {
-            var html = '<table class="fpc-table"><thead><tr><th>Country</th><th>Sessions</th><th>Users</th></tr></thead><tbody>';
-            countries.rows.forEach(function(r) {
-                html += '<tr><td>' + (r.dimensionValues ? r.dimensionValues[0].value : '') + '</td><td>' + (r.metricValues ? r.metricValues[0].value : '0') + '</td><td>' + (r.metricValues ? r.metricValues[1].value : '0') + '</td></tr>';
+            var html = '<table class="fpc-table"><thead><tr><th>#</th><th>Land</th><th>Sessions</th><th>Users</th><th>New Users</th><th>Engagement</th><th>Bounce</th><th>Purchases</th><th>Revenue</th></tr></thead><tbody>';
+            countries.rows.forEach(function(r, i) {
+                html += '<tr><td>'+(i+1)+'</td><td>'+ga4Dim(r)+'</td><td>'+fpcNum(ga4Val(r,0))+'</td><td>'+fpcNum(ga4Val(r,1))+'</td><td>'+fpcNum(ga4Val(r,2))+'</td><td>'+ga4Pct(ga4Val(r,3))+'</td><td>'+ga4Pct(ga4Val(r,4))+'</td><td>'+fpcNum(ga4Val(r,5))+'</td><td>'+ga4Eur(ga4Val(r,6))+'</td></tr>';
             });
             html += '</tbody></table>';
             document.getElementById('ga4-countries').innerHTML = html;
+        }
+
+        // ---- EVENTS TABLE ----
+        var events = d.events;
+        if (events && events.rows) {
+            var html = '<table class="fpc-table"><thead><tr><th>#</th><th>Event</th><th>Count</th><th>Users</th><th>Per User</th></tr></thead><tbody>';
+            events.rows.forEach(function(r, i) {
+                html += '<tr><td>'+(i+1)+'</td><td>'+ga4Dim(r)+'</td><td>'+fpcNum(ga4Val(r,0))+'</td><td>'+fpcNum(ga4Val(r,1))+'</td><td>'+ga4Val(r,2).toFixed(2)+'</td></tr>';
+            });
+            html += '</tbody></table>';
+            document.getElementById('ga4-events').innerHTML = html;
+        }
+
+        // ---- KEY EVENTS TABLE ----
+        var keyEvents = d.key_events;
+        if (keyEvents && keyEvents.rows && keyEvents.rows.length) {
+            var html = '<table class="fpc-table"><thead><tr><th>Key Event</th><th>Count</th><th>Users</th></tr></thead><tbody>';
+            keyEvents.rows.forEach(function(r) {
+                html += '<tr><td style="color:var(--fpc-green);font-weight:600;">'+ga4Dim(r)+'</td><td>'+fpcNum(ga4Val(r,0))+'</td><td>'+fpcNum(ga4Val(r,1))+'</td></tr>';
+            });
+            html += '</tbody></table>';
+            document.getElementById('ga4-keyevents').innerHTML = html;
+        } else {
+            document.getElementById('ga4-keyevents').innerHTML = '<p style="color:var(--fpc-text2);">Keine Key Events konfiguriert</p>';
+        }
+
+        // ---- OS TABLE ----
+        var os = d.operating_systems;
+        if (os && os.rows) {
+            var html = '<table class="fpc-table"><thead><tr><th>Betriebssystem</th><th>Sessions</th><th>Users</th><th>Bounce</th></tr></thead><tbody>';
+            os.rows.forEach(function(r) {
+                html += '<tr><td>'+ga4Dim(r)+'</td><td>'+fpcNum(ga4Val(r,0))+'</td><td>'+fpcNum(ga4Val(r,1))+'</td><td>'+ga4Pct(ga4Val(r,2))+'</td></tr>';
+            });
+            html += '</tbody></table>';
+            document.getElementById('ga4-os').innerHTML = '<h4 style="color:var(--fpc-text2);margin-bottom:8px;">Betriebssysteme</h4>' + html;
+        }
+
+        // ---- SCREEN RESOLUTIONS TABLE ----
+        var screens = d.screen_resolutions;
+        if (screens && screens.rows) {
+            var html = '<table class="fpc-table"><thead><tr><th>Aufloesung</th><th>Sessions</th><th>Users</th></tr></thead><tbody>';
+            screens.rows.forEach(function(r) {
+                html += '<tr><td>'+ga4Dim(r)+'</td><td>'+fpcNum(ga4Val(r,0))+'</td><td>'+fpcNum(ga4Val(r,1))+'</td></tr>';
+            });
+            html += '</tbody></table>';
+            document.getElementById('ga4-screens').innerHTML = '<h4 style="color:var(--fpc-text2);margin-bottom:8px;">Bildschirmaufloesung</h4>' + html;
+        }
+
+        // ---- LANGUAGES TABLE ----
+        var langs = d.languages;
+        if (langs && langs.rows) {
+            var html = '<table class="fpc-table"><thead><tr><th>Sprache</th><th>Sessions</th><th>Users</th></tr></thead><tbody>';
+            langs.rows.forEach(function(r) {
+                html += '<tr><td>'+ga4Dim(r)+'</td><td>'+fpcNum(ga4Val(r,0))+'</td><td>'+fpcNum(ga4Val(r,1))+'</td></tr>';
+            });
+            html += '</tbody></table>';
+            document.getElementById('ga4-languages').innerHTML = html;
         }
     });
 }
