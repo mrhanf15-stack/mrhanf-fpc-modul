@@ -1,6 +1,6 @@
 <?php
 /**
- * Mr. Hanf FPC Control Center v9.1.2
+ * Mr. Hanf FPC Control Center v9.1.3
  *
  * Enterprise-Level Dashboard for the Full Page Cache System.
  *
@@ -58,7 +58,7 @@
  *   - FIX: Statistics tab reads .json tracker files (not .jsonl)
  *   - FIX: User-Agent changed to real Chrome browser (403 fix)
  *   - FIX: All UI text in English
- * @version   9.1.2
+ * @version   9.1.3
  * @date      2026-03-27
  */
 
@@ -1184,7 +1184,7 @@ $page_title = 'FPC Control Center';
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title><?php echo $page_title; ?> v9.1.2</title>
+<title><?php echo $page_title; ?> v9.1.3</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4" defer></script>
 <style>
 :root { --fpc-bg:#0d1b2a; --fpc-card:#1b2838; --fpc-border:#2a3a4a; --fpc-text:#e0e6ed; --fpc-text2:#8899aa; --fpc-teal:#00d4aa; --fpc-green:#00e676; --fpc-red:#ff4757; --fpc-orange:#ffa502; --fpc-yellow:#ffd32a; --fpc-blue:#00a8ff; }
@@ -1269,7 +1269,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 
 <!-- HEADER -->
 <div class="fpc-header">
-    <h1>FPC Control Center <span>v9.1.2</span></h1>
+    <h1>FPC Control Center <span>v9.1.3</span></h1>
     <div class="fpc-quick-actions">
         <button class="fpc-quick-btn" onclick="fpcFlush()" title="Flush Cache">&#128465; Flush</button>
         <button class="fpc-quick-btn" onclick="fpcRebuild()" title="Rebuild Cache">&#8635; Rebuild</button>
@@ -1277,7 +1277,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
     </div>
     <div>
         <span id="fpc-clock" style="color:var(--fpc-text2);font-size:12px;"></span>
-        <span class="fpc-version">v9.1.2</span>
+        <span class="fpc-version">v9.1.3</span>
     </div>
 </div>
 
@@ -1654,7 +1654,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 
 <script>
 // ============================================================
-// JAVASCRIPT v9.1.2
+// JAVASCRIPT v9.1.3
 // ============================================================
 var BASE = '<?php echo basename(__FILE__); ?>';
 var chartInstances = {};
@@ -1728,6 +1728,26 @@ function fpcFormatBytes(b) {
     if (b >= 1048576) return (b / 1048576).toFixed(1) + ' MB';
     if (b >= 1024) return (b / 1024).toFixed(1) + ' KB';
     return b + ' B';
+}
+
+function fpcKpiBox(label, value, color) {
+    color = color || 'teal';
+    var colorVar = color.indexOf('#') === 0 ? color : 'var(--fpc-' + color + ')';
+    return '<div class="fpc-kpi"><div class="fpc-kpi-label">' + label + '</div><div class="fpc-kpi-value" style="color:' + colorVar + '">' + value + '</div></div>';
+}
+
+function fpcNum(n) {
+    if (n === null || n === undefined) return '0';
+    return Number(n).toLocaleString();
+}
+
+function fpcChart(canvasId, type, labels, datasets, options) {
+    var cfg = { type: type, data: { labels: labels, datasets: datasets }, options: options || {} };
+    if (!cfg.options.responsive) cfg.options.responsive = true;
+    if (!cfg.options.maintainAspectRatio) cfg.options.maintainAspectRatio = false;
+    if (!cfg.options.plugins) cfg.options.plugins = {};
+    if (!cfg.options.plugins.legend) cfg.options.plugins.legend = { labels: { color: '#8899aa' } };
+    return fpcMakeChart(canvasId, cfg);
 }
 
 function fpcMakeChart(id, cfg) {
