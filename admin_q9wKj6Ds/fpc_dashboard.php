@@ -366,6 +366,17 @@ if (isset($_GET['ajax'])) {
             echo json_encode(fpc_seo_404_dismiss($base_dir, $id));
             exit;
 
+        // v10.2.6: URL pruefen - HTTP-Status und Redirect-Kette
+        case 'seo_check_url':
+            $url = isset($_GET['url']) ? $_GET['url'] : '';
+            echo json_encode(fpc_seo_check_url($url));
+            exit;
+
+        // v10.2.6: System-URLs aus 404-Log bereinigen
+        case 'seo_404_cleanup':
+            echo json_encode(fpc_seo_404_cleanup($base_dir));
+            exit;
+
         case 'seo_scan':
             $mode = isset($_GET['mode']) ? $_GET['mode'] : 'fast';
             echo json_encode(fpc_seo_scan($base_dir, $mode));
@@ -519,6 +530,60 @@ function fpc_seo_404_resolve($base_dir, $data) {
 function fpc_seo_404_dismiss($base_dir, $id) {
     $seo = fpc_seo_init($base_dir);
     return $seo->dismiss404($id);
+}
+
+// v10.2.6: URL pruefen - HTTP-Status und Redirect-Kette
+function fpc_seo_check_url($url) {
+    $full_url = 'https://mr-hanf.de' . $url;
+    $ch = curl_init();
+    curl_setopt_array($ch, array(
+        CURLOPT_URL => $full_url,
+        CURLOPT_NOBODY => true,
+        CURLOPT_FOLLOWLOCATION => false,
+        CURLOPT_TIMEOUT => 10,
+        CURLOPT_USERAGENT => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        CURLOPT_RETURNTRANSFER => true,
+    ));
+    curl_exec($ch);
+    $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $redirect_to = curl_getinfo($ch, CURLINFO_REDIRECT_URL);
+    curl_close($ch);
+
+    $result = array('url' => $url, 'status' => $status);
+
+    // Wenn Redirect, auch Ziel pruefen
+    if ($status >= 300 && $status < 400 && !empty($redirect_to)) {
+        $result['redirect_to'] = str_replace('https://mr-hanf.de', '', $redirect_to);
+        $ch2 = curl_init();
+        curl_setopt_array($ch2, array(
+            CURLOPT_URL => $redirect_to,
+            CURLOPT_NOBODY => true,
+            CURLOPT_FOLLOWLOCATION => true,
+            CURLOPT_TIMEOUT => 10,
+            CURLOPT_USERAGENT => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            CURLOPT_RETURNTRANSFER => true,
+        ));
+        curl_exec($ch2);
+        $result['final_status'] = curl_getinfo($ch2, CURLINFO_HTTP_CODE);
+        $result['final_url'] = str_replace('https://mr-hanf.de', '', curl_getinfo($ch2, CURLINFO_EFFECTIVE_URL));
+        curl_close($ch2);
+    }
+
+    return $result;
+}
+
+// v10.2.6: System-URLs aus 404-Log bereinigen
+function fpc_seo_404_cleanup($base_dir) {
+    $seo = fpc_seo_init($base_dir);
+    $log = $seo->get404Log();
+    $removed = 0;
+    foreach ($log as $entry) {
+        if (FpcSeo::isSystemUrl($entry['url'])) {
+            $seo->dismiss404($entry['id']);
+            $removed++;
+        }
+    }
+    return array('ok' => true, 'msg' => $removed . ' System-URLs bereinigt', 'removed' => $removed);
 }
 
 function fpc_seo_scan($base_dir, $mode) {
@@ -1966,6 +2031,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
             <button class="fpc-btn teal" onclick="fpcSeoLoad404('resolved')" id="btn-404-resolved">Geloest</button>
             <button class="fpc-btn red" onclick="fpcSeoLoad404('dismissed')" id="btn-404-dismissed">Ignoriert</button>
             <input type="text" class="fpc-input" id="404-search" placeholder="404 URLs suchen..." oninput="fpcSeoLoad404()" style="width:250px;margin-left:auto;">
+            <button class="fpc-btn" style="background:var(--fpc-text2);font-size:11px;" onclick="fpcSeo404Cleanup()" title="System-URLs (fpc_serve.php, index.php etc.) aus dem Log entfernen">&#128465; Bereinigen</button>
         </div>
         <div id="seo-404-table"></div>
     </div>
@@ -3128,16 +3194,26 @@ function fpcSeoLoad404(filter) {
         var html = '<table class="fpc-table"><thead><tr><th>URL</th><th>Hits</th><th>Erstmals</th><th>Letzter Hit</th><th>Referers</th><th>Aktion</th></tr></thead><tbody>';
         d.forEach(function(e) {
             html += '<tr>';
-            html += '<td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;" title="' + e.url + '">' + e.url + '</td>';
+            var checkUrl = 'https://mr-hanf.de' + e.url;
+            html += '<td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;" title="' + e.url + '"><a href="' + checkUrl + '" target="_blank" style="color:var(--fpc-text);text-decoration:none;" title="URL oeffnen">' + e.url + '</a></td>';
             html += '<td><strong style="color:' + (e.hit_count > 50 ? 'var(--fpc-red)' : e.hit_count > 10 ? 'var(--fpc-orange)' : 'var(--fpc-text)') + '">' + e.hit_count + '</strong></td>';
             html += '<td style="font-size:11px;">' + (e.first_seen || '') + '</td>';
             html += '<td style="font-size:11px;">' + (e.last_hit || '') + '</td>';
             html += '<td style="font-size:11px;max-width:200px;overflow:hidden;text-overflow:ellipsis;">' + (e.referers ? e.referers.join(', ') : '-') + '</td>';
             if (!e.resolved && !e.dismissed) {
-                html += '<td style="white-space:nowrap;"><button class="fpc-btn green" style="padding:2px 6px;font-size:11px;" onclick="fpcSeo404Resolve(' + e.id + ',\'' + e.url.replace(/'/g, "\\'") + '\')">Redirect</button> ';
+                html += '<td style="white-space:nowrap;">';
+                html += '<button class="fpc-btn" style="padding:2px 6px;font-size:11px;margin-right:3px;background:var(--fpc-blue);" onclick="fpcSeo404Check(\'' + e.url.replace(/'/g, "\\'") + '\')" title="URL pruefen">&#128269;</button>';
+                html += '<button class="fpc-btn green" style="padding:2px 6px;font-size:11px;margin-right:3px;" onclick="fpcSeo404Resolve(' + e.id + ',\'' + e.url.replace(/'/g, "\\'") + '\')">Redirect</button>';
                 html += '<button class="fpc-btn red" style="padding:2px 6px;font-size:11px;" onclick="fpcSeo404Dismiss(' + e.id + ')">Ignorieren</button></td>';
             } else {
-                html += '<td style="font-size:11px;color:var(--fpc-text2);">' + (e.resolved ? 'Resolved -> ' + (e.resolved_to || '') : 'Dismissed') + '</td>';
+                html += '<td style="white-space:nowrap;font-size:11px;">';
+                if (e.resolved && e.resolved_to) {
+                    html += '<button class="fpc-btn" style="padding:2px 6px;font-size:11px;margin-right:3px;background:var(--fpc-blue);" onclick="fpcSeo404Check(\'' + e.url.replace(/'/g, "\\'") + '\')" title="Redirect pruefen">&#128269;</button>';
+                    html += '<span style="color:var(--fpc-text2);">&#8594; ' + e.resolved_to + '</span>';
+                } else {
+                    html += '<span style="color:var(--fpc-text2);">' + (e.resolved ? 'Resolved' : 'Dismissed') + '</span>';
+                }
+                html += '</td>';
             }
             html += '</tr>';
         });
@@ -3159,6 +3235,35 @@ function fpcSeo404Resolve(id, url) {
 
 function fpcSeo404Dismiss(id) {
     fpcAjax('ajax=seo_404_dismiss&id=' + id, function(r) { fpcToast(r.msg, !r.ok); fpcSeoLoad404(); });
+}
+
+// v10.2.6: System-URLs aus 404-Log bereinigen
+function fpcSeo404Cleanup() {
+    if (!confirm('System-URLs (fpc_serve.php, index.php, .well-known etc.) aus dem 404-Log entfernen?')) return;
+    fpcAjax('ajax=seo_404_cleanup', function(r) {
+        fpcToast(r.msg, !r.ok);
+        fpcSeoLoad404();
+    });
+}
+
+// v10.2.6: URL pruefen - oeffnet in neuem Tab und zeigt HTTP-Status
+function fpcSeo404Check(url) {
+    var fullUrl = 'https://mr-hanf.de' + url;
+    // AJAX-Call um HTTP-Status zu pruefen
+    fpcAjax('ajax=seo_check_url&url=' + encodeURIComponent(url), function(r) {
+        if (r && r.status) {
+            var color = r.status >= 200 && r.status < 300 ? 'var(--fpc-green)' :
+                        r.status >= 300 && r.status < 400 ? 'var(--fpc-orange)' : 'var(--fpc-red)';
+            var msg = url + ' → HTTP ' + r.status;
+            if (r.redirect_to) msg += ' → ' + r.redirect_to;
+            if (r.final_status) msg += ' → HTTP ' + r.final_status;
+            fpcToast(msg, r.status >= 400);
+        } else {
+            fpcToast('Konnte URL nicht pruefen', true);
+        }
+    });
+    // Gleichzeitig in neuem Tab oeffnen
+    window.open(fullUrl, '_blank');
 }
 
 // --- SCAN ---
