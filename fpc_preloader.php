@@ -36,27 +36,64 @@
 // @date      2026-03-22
 
 // ============================================================
-// KONFIGURATION
+// KONFIGURATION (Defaults - werden durch fpc_settings.json ueberschrieben)
 // ============================================================
-$FPC_MIN_HTML_SIZE     = 1000;    // Mindestgroesse fuer gueltiges HTML in Bytes
-$FPC_HEALTH_MARKER     = '<!-- FPC-VALID -->';  // Pflicht-Marker fuer Validierung
-$FPC_REQUIRE_CLOSING   = true;   // Prueft ob </html> oder </body> vorhanden ist
+$FPC_DEFAULTS = array(
+    // Validierung
+    'min_html_size'      => 1000,    // Mindestgroesse fuer gueltiges HTML in Bytes
+    'require_closing'    => true,    // Prueft ob </html> oder </body> vorhanden ist
+    'require_doctype'    => true,    // Prueft ob <!DOCTYPE oder <html vorhanden
+    'require_body'       => true,    // Prueft ob <body vorhanden
+    'verify_after_write' => true,    // Liest Cache-Datei nach Schreiben zurueck und validiert
+    'max_error_rate'     => 0.20,    // Stoppt wenn mehr als 20% der Requests fehlschlagen
+    // Rate-Limiting & Server-Schutz
+    'request_delay_ms'   => 500,     // Mindest-Pause zwischen Requests in Millisekunden
+    'load_threshold'     => 3.0,     // Server-Load Schwellwert (pausiert wenn hoeher)
+    'load_pause_sec'     => 30,      // Pause in Sekunden wenn Load zu hoch
+    'batch_size'         => 100,     // Nach X Seiten eine laengere Pause einlegen
+    'batch_pause_sec'    => 30,      // Pause zwischen Batches in Sekunden
+    'slow_threshold_ms'  => 3000,    // Ab dieser TTFB wird die Pause verdoppelt
+    'max_runtime_sec'    => 7200,    // Maximale Laufzeit (2 Stunden)
+    'adaptive_enabled'   => true,    // Adaptive Drosselung ein/aus
+);
 
-// v8.0: Erweiterte Validierung
-$FPC_REQUIRE_DOCTYPE   = true;   // Prueft ob <!DOCTYPE oder <html vorhanden
-$FPC_REQUIRE_BODY      = true;   // Prueft ob <body vorhanden
-$FPC_VERIFY_AFTER_WRITE = true;  // Liest Cache-Datei nach Schreiben zurueck und validiert
-$FPC_MAX_ERROR_RATE    = 0.20;   // Stoppt wenn mehr als 20% der Requests fehlschlagen
+// v9.1.1: Konfiguration aus JSON-Datei laden (geschrieben vom Dashboard Settings-Tab)
+$FPC_SETTINGS_FILE = __DIR__ . '/cache/fpc/fpc_settings.json';
+$FPC_USER_CONFIG = array();
+if (is_file($FPC_SETTINGS_FILE)) {
+    $json = @file_get_contents($FPC_SETTINGS_FILE);
+    if ($json !== false) {
+        $parsed = @json_decode($json, true);
+        if (is_array($parsed) && isset($parsed['preloader'])) {
+            $FPC_USER_CONFIG = $parsed['preloader'];
+            echo '[FPC] Settings aus fpc_settings.json geladen' . "\n";
+        }
+    }
+}
 
-// v7.1: Rate-Limiting & Server-Schutz
-$FPC_REQUEST_DELAY_MS  = 500;    // Mindest-Pause zwischen Requests in Millisekunden
-$FPC_LOAD_THRESHOLD    = 3.0;    // Server-Load Schwellwert (pausiert wenn hoeher)
-$FPC_LOAD_PAUSE_SEC    = 30;     // Pause in Sekunden wenn Load zu hoch
-$FPC_BATCH_SIZE        = 100;    // Nach X Seiten eine laengere Pause einlegen
-$FPC_BATCH_PAUSE_SEC   = 30;     // Pause zwischen Batches in Sekunden
-$FPC_SLOW_THRESHOLD_MS = 3000;   // Ab dieser TTFB wird die Pause verdoppelt
-$FPC_MAX_RUNTIME_SEC   = 2700;   // Maximale Laufzeit (45 Minuten)
-$FPC_ADAPTIVE_ENABLED  = true;   // Adaptive Drosselung ein/aus
+// Merge: User-Config ueberschreibt Defaults
+function fpc_cfg($key, $defaults, $user_config) {
+    if (isset($user_config[$key]) && $user_config[$key] !== '' && $user_config[$key] !== null) {
+        return $user_config[$key];
+    }
+    return isset($defaults[$key]) ? $defaults[$key] : null;
+}
+
+$FPC_MIN_HTML_SIZE     = (int) fpc_cfg('min_html_size', $FPC_DEFAULTS, $FPC_USER_CONFIG);
+$FPC_HEALTH_MARKER     = '<!-- FPC-VALID -->';
+$FPC_REQUIRE_CLOSING   = (bool) fpc_cfg('require_closing', $FPC_DEFAULTS, $FPC_USER_CONFIG);
+$FPC_REQUIRE_DOCTYPE   = (bool) fpc_cfg('require_doctype', $FPC_DEFAULTS, $FPC_USER_CONFIG);
+$FPC_REQUIRE_BODY      = (bool) fpc_cfg('require_body', $FPC_DEFAULTS, $FPC_USER_CONFIG);
+$FPC_VERIFY_AFTER_WRITE = (bool) fpc_cfg('verify_after_write', $FPC_DEFAULTS, $FPC_USER_CONFIG);
+$FPC_MAX_ERROR_RATE    = (float) fpc_cfg('max_error_rate', $FPC_DEFAULTS, $FPC_USER_CONFIG);
+$FPC_REQUEST_DELAY_MS  = (int) fpc_cfg('request_delay_ms', $FPC_DEFAULTS, $FPC_USER_CONFIG);
+$FPC_LOAD_THRESHOLD    = (float) fpc_cfg('load_threshold', $FPC_DEFAULTS, $FPC_USER_CONFIG);
+$FPC_LOAD_PAUSE_SEC    = (int) fpc_cfg('load_pause_sec', $FPC_DEFAULTS, $FPC_USER_CONFIG);
+$FPC_BATCH_SIZE        = (int) fpc_cfg('batch_size', $FPC_DEFAULTS, $FPC_USER_CONFIG);
+$FPC_BATCH_PAUSE_SEC   = (int) fpc_cfg('batch_pause_sec', $FPC_DEFAULTS, $FPC_USER_CONFIG);
+$FPC_SLOW_THRESHOLD_MS = (int) fpc_cfg('slow_threshold_ms', $FPC_DEFAULTS, $FPC_USER_CONFIG);
+$FPC_MAX_RUNTIME_SEC   = (int) fpc_cfg('max_runtime_sec', $FPC_DEFAULTS, $FPC_USER_CONFIG);
+$FPC_ADAPTIVE_ENABLED  = (bool) fpc_cfg('adaptive_enabled', $FPC_DEFAULTS, $FPC_USER_CONFIG);
 
 $start_time = time();
 

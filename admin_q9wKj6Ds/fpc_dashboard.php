@@ -1,6 +1,6 @@
 <?php
 /**
- * Mr. Hanf FPC Control Center v9.1.0
+ * Mr. Hanf FPC Control Center v9.1.1
  *
  * Enterprise-Level Dashboard for the Full Page Cache System.
  *
@@ -21,6 +21,12 @@
  *   14. GSC          - Google Search Console: Indexing, Clicks, Queries
  *   15. Analytics    - Google Analytics 4: Traffic, Devices, Sources
  *   16. SISTRIX      - Visibility Index, Rankings, Competitors
+ *
+ * v9.1.1 NEW:
+ *   - FIX: Preloader reads settings from fpc_settings.json -> preloader key
+ *   - FIX: Settings save writes preloader config under 'preloader' key
+ *   - FIX: Default max_runtime_sec changed from 2700 (45min) to 7200 (2h)
+ *   - FIX: All preloader limits now configurable via Settings tab
  *
  * v9.1.0 NEW:
  *   - NEW: Remote Management API (fpc_api.php) with token auth
@@ -996,14 +1002,19 @@ function fpc_load_settings($cache_dir) {
     $preloader_defaults = array(
         'request_delay_ms' => 500, 'load_threshold' => 3.0, 'load_pause_sec' => 30,
         'batch_size' => 100, 'batch_pause_sec' => 30, 'slow_threshold_ms' => 3000,
-        'max_runtime_sec' => 2700, 'adaptive_enabled' => true, 'min_html_size' => 1000,
+        'max_runtime_sec' => 7200, 'adaptive_enabled' => true, 'min_html_size' => 1000,
         'require_doctype' => true, 'require_body' => true, 'verify_after_write' => true,
         'max_error_rate' => 0.20,
     );
     $preloader = $preloader_defaults;
     if (is_file($settings_file)) {
         $saved = @json_decode(file_get_contents($settings_file), true);
-        if (is_array($saved)) $preloader = array_merge($preloader_defaults, $saved);
+        if (is_array($saved) && isset($saved['preloader'])) {
+            $preloader = array_merge($preloader_defaults, $saved['preloader']);
+        } elseif (is_array($saved)) {
+            // Fallback: alte flache Struktur
+            $preloader = array_merge($preloader_defaults, $saved);
+        }
     }
     $settings['preloader'] = $preloader;
 
@@ -1050,7 +1061,7 @@ function fpc_save_settings($cfg, $cache_dir) {
     if (is_file($settings_file)) {
         $existing = @json_decode(file_get_contents($settings_file), true) ?: array();
     }
-    if (isset($cfg['preloader'])) $existing = array_merge($existing, $cfg['preloader']);
+    if (isset($cfg['preloader'])) $existing['preloader'] = $cfg['preloader'];
     if (isset($cfg['serve'])) $existing['serve'] = $cfg['serve'];
     if (isset($cfg['healthcheck'])) $existing['healthcheck'] = $cfg['healthcheck'];
     file_put_contents($settings_file, json_encode($existing, JSON_PRETTY_PRINT));
@@ -1259,7 +1270,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 
 <!-- HEADER -->
 <div class="fpc-header">
-    <h1>FPC Control Center <span>v9.1.0</span></h1>
+    <h1>FPC Control Center <span>v9.1.1</span></h1>
     <div class="fpc-quick-actions">
         <button class="fpc-quick-btn" onclick="fpcFlush()" title="Flush Cache">&#128465; Flush</button>
         <button class="fpc-quick-btn" onclick="fpcRebuild()" title="Rebuild Cache">&#8635; Rebuild</button>
@@ -1267,7 +1278,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
     </div>
     <div>
         <span id="fpc-clock" style="color:var(--fpc-text2);font-size:12px;"></span>
-        <span class="fpc-version">v9.1.0</span>
+        <span class="fpc-version">v9.1.1</span>
     </div>
 </div>
 
@@ -2321,7 +2332,7 @@ function fpcLoadSettings() {
             {key:'batch_size', label:'Batch Size', desc:'Pause after this many requests', val:p.batch_size, type:'number'},
             {key:'batch_pause_sec', label:'Batch Pause (sec)', desc:'Pause duration between batches', val:p.batch_pause_sec, type:'number'},
             {key:'slow_threshold_ms', label:'Slow Threshold (ms)', desc:'Double delay when TTFB exceeds this', val:p.slow_threshold_ms, type:'number'},
-            {key:'max_runtime_sec', label:'Max Runtime (sec)', desc:'Maximum preloader runtime (default: 2700 = 45min)', val:p.max_runtime_sec, type:'number'},
+            {key:'max_runtime_sec', label:'Max Runtime (sec)', desc:'Maximum preloader runtime per cron run (default: 7200 = 2h)', val:p.max_runtime_sec, type:'number'},
             {key:'min_html_size', label:'Min HTML Size (bytes)', desc:'Minimum valid HTML file size', val:p.min_html_size, type:'number'},
             {key:'max_error_rate', label:'Max Error Rate', desc:'Stop if error rate exceeds this (0.20 = 20%)', val:p.max_error_rate, type:'number', step:'0.01'},
             {key:'adaptive_enabled', label:'Adaptive Throttling', desc:'Auto-adjust delay based on response time', val:p.adaptive_enabled, type:'bool'},
