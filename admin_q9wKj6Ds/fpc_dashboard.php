@@ -1,6 +1,6 @@
 <?php
 /**
- * Mr. Hanf FPC Control Center v10.0.1
+ * Mr. Hanf FPC Control Center v10.1.0
  *
  * Enterprise-Level Dashboard for the Full Page Cache System.
  *
@@ -2348,6 +2348,7 @@ function fpcAjax(params, callback, method) {
     method = method || 'GET';
     var url = BASE + '?' + params;
     var xhr = new XMLHttpRequest();
+    xhr.timeout = 120000; // 120s Timeout
     if (method === 'POST') {
         var parts = params.split('?');
         url = BASE + '?' + parts[0];
@@ -2365,10 +2366,13 @@ function fpcAjax(params, callback, method) {
     xhr.onload = function() {
         if (xhr.status === 200) {
             try { var data = JSON.parse(xhr.responseText); callback(data); }
-            catch(e) { console.error('JSON parse error:', e, xhr.responseText.substring(0, 200)); }
+            catch(e) { console.error('JSON parse error:', e, xhr.responseText.substring(0, 200)); callback({error:true,msg:'JSON Fehler'}); }
+        } else {
+            callback({error:true,msg:'Server-Fehler: HTTP ' + xhr.status});
         }
     };
-    xhr.onerror = function() { console.error('AJAX error:', url); };
+    xhr.onerror = function() { console.error('AJAX error:', url); callback({error:true,msg:'Netzwerk-Fehler'}); };
+    xhr.ontimeout = function() { callback({error:true,msg:'Timeout (>120s)'}); };
 }
 
 function fpcAjaxPost(endpoint, postData, callback) {
@@ -2389,11 +2393,16 @@ function fpcAjaxPostJson(endpoint, data, callback) {
     var xhr = new XMLHttpRequest();
     xhr.open('POST', url, true);
     xhr.setRequestHeader('Content-Type', 'application/json');
+    xhr.timeout = 120000; // 120s Timeout fuer KI-Anfragen
     xhr.onload = function() {
         if (xhr.status === 200) {
-            try { callback(JSON.parse(xhr.responseText)); } catch(e) { console.error(e); }
+            try { callback(JSON.parse(xhr.responseText)); } catch(e) { console.error('JSON parse error:', e); callback({error:true,msg:'Antwort konnte nicht verarbeitet werden (JSON Fehler)'}); }
+        } else {
+            callback({error:true,msg:'Server-Fehler: HTTP ' + xhr.status});
         }
     };
+    xhr.onerror = function() { callback({error:true,msg:'Netzwerk-Fehler - Server nicht erreichbar'}); };
+    xhr.ontimeout = function() { callback({error:true,msg:'Timeout - Anfrage dauerte zu lange (>120s)'}); };
     xhr.send(JSON.stringify(data));
 }
 

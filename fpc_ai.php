@@ -29,19 +29,38 @@ class FpcAi {
 
     // System-Prompt fuer den SEO-Analysten
     private $system_prompt = <<<'PROMPT'
-Du bist ein erfahrener SEO-Analyst fuer den E-Commerce Shop mr-hanf.de (Cannabis-Samen).
-Du analysierst Daten aus Google Search Console, Google Analytics 4, Sistrix, dem Full Page Cache System und dem SEO-Scanner.
+Du bist ein spezialisierter SEO-Experte fuer mr-hanf.de, einen der groessten europaeischen Online-Shops fuer Cannabis-Samen.
+Du hast tiefes Wissen ueber E-Commerce SEO, Cannabis-Branche, internationale Maerkte (DE, AT, CH, NL, ES, IT, FR, UK) und die besonderen Herausforderungen dieser Nische.
+
+Der Shop laeuft auf modified eCommerce (PHP) mit einem eigenen Full Page Cache (FPC) System.
+Du analysierst Daten aus: Google Search Console, Google Analytics 4, Sistrix, dem FPC System und dem integrierten SEO-Scanner.
+
+Dein Spezialwissen:
+- Cannabis-Samen Keywords und Suchintentionen (autoflowering, feminisiert, regular, CBD, THC-arm)
+- Saisonale Trends (Outdoor-Saison Fruehling, Indoor ganzjaehrig)
+- Mehrsprachige SEO-Strategie (hreflang, Sprachversionen)
+- E-Commerce Conversion-Optimierung (Produktseiten, Kategorien, Checkout)
+- Content-Strategie fuer Cannabis-Nische (Grow-Guides, Strain-Reviews, Anbau-Tipps)
+- Technisches SEO (Core Web Vitals, Crawl-Budget, Indexierung, Cache-Optimierung)
+- Wettbewerber-Analyse (Sensi Seeds, Royal Queen Seeds, Zamnesia, Linda Seeds)
+- Rechtliche Aspekte (Werbeeinschraenkungen, Laender-Regulierung)
 
 Deine Aufgaben:
 1. Probleme identifizieren und nach SEO-Impact priorisieren
-2. Konkrete, umsetzbare Empfehlungen geben
-3. Cross-API Korrelationen erkennen (z.B. GSC-Traffic-Verlust + 404-Fehler)
+2. Konkrete, umsetzbare Empfehlungen mit geschaetztem Traffic-Impact geben
+3. Cross-API Korrelationen erkennen (z.B. GSC-Traffic-Verlust + 404-Fehler + Sistrix-Drop)
 4. Redirect-Vorschlaege mit konkreten Quell- und Ziel-URLs machen
 5. Canonical-Probleme erkennen und Fixes vorschlagen
+6. Content-Luecken identifizieren (fehlende Kategorie-Texte, duenne Produktbeschreibungen)
+7. Keyword-Kannibalisierung erkennen (mehrere Seiten ranken fuer gleiche Keywords)
+8. E-Commerce spezifische Probleme finden (Produkt-URLs, Filter-URLs, Paginierung)
+9. Cache-Performance mit SEO korrelieren (langsame Seiten = schlechteres Ranking)
+10. Saisonale Empfehlungen geben (z.B. Outdoor-Saison Content vorbereiten)
 
 Antworte IMMER auf Deutsch.
+Sei direkt, praxisorientiert und gib konkrete Handlungsanweisungen.
 Antworte im JSON-Format wenn eine Analyse angefordert wird.
-Bei Chat-Fragen antworte in normalem Text, aber strukturiert.
+Bei Chat-Fragen antworte in normalem Text, aber strukturiert und mit konkreten Beispielen.
 
 Fuer Analyse-Antworten nutze dieses JSON-Format:
 {
@@ -110,15 +129,18 @@ PROMPT;
 
     /**
      * Alle verfuegbaren Daten sammeln fuer KI-Kontext
-     */
-    public function collectAllData() {
+     */    private function collectAllData() {
         $data = array();
 
         // 1. SEO Engine Daten
-        require_once $this->base_dir . 'fpc_seo.php';
-        $seo = new FpcSeo($this->base_dir);
-        $data['seo'] = $seo->getAiSummary();
-        $data['seo_problems'] = $seo->getCrossApiProblems();
+        try {
+            require_once $this->base_dir . 'fpc_seo.php';
+            $seo = new FpcSeo($this->base_dir);
+            $data['seo'] = $seo->getAiSummary();
+            $data['seo_problems'] = $seo->getCrossApiProblems();
+        } catch (Exception $e) {
+            $data['seo'] = array('error' => $e->getMessage());
+        }
 
         // 2. GSC Daten (wenn verfuegbar)
         try {
@@ -224,7 +246,11 @@ PROMPT;
         }
 
         // Daten sammeln
-        $all_data = $this->collectAllData();
+        try {
+            $all_data = $this->collectAllData();
+        } catch (Exception $e) {
+            $all_data = array('error' => 'Datensammlung fehlgeschlagen: ' . $e->getMessage());
+        }
 
         // Prompt bauen
         $user_prompt = "Fuehre eine vollstaendige SEO-Analyse fuer mr-hanf.de durch.\n\n";
@@ -264,8 +290,12 @@ PROMPT;
             return array('error' => true, 'msg' => 'OpenAI API Key nicht konfiguriert.');
         }
 
-        // Kontext-Daten sammeln (kompakt)
-        $context_data = $this->collectAllData();
+        // Kontext-Daten sammeln (kompakt) - Fehler abfangen
+        try {
+            $context_data = $this->collectAllData();
+        } catch (Exception $e) {
+            $context_data = array('error' => 'Datensammlung fehlgeschlagen: ' . $e->getMessage());
+        }
 
         // Chat-History laden
         $history = $this->getChatHistory();
@@ -366,7 +396,7 @@ PROMPT;
             'model' => $this->model,
             'messages' => $messages,
             'temperature' => 0.3,
-            'max_tokens' => 4000,
+            'max_tokens' => 8000,
         ));
 
         $ch = curl_init($url);
@@ -378,7 +408,8 @@ PROMPT;
                 'Content-Type: application/json',
                 'Authorization: Bearer ' . $this->api_key,
             ),
-            CURLOPT_TIMEOUT => 60,
+            CURLOPT_TIMEOUT => 90,
+            CURLOPT_CONNECTTIMEOUT => 10,
             CURLOPT_SSL_VERIFYPEER => false,
         ));
 

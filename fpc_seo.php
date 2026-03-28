@@ -431,34 +431,51 @@ class FpcSeo {
         if (empty($sitemap_url)) $sitemap_url = $this->site_url . '/sitemap.xml';
 
         $urls = array();
-        $ctx = stream_context_create(array('http' => array(
-            'timeout' => 15,
-            'user_agent' => 'FPC-SEO-Scanner/1.0',
-        )));
+        $ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 
-        $xml = @file_get_contents($sitemap_url, false, $ctx);
+        // Sitemap per cURL laden (wie Preloader - file_get_contents funktioniert nicht mit Reverse-Proxy)
+        $xml = $this->curlFetchUrl($sitemap_url, $ua);
         if ($xml === false) return array('error' => 'Sitemap nicht erreichbar: ' . $sitemap_url);
 
         // Sitemap-Index pruefen
         if (strpos($xml, '<sitemapindex') !== false) {
-            preg_match_all('#<loc>(.*?)</loc>#', $xml, $matches);
+            preg_match_all('#<loc>(.*?)</loc>#i', $xml, $matches);
             foreach ($matches[1] as $sub_url) {
-                $sub_xml = @file_get_contents($sub_url, false, $ctx);
+                $sub_xml = $this->curlFetchUrl(trim($sub_url), $ua);
                 if ($sub_xml !== false) {
-                    preg_match_all('#<loc>(.*?)</loc>#', $sub_xml, $sub_matches);
+                    preg_match_all('#<loc>(.*?)</loc>#i', $sub_xml, $sub_matches);
                     foreach ($sub_matches[1] as $url) {
-                        $urls[] = str_replace($this->site_url, '', $url);
+                        $urls[] = str_replace($this->site_url, '', trim($url));
                     }
                 }
             }
         } else {
-            preg_match_all('#<loc>(.*?)</loc>#', $xml, $matches);
+            preg_match_all('#<loc>(.*?)</loc>#i', $xml, $matches);
             foreach ($matches[1] as $url) {
-                $urls[] = str_replace($this->site_url, '', $url);
+                $urls[] = str_replace($this->site_url, '', trim($url));
             }
         }
 
         return array_unique($urls);
+    }
+
+    /**
+     * URL per cURL laden (mit Browser-UA und Redirect-Follow)
+     */
+    private function curlFetchUrl($url, $ua = '') {
+        $ch = curl_init($url);
+        curl_setopt_array($ch, array(
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_FOLLOWLOCATION => true,
+            CURLOPT_SSL_VERIFYPEER => false,
+            CURLOPT_TIMEOUT => 30,
+            CURLOPT_USERAGENT => $ua ?: 'FPC-SEO-Scanner/1.0',
+        ));
+        $response = curl_exec($ch);
+        $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+        if ($response === false || $http_code !== 200 || strlen($response) < 100) return false;
+        return $response;
     }
 
     /**
