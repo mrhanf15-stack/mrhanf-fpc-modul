@@ -534,7 +534,8 @@ function fpc_seo_404_dismiss($base_dir, $id) {
 
 // v10.2.6: URL pruefen - HTTP-Status und Redirect-Kette
 function fpc_seo_check_url($url) {
-    $full_url = 'https://mr-hanf.de' . $url;
+    // v10.2.7: URLs die bereits mit http beginnen nicht nochmal prefixen
+    $full_url = (strpos($url, 'http') === 0) ? $url : 'https://mr-hanf.de' . $url;
     $ch = curl_init();
     curl_setopt_array($ch, array(
         CURLOPT_URL => $full_url,
@@ -3194,7 +3195,7 @@ function fpcSeoLoad404(filter) {
         var html = '<table class="fpc-table"><thead><tr><th>URL</th><th>Hits</th><th>Erstmals</th><th>Letzter Hit</th><th>Referers</th><th>Aktion</th></tr></thead><tbody>';
         d.forEach(function(e) {
             html += '<tr>';
-            var checkUrl = 'https://mr-hanf.de' + e.url;
+            var checkUrl = (e.url.indexOf('http') === 0) ? e.url : 'https://mr-hanf.de' + e.url;
             html += '<td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;" title="' + e.url + '"><a href="' + checkUrl + '" target="_blank" style="color:var(--fpc-text);text-decoration:none;" title="URL oeffnen">' + e.url + '</a></td>';
             html += '<td><strong style="color:' + (e.hit_count > 50 ? 'var(--fpc-red)' : e.hit_count > 10 ? 'var(--fpc-orange)' : 'var(--fpc-text)') + '">' + e.hit_count + '</strong></td>';
             html += '<td style="font-size:11px;">' + (e.first_seen || '') + '</td>';
@@ -3248,7 +3249,7 @@ function fpcSeo404Cleanup() {
 
 // v10.2.6: URL pruefen - oeffnet in neuem Tab und zeigt HTTP-Status
 function fpcSeo404Check(url) {
-    var fullUrl = 'https://mr-hanf.de' + url;
+    var fullUrl = (url.indexOf('http') === 0) ? url : 'https://mr-hanf.de' + url;
     // AJAX-Call um HTTP-Status zu pruefen
     fpcAjax('ajax=seo_check_url&url=' + encodeURIComponent(url), function(r) {
         if (r && r.status) {
