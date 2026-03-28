@@ -395,6 +395,20 @@ if (isset($_GET['ajax'])) {
             echo json_encode(fpc_ai_quick_summary($base_dir));
             exit;
 
+        // v10.2.1: AI Prompt Management
+        case 'ai_prompt_load':
+            echo json_encode(fpc_ai_prompt_load($base_dir));
+            exit;
+
+        case 'ai_prompt_save':
+            $data = json_decode(file_get_contents('php://input'), true);
+            echo json_encode(fpc_ai_prompt_save($base_dir, $data));
+            exit;
+
+        case 'ai_prompt_reset':
+            echo json_encode(fpc_ai_prompt_reset($base_dir));
+            exit;
+
         // v10.0.1: File Editor (htaccess, robots.txt)
         case 'file_read':
             $file = isset($_GET['file']) ? $_GET['file'] : '';
@@ -575,6 +589,29 @@ function fpc_ai_chat_clear($base_dir) {
 function fpc_ai_quick_summary($base_dir) {
     $ai = fpc_ai_init($base_dir);
     return $ai->getQuickSummary();
+}
+
+// v10.2.1: AI Prompt Management Functions
+function fpc_ai_prompt_load($base_dir) {
+    $ai = fpc_ai_init($base_dir);
+    return array(
+        'ok' => true,
+        'prompt' => $ai->getSystemPrompt(),
+        'default_prompt' => $ai->getDefaultSystemPrompt(),
+        'is_custom' => $ai->getSystemPrompt() !== $ai->getDefaultSystemPrompt(),
+        'length' => strlen($ai->getSystemPrompt()),
+    );
+}
+
+function fpc_ai_prompt_save($base_dir, $data) {
+    $ai = fpc_ai_init($base_dir);
+    $prompt = isset($data['prompt']) ? $data['prompt'] : '';
+    return $ai->saveSystemPrompt($prompt);
+}
+
+function fpc_ai_prompt_reset($base_dir) {
+    $ai = fpc_ai_init($base_dir);
+    return $ai->saveSystemPrompt(''); // Leerer String = Reset auf Default
 }
 
 // v10.0.1: File Editor Backend Functions
@@ -2083,6 +2120,25 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
     <div class="fpc-section-title">Health Check Settings</div>
     <p style="color:var(--fpc-text2);font-size:12px;margin-bottom:12px;">Settings for the daily health check cron job.</p>
     <div id="settings-healthcheck" style="background:var(--fpc-card);border-radius:10px;padding:20px;border:1px solid var(--fpc-border);margin-bottom:20px;"></div>
+
+    <div class="fpc-section-title">KI System-Prompt</div>
+    <p style="color:var(--fpc-text2);font-size:12px;margin-bottom:12px;">Der System-Prompt definiert wie die KI analysiert, welche Regeln sie befolgt und welchen Kontext sie hat. Aenderungen werden sofort wirksam.</p>
+    <div id="settings-ai-prompt" style="background:var(--fpc-card);border-radius:10px;padding:20px;border:1px solid var(--fpc-border);margin-bottom:20px;">
+        <div style="margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;">
+            <div>
+                <span id="ai-prompt-status" style="font-size:12px;color:var(--fpc-text2);">Lade...</span>
+            </div>
+            <div style="display:flex;gap:8px;">
+                <button class="fpc-btn" onclick="fpcAiPromptReset()" style="background:var(--fpc-warn);font-size:12px;padding:6px 12px;">Auf Standard zuruecksetzen</button>
+                <button class="fpc-btn" onclick="fpcAiPromptSave()" style="font-size:12px;padding:6px 12px;">Prompt speichern</button>
+            </div>
+        </div>
+        <textarea id="ai-prompt-textarea" style="width:100%;min-height:400px;max-height:800px;background:var(--fpc-bg);color:var(--fpc-text);border:1px solid var(--fpc-border);border-radius:8px;padding:12px;font-family:'Fira Code',monospace;font-size:12px;line-height:1.5;resize:vertical;white-space:pre-wrap;" placeholder="System-Prompt wird geladen..."></textarea>
+        <div style="margin-top:8px;display:flex;justify-content:space-between;align-items:center;">
+            <span id="ai-prompt-length" style="font-size:11px;color:var(--fpc-text2);"></span>
+            <span style="font-size:11px;color:var(--fpc-text2);">Gespeichert in: cache/fpc/ai_system_prompt.txt</span>
+        </div>
+    </div>
 
     <div class="fpc-section-title">API Credentials (External Integrations)</div>
     <p style="color:var(--fpc-text2);font-size:12px;margin-bottom:12px;">Configure API keys for Google Search Console, Google Analytics 4, and SISTRIX. Credentials are stored locally in <code>cache/fpc/api_credentials.json</code>.</p>
@@ -3628,6 +3684,57 @@ function fpcSaveSettings() {
 }
 
 // ============================================================
+// v10.2.1: AI PROMPT MANAGEMENT
+// ============================================================
+var _aiPromptDefault = ''; // Wird beim Laden gesetzt
+
+function fpcAiPromptLoad() {
+    fpcAjax('ajax=ai_prompt_load', function(d) {
+        if (!d.ok) return;
+        var ta = document.getElementById('ai-prompt-textarea');
+        var status = document.getElementById('ai-prompt-status');
+        var len = document.getElementById('ai-prompt-length');
+        if (ta) ta.value = d.prompt;
+        _aiPromptDefault = d.default_prompt;
+        if (status) {
+            if (d.is_custom) {
+                status.innerHTML = '<span style="color:var(--fpc-warn);">&#9679;</span> Benutzerdefinierter Prompt aktiv';
+            } else {
+                status.innerHTML = '<span style="color:var(--fpc-ok);">&#9679;</span> Standard-Prompt aktiv';
+            }
+        }
+        if (len) len.textContent = d.length + ' Zeichen';
+        // Live-Zaehler
+        if (ta) {
+            ta.oninput = function() {
+                if (len) len.textContent = ta.value.length + ' Zeichen (ungespeichert)';
+            };
+        }
+    });
+}
+
+function fpcAiPromptSave() {
+    var ta = document.getElementById('ai-prompt-textarea');
+    if (!ta) return;
+    var prompt = ta.value;
+    if (!prompt.trim()) {
+        if (!confirm('Leerer Prompt = Zurueck zum Standard. Fortfahren?')) return;
+    }
+    fpcAjaxPostJson('ai_prompt_save', {prompt: prompt}, function(r) {
+        fpcToast(r.msg, !r.ok);
+        if (r.ok) fpcAiPromptLoad(); // Neu laden um Status zu aktualisieren
+    });
+}
+
+function fpcAiPromptReset() {
+    if (!confirm('KI-Prompt auf Standard zuruecksetzen? Alle Aenderungen gehen verloren.')) return;
+    fpcAjax('ajax=ai_prompt_reset', function(r) {
+        fpcToast(r.msg, !r.ok);
+        if (r.ok) fpcAiPromptLoad();
+    });
+}
+
+// ============================================================
 // TAB 14: GOOGLE SEARCH CONSOLE v2.0 (MAXIMUM API)
 // ============================================================
 var gscCurrentDays = 28;
@@ -4453,7 +4560,7 @@ document.addEventListener('DOMContentLoaded', function() {
         case 'health': fpcLoadHealth(); break;
         case 'statistik': fpcLoadStats(); break;
         case 'alerts': fpcLoadAlerts(); break;
-        case 'settings': fpcLoadSettings(); fpcLoadApiCredentials(); break;
+        case 'settings': fpcLoadSettings(); fpcLoadApiCredentials(); fpcAiPromptLoad(); break;
         case 'gsc': fpcLoadGSC(); break;
         case 'analytics': fpcLoadGA4(); break;
         case 'sistrix': fpcLoadSistrix(); break;

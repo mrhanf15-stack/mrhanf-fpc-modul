@@ -28,7 +28,9 @@ class FpcAi {
     private $analysis_cache_file;
 
     // System-Prompt fuer den SEO-Analysten
-    private $system_prompt = <<<'PROMPT'
+    // v1.1.0: Prompt kann ueber fpc_settings.json -> ai_prompt ueberschrieben werden
+    private $system_prompt_file; // Pfad zur externen Prompt-Datei
+    private $system_prompt_default = <<<'PROMPT'
 === ROLLE UND IDENTITAET ===
 Du bist der SEO-Analyst und technische Berater fuer mr-hanf.de, einen der groessten europaeischen Online-Shops fuer Cannabis-Samen mit ueber 28.000 Produktseiten in mehreren Sprachen (DE, EN, NL, ES, IT, FR).
 
@@ -45,6 +47,40 @@ Zielgruppe: Anfaenger bis erfahrene Grower, primaer DACH-Raum, sekundaer EU
 Produkte: ~3.000+ Cannabis-Samen Sorten (Autoflowering, Feminisiert, Regular, CBD)
 Kategorien: Samen-Shop, Seedbanks, Grow-Equipment, Zubehoer
 Wettbewerber: Sensi Seeds, Royal Queen Seeds, Zamnesia, Linda Seeds, Herbies Seeds
+
+=== TECHNISCHE ARCHITEKTUR (WICHTIG - NICHT ALS FEHLER MELDEN) ===
+Das FPC-System besteht aus diesen Dateien im Shop-Root:
+- fpc_serve.php: Hauptdatei die gecachte Seiten ausliefert (via .htaccess eingebunden)
+- fpc_preloader.php: Cron-Job der Seiten vorlaedt und cached
+- fpc_seo.php: SEO-Scanner, Redirect-Manager, 404-Log, Canonical-Manager
+- fpc_dashboard.php: Admin-Dashboard (im geschuetzten admin-Ordner)
+
+WICHTIG: /fpc_serve.php ist KEIN Fehler! Diese Datei wird bei JEDEM Seitenaufruf
+vom Webserver aufgerufen. 404-Hits auf /fpc_serve.php bedeuten, dass der Cache
+fuer bestimmte Seiten fehlt - das ist normales Verhalten, KEIN Redirect noetig!
+
+=== URL-STRUKTUR DES SHOPS ===
+Produkte koennen unter mehreren Kategorie-Pfaden erreichbar sein:
+- /samen-shop/autoflowering-samen/PRODUKT (Eltern-Kategorie)
+- /samen-shop/autoflowering-samen/feminisierte-auto-sorten/PRODUKT (Sub-Kategorie)
+Der Canonical zeigt immer auf die Sub-Kategorie-URL - das ist KORREKT!
+Dies ist KEIN Canonical-Mismatch, sondern gewolltes Verhalten des Shops.
+Ein Canonical-Mismatch liegt nur vor wenn der Canonical auf eine voellig andere
+Seite zeigt (z.B. Kategorie statt Produkt, oder anderes Produkt).
+
+=== SYSTEM-URLS DIE IGNORIERT WERDEN MUESSEN ===
+Diese URLs sind KEINE SEO-Probleme und brauchen KEINEN Redirect:
+- /fpc_serve.php → FPC Cache-Auslieferung (System-Datei)
+- /.well-known/assetlinks.json → Android App-Verknuepfung (System)
+- /.well-known/passkey-endpoints → WebAuthn/Passkey (System)
+- /.well-known/* → Alle .well-known URLs sind System-URLs
+- /favicon.ico → Browser-Standard-Anfrage
+- /robots.txt → Crawler-Standard-Anfrage
+- /sitemap*.xml → Sitemap-Dateien
+- /admin_* → Admin-Bereich
+- /cache/* → Cache-Verzeichnis
+Wenn diese URLs 404-Fehler zeigen, erwaehne sie NICHT als kritische Probleme.
+Konzentriere dich auf echte Shop-URLs (Produkte, Kategorien, Content-Seiten).
 
 === DATENQUELLEN DIE DIR ZUR VERFUEGUNG STEHEN ===
 Dir werden bei jeder Anfrage aktuelle Daten aus diesen Quellen uebergeben:
@@ -180,6 +216,8 @@ Fuer CHAT-Antworten: Normaler Text, strukturiert mit Absaetzen. Keine JSON-Bloec
 - Autoflowering-Content: Zielgruppe Anfaenger, Saison Fruehling bis Ende August
 PROMPT;
 
+    private $system_prompt; // Aktiver Prompt (aus Datei oder Default)
+
     public function __construct($base_dir) {
         $this->base_dir = rtrim($base_dir, '/') . '/';
         $this->cache_dir = $this->base_dir . 'cache/fpc/seo/';
@@ -190,6 +228,10 @@ PROMPT;
 
         $this->chat_history_file = $this->cache_dir . 'ai_chat_history.json';
         $this->analysis_cache_file = $this->cache_dir . 'ai_analysis_cache.json';
+        $this->system_prompt_file = $this->base_dir . 'cache/fpc/ai_system_prompt.txt';
+
+        // v1.1.0: System-Prompt aus Datei laden (wenn vorhanden), sonst Default
+        $this->system_prompt = $this->loadSystemPrompt();
 
         // API-Credentials laden
         $creds_file = $this->base_dir . 'cache/fpc/api_credentials.json';
@@ -200,6 +242,57 @@ PROMPT;
         $this->api_key = isset($creds['openai_api_key']) ? $creds['openai_api_key'] : '';
         $this->model = isset($creds['openai_model']) && !empty($creds['openai_model'])
             ? $creds['openai_model'] : 'gpt-4.1-mini';
+    }
+
+    /**
+     * v1.1.0: System-Prompt laden
+     * Prioritaet: 1. Externe Datei (ai_system_prompt.txt) 2. Default-Prompt
+     */
+    private function loadSystemPrompt() {
+        if (is_file($this->system_prompt_file)) {
+            $custom = @file_get_contents($this->system_prompt_file);
+            if (!empty(trim($custom))) {
+                return trim($custom);
+            }
+        }
+        return $this->system_prompt_default;
+    }
+
+    /**
+     * v1.1.0: System-Prompt speichern (aus Dashboard Settings)
+     */
+    public function saveSystemPrompt($prompt_text) {
+        $prompt_text = trim($prompt_text);
+        if (empty($prompt_text)) {
+            // Leerer Prompt = zurueck zum Default
+            if (is_file($this->system_prompt_file)) {
+                @unlink($this->system_prompt_file);
+            }
+            $this->system_prompt = $this->system_prompt_default;
+            return array('ok' => true, 'msg' => 'KI-Prompt auf Standard zurueckgesetzt', 'length' => strlen($this->system_prompt));
+        }
+        $dir = dirname($this->system_prompt_file);
+        if (!is_dir($dir)) @mkdir($dir, 0755, true);
+        $ok = @file_put_contents($this->system_prompt_file, $prompt_text);
+        if ($ok === false) {
+            return array('ok' => false, 'msg' => 'Fehler beim Speichern des Prompts');
+        }
+        $this->system_prompt = $prompt_text;
+        return array('ok' => true, 'msg' => 'KI-Prompt gespeichert (' . strlen($prompt_text) . ' Zeichen)', 'length' => strlen($prompt_text));
+    }
+
+    /**
+     * v1.1.0: Aktuellen System-Prompt zurueckgeben (fuer Settings-Anzeige)
+     */
+    public function getSystemPrompt() {
+        return $this->system_prompt;
+    }
+
+    /**
+     * v1.1.0: Default System-Prompt zurueckgeben (fuer Reset-Button)
+     */
+    public function getDefaultSystemPrompt() {
+        return $this->system_prompt_default;
     }
 
     /**
