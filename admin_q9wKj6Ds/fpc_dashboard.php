@@ -1,6 +1,6 @@
 <?php
 /**
- * Mr. Hanf FPC Control Center v9.1.3
+ * Mr. Hanf FPC Control Center v9.1.4
  *
  * Enterprise-Level Dashboard for the Full Page Cache System.
  *
@@ -58,7 +58,7 @@
  *   - FIX: Statistics tab reads .json tracker files (not .jsonl)
  *   - FIX: User-Agent changed to real Chrome browser (403 fix)
  *   - FIX: All UI text in English
- * @version   9.1.3
+ * @version   9.1.4
  * @date      2026-03-27
  */
 
@@ -1184,7 +1184,7 @@ $page_title = 'FPC Control Center';
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title><?php echo $page_title; ?> v9.1.3</title>
+<title><?php echo $page_title; ?> v9.1.4</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4" defer></script>
 <style>
 :root { --fpc-bg:#0d1b2a; --fpc-card:#1b2838; --fpc-border:#2a3a4a; --fpc-text:#e0e6ed; --fpc-text2:#8899aa; --fpc-teal:#00d4aa; --fpc-green:#00e676; --fpc-red:#ff4757; --fpc-orange:#ffa502; --fpc-yellow:#ffd32a; --fpc-blue:#00a8ff; }
@@ -1201,7 +1201,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 .fpc-tab { padding: 8px 14px; border-radius: 6px 6px 0 0; cursor: pointer; font-size: 12px; font-weight: 600; color: var(--fpc-text2); background: transparent; border: none; transition: all 0.2s; white-space: nowrap; }
 .fpc-tab:hover { color: var(--fpc-teal); background: rgba(0,212,170,0.05); }
 .fpc-tab.active { color: var(--fpc-teal); background: var(--fpc-card); border-bottom: 2px solid var(--fpc-teal); }
-.fpc-content { padding: 20px 24px; max-width: 1600px; margin: 0 auto; }
+.fpc-content { padding: 20px 24px; width: 100%; }
 .fpc-panel { display: none; }
 .fpc-panel.active { display: block; }
 .fpc-kpis { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; margin-bottom: 20px; }
@@ -1211,7 +1211,8 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 .fpc-kpi-sub { font-size: 11px; color: var(--fpc-text2); margin-top: 2px; }
 .fpc-section-title { font-size: 16px; font-weight: 700; color: var(--fpc-text); margin: 24px 0 12px; padding-bottom: 8px; border-bottom: 1px solid var(--fpc-border); }
 .fpc-charts { display: grid; grid-template-columns: repeat(auto-fill, minmax(400px, 1fr)); gap: 16px; margin-bottom: 20px; }
-.fpc-chart-box { background: var(--fpc-card); border-radius: 10px; padding: 16px; border: 1px solid var(--fpc-border); }
+.fpc-chart-box { background: var(--fpc-card); border-radius: 10px; padding: 16px; border: 1px solid var(--fpc-border); min-height: 200px; max-height: 350px; overflow: hidden; }
+.fpc-chart-box canvas { max-height: 280px !important; }
 .fpc-chart-box h3 { font-size: 13px; color: var(--fpc-text2); margin-bottom: 10px; }
 .fpc-table { width: 100%; border-collapse: collapse; font-size: 13px; }
 .fpc-table th { background: #0a1420; color: var(--fpc-text2); padding: 8px 12px; text-align: left; font-weight: 600; font-size: 11px; text-transform: uppercase; position: sticky; top: 0; }
@@ -1269,7 +1270,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 
 <!-- HEADER -->
 <div class="fpc-header">
-    <h1>FPC Control Center <span>v9.1.3</span></h1>
+    <h1>FPC Control Center <span>v9.1.4</span></h1>
     <div class="fpc-quick-actions">
         <button class="fpc-quick-btn" onclick="fpcFlush()" title="Flush Cache">&#128465; Flush</button>
         <button class="fpc-quick-btn" onclick="fpcRebuild()" title="Rebuild Cache">&#8635; Rebuild</button>
@@ -1277,7 +1278,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
     </div>
     <div>
         <span id="fpc-clock" style="color:var(--fpc-text2);font-size:12px;"></span>
-        <span class="fpc-version">v9.1.3</span>
+        <span class="fpc-version">v9.1.4</span>
     </div>
 </div>
 
@@ -1654,7 +1655,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 
 <script>
 // ============================================================
-// JAVASCRIPT v9.1.3
+// JAVASCRIPT v9.1.4
 // ============================================================
 var BASE = '<?php echo basename(__FILE__); ?>';
 var chartInstances = {};
@@ -1743,8 +1744,8 @@ function fpcNum(n) {
 
 function fpcChart(canvasId, type, labels, datasets, options) {
     var cfg = { type: type, data: { labels: labels, datasets: datasets }, options: options || {} };
-    if (!cfg.options.responsive) cfg.options.responsive = true;
-    if (!cfg.options.maintainAspectRatio) cfg.options.maintainAspectRatio = false;
+    cfg.options.responsive = true;
+    cfg.options.maintainAspectRatio = true;
     if (!cfg.options.plugins) cfg.options.plugins = {};
     if (!cfg.options.plugins.legend) cfg.options.plugins.legend = { labels: { color: '#8899aa' } };
     return fpcMakeChart(canvasId, cfg);
