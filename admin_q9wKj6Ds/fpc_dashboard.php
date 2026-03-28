@@ -2973,16 +2973,37 @@ function fpcSeoLoadRedirects() {
         if (!d || d.length === 0) { document.getElementById('seo-redirects-table').innerHTML = '<p style="color:var(--fpc-text2)">Keine Redirects vorhanden.</p>'; return; }
         var html = '<table class="fpc-table"><thead><tr><th>Source</th><th>Target</th><th>Typ</th><th>Regex</th><th>Hits</th><th>Letzter Hit</th><th>Notiz</th><th>Aktiv</th><th>Aktion</th></tr></thead><tbody>';
         d.forEach(function(r) {
-            html += '<tr>';
-            html += '<td style="max-width:250px;overflow:hidden;text-overflow:ellipsis;" title="' + r.source + '">' + r.source + '</td>';
-            html += '<td style="max-width:250px;overflow:hidden;text-overflow:ellipsis;" title="' + r.target + '">' + r.target + '</td>';
+            var esc_src = (r.source || '').replace(/"/g, '&quot;');
+            var esc_tgt = (r.target || '').replace(/"/g, '&quot;');
+            var esc_note = (r.note || '').replace(/"/g, '&quot;');
+            // v10.2.5: Anzeige-Zeile (normal)
+            html += '<tr id="redir-row-' + r.id + '">';
+            html += '<td style="max-width:250px;overflow:hidden;text-overflow:ellipsis;" title="' + esc_src + '">' + r.source + '</td>';
+            html += '<td style="max-width:250px;overflow:hidden;text-overflow:ellipsis;" title="' + esc_tgt + '">' + r.target + '</td>';
             html += '<td><span class="fpc-badge ' + (r.type === '301' ? 'hit' : 'bypass') + '">' + r.type + '</span></td>';
             html += '<td>' + (r.is_regex ? 'Ja' : 'Nein') + '</td>';
             html += '<td>' + (r.hit_count || 0) + '</td>';
             html += '<td style="font-size:11px;">' + (r.last_hit || '-') + '</td>';
             html += '<td style="font-size:11px;">' + (r.note || '') + '</td>';
             html += '<td>' + (r.active ? '<span style="color:var(--fpc-green)">Ja</span>' : '<span style="color:var(--fpc-red)">Nein</span>') + '</td>';
-            html += '<td><button class="fpc-btn red" style="padding:2px 6px;font-size:11px;" onclick="fpcSeoRedirectDelete(' + r.id + ')">X</button></td>';
+            html += '<td style="white-space:nowrap;">';
+            html += '<button class="fpc-btn" style="padding:2px 6px;font-size:11px;margin-right:3px;background:var(--fpc-blue);" onclick="fpcSeoRedirectEdit(' + r.id + ')" title="Bearbeiten">&#9998;</button>';
+            html += '<button class="fpc-btn red" style="padding:2px 6px;font-size:11px;" onclick="fpcSeoRedirectDelete(' + r.id + ')" title="Loeschen">X</button>';
+            html += '</td>';
+            html += '</tr>';
+            // v10.2.5: Edit-Zeile (versteckt, wird bei Klick auf Edit sichtbar)
+            html += '<tr id="redir-edit-' + r.id + '" style="display:none;background:rgba(0,150,255,0.08);">';
+            html += '<td><input type="text" class="fpc-input" id="redit-src-' + r.id + '" value="' + esc_src + '" style="width:100%;font-size:12px;"></td>';
+            html += '<td><input type="text" class="fpc-input" id="redit-tgt-' + r.id + '" value="' + esc_tgt + '" style="width:100%;font-size:12px;"></td>';
+            html += '<td><select class="fpc-input" id="redit-type-' + r.id + '" style="font-size:12px;"><option value="301"' + (r.type==='301'?' selected':'') + '>301</option><option value="302"' + (r.type==='302'?' selected':'') + '>302</option><option value="307"' + (r.type==='307'?' selected':'') + '>307</option></select></td>';
+            html += '<td><input type="checkbox" id="redit-regex-' + r.id + '"' + (r.is_regex ? ' checked' : '') + '></td>';
+            html += '<td colspan="2"></td>';
+            html += '<td><input type="text" class="fpc-input" id="redit-note-' + r.id + '" value="' + esc_note + '" style="width:100%;font-size:12px;"></td>';
+            html += '<td><input type="checkbox" id="redit-active-' + r.id + '"' + (r.active ? ' checked' : '') + '> Aktiv</td>';
+            html += '<td style="white-space:nowrap;">';
+            html += '<button class="fpc-btn" style="padding:2px 6px;font-size:11px;margin-right:3px;background:var(--fpc-green);color:#fff;" onclick="fpcSeoRedirectSave(' + r.id + ')" title="Speichern">&#10003;</button>';
+            html += '<button class="fpc-btn" style="padding:2px 6px;font-size:11px;background:var(--fpc-text2);color:#fff;" onclick="fpcSeoRedirectCancelEdit(' + r.id + ')" title="Abbrechen">&#10007;</button>';
+            html += '</td>';
             html += '</tr>';
         });
         html += '</tbody></table>';
@@ -3013,6 +3034,43 @@ function fpcSeoRedirectAdd() {
 function fpcSeoRedirectDelete(id) {
     if (!confirm('Redirect wirklich loeschen?')) return;
     fpcAjax('ajax=seo_redirect_delete&id=' + id, function(r) { fpcToast(r.msg, !r.ok); fpcSeoLoadRedirects(); });
+}
+
+// v10.2.5: Redirect bearbeiten - Edit-Zeile einblenden
+function fpcSeoRedirectEdit(id) {
+    // Alle anderen Edit-Zeilen schliessen
+    document.querySelectorAll('[id^="redir-edit-"]').forEach(function(el) { el.style.display = 'none'; });
+    document.querySelectorAll('[id^="redir-row-"]').forEach(function(el) { el.style.display = ''; });
+    // Diese Edit-Zeile einblenden, Anzeige-Zeile ausblenden
+    var editRow = document.getElementById('redir-edit-' + id);
+    var viewRow = document.getElementById('redir-row-' + id);
+    if (editRow) editRow.style.display = '';
+    if (viewRow) viewRow.style.display = 'none';
+}
+
+// v10.2.5: Redirect speichern
+function fpcSeoRedirectSave(id) {
+    var data = {
+        id: id,
+        source: document.getElementById('redit-src-' + id).value,
+        target: document.getElementById('redit-tgt-' + id).value,
+        type: document.getElementById('redit-type-' + id).value,
+        is_regex: document.getElementById('redit-regex-' + id).checked,
+        note: document.getElementById('redit-note-' + id).value,
+        active: document.getElementById('redit-active-' + id).checked
+    };
+    fpcAjaxPostJson('seo_redirect_update', data, function(r) {
+        fpcToast(r.msg, !r.ok);
+        fpcSeoLoadRedirects();
+    });
+}
+
+// v10.2.5: Edit abbrechen
+function fpcSeoRedirectCancelEdit(id) {
+    var editRow = document.getElementById('redir-edit-' + id);
+    var viewRow = document.getElementById('redir-row-' + id);
+    if (editRow) editRow.style.display = 'none';
+    if (viewRow) viewRow.style.display = '';
 }
 
 // --- CANONICALS ---

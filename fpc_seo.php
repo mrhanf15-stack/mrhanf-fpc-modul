@@ -318,6 +318,17 @@ class FpcSeo {
         $path = parse_url($request_uri, PHP_URL_PATH);
         $now = date('Y-m-d H:i:s');
 
+        // v10.2.5: System-URLs nicht loggen
+        if (self::isSystemUrl($path)) return;
+
+        // v10.2.5: Trailing-Slash Check - wenn URL mit Slash existiert, nicht als 404 loggen
+        if (substr($path, -1) !== '/' && !empty($path)) {
+            $with_slash = $path . '/';
+            // Pruefen ob Cache-Datei mit Trailing-Slash existiert
+            $cache_file = $this->base_dir . 'cache/fpc/' . md5($with_slash) . '.html';
+            if (is_file($cache_file)) return; // URL mit Slash ist gecacht, kein echter 404
+        }
+
         // Existierenden Eintrag suchen und Hit-Count erhoehen
         $found = false;
         foreach ($log as &$entry) {
