@@ -1,6 +1,6 @@
 <?php
 /**
- * Mr. Hanf FPC Control Center v10.0.0
+ * Mr. Hanf FPC Control Center v10.0.1
  *
  * Enterprise-Level Dashboard for the Full Page Cache System.
  *
@@ -394,6 +394,27 @@ if (isset($_GET['ajax'])) {
         case 'ai_quick_summary':
             echo json_encode(fpc_ai_quick_summary($base_dir));
             exit;
+
+        // v10.0.1: File Editor (htaccess, robots.txt)
+        case 'file_read':
+            $file = isset($_GET['file']) ? $_GET['file'] : '';
+            echo json_encode(fpc_file_read($base_dir, $file));
+            exit;
+
+        case 'file_save':
+            $data = json_decode(file_get_contents('php://input'), true);
+            echo json_encode(fpc_file_save($base_dir, $data));
+            exit;
+
+        case 'file_backups':
+            $file = isset($_GET['file']) ? $_GET['file'] : '';
+            echo json_encode(fpc_file_backups($base_dir, $file));
+            exit;
+
+        case 'file_restore':
+            $data = json_decode(file_get_contents('php://input'), true);
+            echo json_encode(fpc_file_restore($base_dir, $data));
+            exit;
     }
     exit;
 }
@@ -554,6 +575,98 @@ function fpc_ai_chat_clear($base_dir) {
 function fpc_ai_quick_summary($base_dir) {
     $ai = fpc_ai_init($base_dir);
     return $ai->getQuickSummary();
+}
+
+// v10.0.1: File Editor Backend Functions
+function fpc_file_allowed() {
+    return array(
+        'htaccess' => '.htaccess',
+        'robots'   => 'robots.txt',
+    );
+}
+
+function fpc_file_read($base_dir, $file_key) {
+    $allowed = fpc_file_allowed();
+    if (!isset($allowed[$file_key])) return array('error' => true, 'msg' => 'Unbekannte Datei: ' . $file_key);
+    $filepath = $base_dir . $allowed[$file_key];
+    if (!is_file($filepath)) return array('error' => true, 'msg' => 'Datei nicht gefunden: ' . $allowed[$file_key], 'content' => '');
+    $content = @file_get_contents($filepath);
+    if ($content === false) return array('error' => true, 'msg' => 'Datei konnte nicht gelesen werden', 'content' => '');
+    return array(
+        'ok' => true,
+        'file' => $allowed[$file_key],
+        'content' => $content,
+        'size' => strlen($content),
+        'modified' => date('Y-m-d H:i:s', filemtime($filepath)),
+        'writable' => is_writable($filepath),
+    );
+}
+
+function fpc_file_save($base_dir, $data) {
+    $allowed = fpc_file_allowed();
+    $file_key = isset($data['file']) ? $data['file'] : '';
+    $content = isset($data['content']) ? $data['content'] : '';
+    if (!isset($allowed[$file_key])) return array('error' => true, 'msg' => 'Unbekannte Datei');
+    $filepath = $base_dir . $allowed[$file_key];
+    if (is_file($filepath) && !is_writable($filepath)) return array('error' => true, 'msg' => 'Datei ist nicht beschreibbar. Pruefe Dateiberechtigungen.');
+    // Backup erstellen
+    $backup_dir = $base_dir . 'cache/fpc/seo/backups/';
+    if (!is_dir($backup_dir)) @mkdir($backup_dir, 0755, true);
+    if (is_file($filepath)) {
+        $backup_name = $file_key . '_' . date('Y-m-d_H-i-s') . '.bak';
+        @copy($filepath, $backup_dir . $backup_name);
+        // Max 20 Backups pro Datei behalten
+        $backups = glob($backup_dir . $file_key . '_*.bak');
+        if ($backups && count($backups) > 20) {
+            sort($backups);
+            $to_delete = array_slice($backups, 0, count($backups) - 20);
+            foreach ($to_delete as $old) @unlink($old);
+        }
+    }
+    $result = @file_put_contents($filepath, $content);
+    if ($result === false) return array('error' => true, 'msg' => 'Fehler beim Speichern der Datei');
+    return array('ok' => true, 'msg' => $allowed[$file_key] . ' gespeichert (' . strlen($content) . ' Bytes). Backup erstellt.');
+}
+
+function fpc_file_backups($base_dir, $file_key) {
+    $allowed = fpc_file_allowed();
+    if (!isset($allowed[$file_key])) return array();
+    $backup_dir = $base_dir . 'cache/fpc/seo/backups/';
+    $backups = glob($backup_dir . $file_key . '_*.bak');
+    if (!$backups) return array();
+    rsort($backups);
+    $result = array();
+    foreach ($backups as $b) {
+        $result[] = array(
+            'name' => basename($b),
+            'date' => date('Y-m-d H:i:s', filemtime($b)),
+            'size' => filesize($b),
+        );
+    }
+    return $result;
+}
+
+function fpc_file_restore($base_dir, $data) {
+    $allowed = fpc_file_allowed();
+    $file_key = isset($data['file']) ? $data['file'] : '';
+    $backup_name = isset($data['backup']) ? $data['backup'] : '';
+    if (!isset($allowed[$file_key])) return array('error' => true, 'msg' => 'Unbekannte Datei');
+    // Sicherheitscheck: backup_name darf nur alphanumerisch + Unterstrich + Punkt + Bindestrich sein
+    if (!preg_match('/^[a-zA-Z0-9_\-\.]+$/', $backup_name)) return array('error' => true, 'msg' => 'Ungueltiger Backup-Name');
+    $backup_dir = $base_dir . 'cache/fpc/seo/backups/';
+    $backup_path = $backup_dir . $backup_name;
+    if (!is_file($backup_path)) return array('error' => true, 'msg' => 'Backup nicht gefunden');
+    $filepath = $base_dir . $allowed[$file_key];
+    // Aktuellen Stand als Backup sichern bevor Restore
+    if (is_file($filepath)) {
+        $pre_restore = $file_key . '_pre-restore_' . date('Y-m-d_H-i-s') . '.bak';
+        @copy($filepath, $backup_dir . $pre_restore);
+    }
+    $content = @file_get_contents($backup_path);
+    if ($content === false) return array('error' => true, 'msg' => 'Backup konnte nicht gelesen werden');
+    $result = @file_put_contents($filepath, $content);
+    if ($result === false) return array('error' => true, 'msg' => 'Restore fehlgeschlagen');
+    return array('ok' => true, 'msg' => $allowed[$file_key] . ' wiederhergestellt aus ' . $backup_name);
 }
 
 // v9.0.5: Helper to read daily request log files from logs/ directory
@@ -1812,6 +1925,39 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
         <div id="seo-scan-table"></div>
     </div>
 
+    <!-- FILE EDITORS (.htaccess + robots.txt) -->
+    <div class="fpc-section-title">&#128221; Datei-Editor</div>
+    <div style="display:flex;gap:8px;margin-bottom:12px;">
+        <button class="fpc-btn teal active" onclick="fpcFileEditorLoad('htaccess')" id="btn-file-htaccess">.htaccess</button>
+        <button class="fpc-btn blue" onclick="fpcFileEditorLoad('robots')" id="btn-file-robots">robots.txt</button>
+    </div>
+    <div style="background:var(--fpc-card);border-radius:10px;padding:20px;border:1px solid var(--fpc-border);margin-bottom:20px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+            <div>
+                <span id="file-editor-name" style="color:var(--fpc-text);font-weight:bold;font-size:16px;">.htaccess</span>
+                <span id="file-editor-meta" style="color:var(--fpc-text2);font-size:12px;margin-left:12px;"></span>
+            </div>
+            <div style="display:flex;gap:8px;">
+                <button class="fpc-btn green" onclick="fpcFileEditorSave()">&#128190; Speichern</button>
+                <button class="fpc-btn orange" onclick="fpcFileEditorShowBackups()">&#128337; Backups</button>
+                <button class="fpc-btn red" onclick="fpcFileEditorReload()">&#8635; Neu laden</button>
+            </div>
+        </div>
+        <div id="file-editor-warning" style="display:none;background:rgba(255,165,0,0.15);border:1px solid var(--fpc-orange);border-radius:6px;padding:10px;margin-bottom:12px;color:var(--fpc-orange);font-size:12px;">
+            &#9888; Vorsicht! Fehlerhafte Aenderungen an .htaccess koennen die Website unzugaenglich machen. Ein Backup wird automatisch erstellt.
+        </div>
+        <textarea id="file-editor-content" style="width:100%;min-height:400px;background:var(--fpc-bg);color:var(--fpc-green);border:1px solid var(--fpc-border);border-radius:6px;padding:12px;font-family:'Courier New',Consolas,monospace;font-size:13px;line-height:1.5;resize:vertical;tab-size:4;" spellcheck="false" placeholder="Datei wird geladen..."></textarea>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;">
+            <span id="file-editor-lines" style="color:var(--fpc-text2);font-size:11px;"></span>
+            <span id="file-editor-status" style="font-size:12px;"></span>
+        </div>
+        <!-- Backup Liste -->
+        <div id="file-editor-backups" style="display:none;margin-top:16px;border-top:1px solid var(--fpc-border);padding-top:12px;">
+            <h4 style="color:var(--fpc-text);margin:0 0 8px 0;">Backups</h4>
+            <div id="file-editor-backups-list"></div>
+        </div>
+    </div>
+
     <!-- BOT DATA (original SEO tab content) -->
     <div class="fpc-section-title">&#129302; Bot-Analyse (FPC Request Log)</div>
     <div class="fpc-charts">
@@ -2642,6 +2788,8 @@ var seo404Filter = 'unresolved';
 var seoScanFilter = '';
 
 function fpcLoadSeo() {
+    // File Editor laden
+    fpcFileEditorLoad('htaccess');
     // 1. Overview laden (Health, KPIs)
     fpcAjax('ajax=seo_overview', function(d) {
         var h = d.health || {};
@@ -3038,6 +3186,134 @@ function fpcSeoChatClear() {
 // --- CSV EXPORT ---
 function fpcSeoExportCsv() {
     window.open(BASE + '?ajax=seo_export_csv', '_blank');
+}
+
+// --- FILE EDITOR (.htaccess + robots.txt) ---
+var fpcFileEditorCurrent = 'htaccess';
+var fpcFileEditorOriginal = '';
+
+function fpcFileEditorLoad(fileKey) {
+    fpcFileEditorCurrent = fileKey;
+    // Button-Styling
+    document.getElementById('btn-file-htaccess').className = 'fpc-btn ' + (fileKey === 'htaccess' ? 'teal active' : 'teal');
+    document.getElementById('btn-file-robots').className = 'fpc-btn ' + (fileKey === 'robots' ? 'blue active' : 'blue');
+    // Warning
+    document.getElementById('file-editor-warning').style.display = (fileKey === 'htaccess') ? 'block' : 'none';
+    // Backups ausblenden
+    document.getElementById('file-editor-backups').style.display = 'none';
+    // Laden
+    document.getElementById('file-editor-content').value = 'Lade...';
+    document.getElementById('file-editor-status').innerHTML = '';
+    fpcAjax('ajax=file_read&file=' + fileKey, function(d) {
+        if (d.error) {
+            document.getElementById('file-editor-content').value = '';
+            document.getElementById('file-editor-status').innerHTML = '<span style="color:var(--fpc-red)">' + (d.msg || 'Fehler') + '</span>';
+            return;
+        }
+        document.getElementById('file-editor-name').textContent = d.file || fileKey;
+        document.getElementById('file-editor-meta').textContent = d.size + ' Bytes | Geaendert: ' + d.modified + (d.writable ? ' | Beschreibbar' : ' | NICHT beschreibbar!');
+        document.getElementById('file-editor-content').value = d.content || '';
+        fpcFileEditorOriginal = d.content || '';
+        fpcFileEditorUpdateLines();
+    });
+}
+
+function fpcFileEditorUpdateLines() {
+    var content = document.getElementById('file-editor-content').value;
+    var lines = content.split('\n').length;
+    var chars = content.length;
+    document.getElementById('file-editor-lines').textContent = lines + ' Zeilen | ' + chars + ' Zeichen';
+    // Aenderungs-Indikator
+    if (content !== fpcFileEditorOriginal) {
+        document.getElementById('file-editor-status').innerHTML = '<span style="color:var(--fpc-orange)">Ungespeicherte Aenderungen</span>';
+    } else {
+        document.getElementById('file-editor-status').innerHTML = '<span style="color:var(--fpc-green)">Aktuell</span>';
+    }
+}
+
+// Zeilen-Counter bei Eingabe aktualisieren
+document.getElementById('file-editor-content').addEventListener('input', fpcFileEditorUpdateLines);
+
+// Tab-Taste im Editor ermoeglichen
+document.getElementById('file-editor-content').addEventListener('keydown', function(e) {
+    if (e.key === 'Tab') {
+        e.preventDefault();
+        var ta = this;
+        var start = ta.selectionStart;
+        var end = ta.selectionEnd;
+        ta.value = ta.value.substring(0, start) + '    ' + ta.value.substring(end);
+        ta.selectionStart = ta.selectionEnd = start + 4;
+        fpcFileEditorUpdateLines();
+    }
+    // Strg+S zum Speichern
+    if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+        e.preventDefault();
+        fpcFileEditorSave();
+    }
+});
+
+function fpcFileEditorSave() {
+    var content = document.getElementById('file-editor-content').value;
+    if (content === fpcFileEditorOriginal) {
+        fpcToast('Keine Aenderungen vorhanden');
+        return;
+    }
+    if (fpcFileEditorCurrent === 'htaccess') {
+        if (!confirm('Sicher? Fehlerhafte .htaccess kann die Website unzugaenglich machen. Ein Backup wird automatisch erstellt.')) return;
+    }
+    document.getElementById('file-editor-status').innerHTML = '<span style="color:var(--fpc-cyan)">Speichere...</span>';
+    fpcAjaxPostJson('file_save', { file: fpcFileEditorCurrent, content: content }, function(r) {
+        if (r.ok) {
+            fpcToast(r.msg);
+            fpcFileEditorOriginal = content;
+            document.getElementById('file-editor-status').innerHTML = '<span style="color:var(--fpc-green)">Gespeichert</span>';
+        } else {
+            fpcToast(r.msg || 'Fehler beim Speichern', true);
+            document.getElementById('file-editor-status').innerHTML = '<span style="color:var(--fpc-red)">Fehler!</span>';
+        }
+    });
+}
+
+function fpcFileEditorReload() {
+    if (document.getElementById('file-editor-content').value !== fpcFileEditorOriginal) {
+        if (!confirm('Ungespeicherte Aenderungen verwerfen?')) return;
+    }
+    fpcFileEditorLoad(fpcFileEditorCurrent);
+}
+
+function fpcFileEditorShowBackups() {
+    var panel = document.getElementById('file-editor-backups');
+    if (panel.style.display !== 'none') { panel.style.display = 'none'; return; }
+    panel.style.display = 'block';
+    document.getElementById('file-editor-backups-list').innerHTML = '<span style="color:var(--fpc-text2)">Lade Backups...</span>';
+    fpcAjax('ajax=file_backups&file=' + fpcFileEditorCurrent, function(backups) {
+        if (!backups || backups.length === 0) {
+            document.getElementById('file-editor-backups-list').innerHTML = '<span style="color:var(--fpc-text2)">Keine Backups vorhanden</span>';
+            return;
+        }
+        var html = '<table class="fpc-table"><thead><tr><th>Datum</th><th>Groesse</th><th>Aktion</th></tr></thead><tbody>';
+        backups.forEach(function(b) {
+            html += '<tr>';
+            html += '<td>' + b.date + '</td>';
+            html += '<td>' + b.size + ' Bytes</td>';
+            html += '<td><button class="fpc-btn teal" onclick="fpcFileEditorRestore(\'' + b.name + '\')">Wiederherstellen</button></td>';
+            html += '</tr>';
+        });
+        html += '</tbody></table>';
+        document.getElementById('file-editor-backups-list').innerHTML = html;
+    });
+}
+
+function fpcFileEditorRestore(backupName) {
+    if (!confirm('Aktuellen Inhalt mit diesem Backup ueberschreiben? Der aktuelle Stand wird vorher gesichert.')) return;
+    fpcAjaxPostJson('file_restore', { file: fpcFileEditorCurrent, backup: backupName }, function(r) {
+        if (r.ok) {
+            fpcToast(r.msg);
+            fpcFileEditorLoad(fpcFileEditorCurrent);
+        } else {
+            fpcToast(r.msg || 'Restore fehlgeschlagen', true);
+        }
+    });
 }
 </script>
 <script>
