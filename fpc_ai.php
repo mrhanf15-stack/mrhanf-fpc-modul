@@ -147,21 +147,22 @@ PROMPT;
             require_once $this->base_dir . 'fpc_gsc.php';
             $creds = @json_decode(file_get_contents($this->base_dir . 'cache/fpc/api_credentials.json'), true);
             if (!empty($creds['gsc_service_account']) && is_file($this->base_dir . $creds['gsc_service_account'])) {
-                $gsc = new FpcGsc($this->base_dir . $creds['gsc_service_account'], $creds['gsc_site_url']);
-                $gsc_overview = $gsc->getOverview(28);
+                $gsc = new FPC_GoogleSearchConsole($this->base_dir . $creds['gsc_service_account'], isset($creds['gsc_site_url']) ? $creds['gsc_site_url'] : 'https://mr-hanf.de/');
+                $comparison = $gsc->getComparison(28);
+                $top_queries = $gsc->getTopQueries(28, 10);
+                $top_pages = $gsc->getTopPages(28, 10);
                 $data['gsc'] = array(
-                    'total_clicks' => $gsc_overview['totals']['clicks'],
-                    'total_impressions' => $gsc_overview['totals']['impressions'],
-                    'avg_ctr' => round($gsc_overview['totals']['ctr'] * 100, 2) . '%',
-                    'avg_position' => round($gsc_overview['totals']['position'], 1),
-                    'top_keywords_count' => count($gsc_overview['keywords']),
-                    'top_pages_count' => count($gsc_overview['pages']),
+                    'total_clicks' => isset($comparison['current']['clicks']) ? $comparison['current']['clicks'] : 0,
+                    'total_impressions' => isset($comparison['current']['impressions']) ? $comparison['current']['impressions'] : 0,
+                    'avg_ctr' => round((isset($comparison['current']['ctr']) ? $comparison['current']['ctr'] : 0) * 100, 2) . '%',
+                    'avg_position' => round(isset($comparison['current']['position']) ? $comparison['current']['position'] : 0, 1),
+                    'changes' => isset($comparison['changes']) ? $comparison['changes'] : array(),
                     'top_5_keywords' => array_slice(array_map(function($k) {
-                        return $k['keys'][0] . ' (Pos ' . round($k['position'], 1) . ', ' . $k['clicks'] . ' Clicks)';
-                    }, $gsc_overview['keywords']), 0, 5),
+                        return (isset($k['keys'][0]) ? $k['keys'][0] : '?') . ' (Pos ' . round(isset($k['position']) ? $k['position'] : 0, 1) . ', ' . (isset($k['clicks']) ? $k['clicks'] : 0) . ' Clicks)';
+                    }, is_array($top_queries) ? $top_queries : array()), 0, 5),
                     'top_5_pages' => array_slice(array_map(function($p) {
-                        return $p['keys'][0] . ' (' . $p['clicks'] . ' Clicks, CTR ' . round($p['ctr'] * 100, 1) . '%)';
-                    }, $gsc_overview['pages']), 0, 5),
+                        return (isset($p['keys'][0]) ? $p['keys'][0] : '?') . ' (' . (isset($p['clicks']) ? $p['clicks'] : 0) . ' Clicks)';
+                    }, is_array($top_pages) ? $top_pages : array()), 0, 5),
                 );
             }
         } catch (Exception $e) {
@@ -172,20 +173,24 @@ PROMPT;
         try {
             require_once $this->base_dir . 'fpc_ga4.php';
             $creds = @json_decode(file_get_contents($this->base_dir . 'cache/fpc/api_credentials.json'), true);
-            if (!empty($creds['ga4_service_account']) && !empty($creds['ga4_property_id'])) {
-                $ga4 = new FpcGa4($this->base_dir . $creds['ga4_service_account'], $creds['ga4_property_id']);
-                $ga4_overview = $ga4->getOverview(30);
+            if (!empty($creds['ga4_service_account']) && !empty($creds['ga4_property_id']) && is_file($this->base_dir . $creds['ga4_service_account'])) {
+                $ga4 = new FPC_GoogleAnalytics4($this->base_dir . $creds['ga4_service_account'], $creds['ga4_property_id']);
+                $ga4_comp = $ga4->getPeriodComparison(30);
                 $data['ga4'] = array(
-                    'sessions' => $ga4_overview['totals']['sessions'],
-                    'users' => $ga4_overview['totals']['users'],
-                    'pageviews' => $ga4_overview['totals']['screenPageViews'],
-                    'bounce_rate' => round(($ga4_overview['totals']['bounceRate'] ?? 0) * 100, 1) . '%',
-                    'avg_duration' => round($ga4_overview['totals']['averageSessionDuration'] ?? 0) . 's',
+                    'sessions' => isset($ga4_comp['current']['sessions']) ? $ga4_comp['current']['sessions'] : 0,
+                    'users' => isset($ga4_comp['current']['totalUsers']) ? $ga4_comp['current']['totalUsers'] : 0,
+                    'pageviews' => isset($ga4_comp['current']['screenPageViews']) ? $ga4_comp['current']['screenPageViews'] : 0,
+                    'bounce_rate' => round((isset($ga4_comp['current']['bounceRate']) ? $ga4_comp['current']['bounceRate'] : 0) * 100, 1) . '%',
+                    'avg_duration' => round(isset($ga4_comp['current']['averageSessionDuration']) ? $ga4_comp['current']['averageSessionDuration'] : 0) . 's',
                 );
-                if (isset($ga4_overview['ecommerce'])) {
-                    $data['ga4']['revenue'] = $ga4_overview['ecommerce']['totalRevenue'] ?? 0;
-                    $data['ga4']['transactions'] = $ga4_overview['ecommerce']['transactions'] ?? 0;
-                }
+                // E-Commerce Daten separat laden
+                try {
+                    $ecom = $ga4->getEcommerceOverview(30);
+                    if (is_array($ecom)) {
+                        $data['ga4']['revenue'] = isset($ecom['totalRevenue']) ? $ecom['totalRevenue'] : 0;
+                        $data['ga4']['transactions'] = isset($ecom['transactions']) ? $ecom['transactions'] : 0;
+                    }
+                } catch (Exception $e2) { /* E-Commerce optional */ }
             }
         } catch (Exception $e) {
             $data['ga4'] = array('error' => $e->getMessage());
@@ -196,7 +201,7 @@ PROMPT;
             require_once $this->base_dir . 'fpc_sistrix.php';
             $creds = @json_decode(file_get_contents($this->base_dir . 'cache/fpc/api_credentials.json'), true);
             if (!empty($creds['sistrix_api_key'])) {
-                $sx = new FpcSistrix($creds['sistrix_api_key']);
+                $sx = new FPC_Sistrix($creds['sistrix_api_key']);
                 $domain = isset($creds['sistrix_domain']) ? $creds['sistrix_domain'] : 'mr-hanf.de';
                 $si = $sx->getSichtbarkeitsindex($domain);
                 if (isset($si['current'])) {
