@@ -1,6 +1,6 @@
 <?php
 //
-// Mr. Hanf Full Page Cache v8.2.0 - Cron Preloader (Ausfallsicher + Rate-Limited)
+// Mr. Hanf Full Page Cache v8.3.0 - Cron Preloader (Ausfallsicher + Rate-Limited + Resume)
 //
 // Cron-Job der Shop-Seiten abruft und als statische HTML-Dateien speichert.
 // Primaere URL-Quelle: sitemap.xml
@@ -32,8 +32,16 @@
 //   - Atomic Write: Erst .tmp schreiben, validieren, dann umbenennen
 //   - Health-Marker: <!-- FPC-VALID --> wird an jede Cache-Datei angehaengt
 //
-// @version   8.2.0
-// @date      2026-03-22
+// CHANGELOG v8.3.0:
+//   - NEU: Resume-Mechanismus - Preloader merkt sich wo er aufgehoert hat
+//   - NEU: max_pages ist jetzt Batch-Limit pro Lauf (nicht Gesamt-Limit)
+//   - NEU: Alle URLs werden ueber mehrere Laeufe hinweg gecacht
+//   - NEU: Resume-Position wird in cache/fpc/preloader_resume.json gespeichert
+//   - NEU: Default max_pages auf 2000 erhoeht (statt 500)
+//   - NEU: Automatischer Reset wenn alle URLs gecacht sind
+//
+// @version   8.3.0
+// @date      2026-03-28
 
 // ============================================================
 // KONFIGURATION (Defaults - werden durch fpc_settings.json ueberschrieben)
@@ -127,7 +135,9 @@ if (empty($fpc_config['MODULE_MRHANF_FPC_STATUS']) || $fpc_config['MODULE_MRHANF
 }
 
 $cache_ttl   = isset($fpc_config['MODULE_MRHANF_FPC_CACHE_TIME']) ? (int) $fpc_config['MODULE_MRHANF_FPC_CACHE_TIME'] : 86400;
-$max_pages   = isset($fpc_config['MODULE_MRHANF_FPC_PRELOAD_LIMIT']) ? (int) $fpc_config['MODULE_MRHANF_FPC_PRELOAD_LIMIT'] : 500;
+$max_pages   = isset($fpc_config['MODULE_MRHANF_FPC_PRELOAD_LIMIT']) ? (int) $fpc_config['MODULE_MRHANF_FPC_PRELOAD_LIMIT'] : 2000;
+// v8.3.0: max_pages ist jetzt das Batch-Limit pro Lauf (nicht Gesamt-Limit)
+if ($max_pages < 100) $max_pages = 2000; // Schutz gegen zu kleine Werte
 $excluded    = isset($fpc_config['MODULE_MRHANF_FPC_EXCLUDED_PAGES']) ? $fpc_config['MODULE_MRHANF_FPC_EXCLUDED_PAGES'] : '';
 $exclude_arr = array_filter(array_map('trim', explode(',', $excluded)));
 
@@ -400,8 +410,37 @@ foreach ($urls as $url) {
     }
     if (!$skip) { $filtered[] = $url; }
 }
-$filtered = array_slice($filtered, 0, $max_pages);
-echo '[FPC] ' . count($filtered) . ' URLs nach Filter (max ' . $max_pages . ')' . "\n";
+// v8.3.0: KEIN array_slice mehr! Alle URLs bleiben in der Liste.
+// Das Batch-Limit wird stattdessen in der Hauptschleife angewendet.
+$total_urls = count($filtered);
+echo '[FPC] ' . $total_urls . ' URLs nach Filter (gesamt)' . "\n";
+
+// ============================================================
+// v8.3.0: RESUME-MECHANISMUS
+// Speichert die Position wo der letzte Lauf aufgehoert hat.
+// Beim naechsten Start wird ab dieser Position weitergemacht.
+// ============================================================
+$resume_file = $cache_dir . 'preloader_resume.json';
+$resume_offset = 0;
+$resume_data = array();
+if (is_file($resume_file)) {
+    $resume_data = @json_decode(file_get_contents($resume_file), true);
+    if (is_array($resume_data) && isset($resume_data['next_offset'])) {
+        $resume_offset = (int) $resume_data['next_offset'];
+        // Wenn Offset >= Gesamtzahl -> von vorne anfangen (alle durch)
+        if ($resume_offset >= $total_urls) {
+            echo '[FPC] v8.3.0: Alle URLs wurden durchlaufen! Starte von vorne.' . "\n";
+            $resume_offset = 0;
+        } else {
+            echo '[FPC] v8.3.0: Resume ab Position ' . $resume_offset . ' von ' . $total_urls . ' (letzter Lauf: ' . (isset($resume_data['last_run']) ? $resume_data['last_run'] : '?') . ')' . "\n";
+        }
+    }
+}
+
+// Batch fuer diesen Lauf: ab resume_offset, max max_pages URLs
+$batch_urls = array_slice($filtered, $resume_offset, $max_pages);
+$batch_end_offset = $resume_offset + count($batch_urls);
+echo '[FPC] v8.3.0: Batch ' . ($resume_offset + 1) . '-' . $batch_end_offset . ' von ' . $total_urls . ' (' . count($batch_urls) . ' URLs in diesem Lauf, max ' . $max_pages . ')' . "\n";
 
 // --- Preloading mit Rate-Limiting ---
 $cached = 0; $skipped = 0; $errors = 0; $invalid = 0;
@@ -434,7 +473,7 @@ curl_setopt_array($ch, array(
     CURLOPT_COOKIE         => '',
 ));
 
-foreach ($filtered as $i => $url) {
+foreach ($batch_urls as $i => $url) {
 
     // v7.1: Maximale Laufzeit pruefen
     if ((time() - $start_time) > $FPC_MAX_RUNTIME_SEC) {
@@ -456,6 +495,7 @@ foreach ($filtered as $i => $url) {
     // Cache noch gueltig?
     if (is_file($cache_file) && (time() - filemtime($cache_file)) < $cache_ttl) {
         $skipped++;
+        $total_processed++; // v8.3.0: Auch skipped zaehlen fuer korrekte Resume-Position
         continue;
     }
 
@@ -541,6 +581,7 @@ foreach ($filtered as $i => $url) {
     $ct = curl_getinfo($ch, CURLINFO_CONTENT_TYPE);
     if (strpos($ct, 'text/html') === false) {
         $skipped++;
+        // total_processed bereits oben gezaehlt
         continue;
     }
 
@@ -635,11 +676,33 @@ $runtime = time() - $start_time;
 $avg_ttfb = $ttfb_count > 0 ? (int)($total_ttfb / $ttfb_count) : 0;
 
 $summary = '[FPC] Fertig: ' . date('Y-m-d H:i:s') . "\n"
-         . '[FPC] v8.0 | Gecacht: ' . $cached . ' | Uebersprungen: ' . $skipped
+         . '[FPC] v8.3.0 | Batch ' . ($resume_offset + 1) . '-' . ($resume_offset + $total_processed) . '/' . $total_urls . ' | Gecacht: ' . $cached . ' | Uebersprungen: ' . $skipped
          . ' | Ungueltig: ' . $invalid . ' | Fehler: ' . $errors . "\n"
          . '[FPC] Laufzeit: ' . $runtime . 's | Avg-TTFB: ' . $avg_ttfb . 'ms | Load-Pausen: ' . $load_pauses
          . ' | Requests: ' . $batch_count . "\n";
 echo $summary;
+
+// v8.3.0: Resume-Position speichern
+$next_offset = $resume_offset + $total_processed;
+// Wenn wir wegen Timeout oder Error-Rate abgebrochen haben, trotzdem Position merken
+$resume_save = array(
+    'next_offset' => $next_offset,
+    'total_urls' => $total_urls,
+    'last_run' => date('Y-m-d H:i:s'),
+    'last_batch_cached' => $cached,
+    'last_batch_skipped' => $skipped,
+    'last_batch_errors' => $errors,
+    'runs_completed' => (isset($resume_data['runs_completed']) ? (int)$resume_data['runs_completed'] : 0) + 1,
+    'total_cached_all_runs' => (isset($resume_data['total_cached_all_runs']) ? (int)$resume_data['total_cached_all_runs'] : 0) + $cached,
+);
+// Wenn alle URLs durchlaufen -> Offset zuruecksetzen
+if ($next_offset >= $total_urls) {
+    $resume_save['next_offset'] = 0;
+    $resume_save['completed_full_cycle'] = date('Y-m-d H:i:s');
+    echo '[FPC] v8.3.0: Alle URLs durchlaufen! Naechster Lauf startet von vorne.' . "\n";
+}
+@file_put_contents($resume_file, json_encode($resume_save, JSON_PRETTY_PRINT));
+echo '[FPC] v8.3.0: Resume-Position gespeichert: ' . $resume_save['next_offset'] . '/' . $total_urls . ' | Gesamt gecacht (alle Laeufe): ' . $resume_save['total_cached_all_runs'] . "\n";
 
 // Log schreiben
 @file_put_contents($log_file, date('Y-m-d H:i:s') . ' ' . $summary, FILE_APPEND);
