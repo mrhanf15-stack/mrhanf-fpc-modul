@@ -839,9 +839,18 @@ class FpcSeo {
             }
         }
 
-        // 4. Scan: Canonical Mismatches
+        // 4. Scan: Canonical Mismatches (v10.2.3: Sub-Kategorie-Architektur beruecksichtigen)
         foreach ($scan_results as $r) {
-            if ($r['canonical_match'] === false) {
+            if ($r['canonical_match'] === false && !empty($r['canonical'])) {
+                // v10.2.3: Pruefen ob URL und Canonical den gleichen Produktnamen haben
+                // z.B. /samen-shop/autoflowering-samen/PRODUKT vs /samen-shop/autoflowering-samen/sub-kat/PRODUKT
+                // Das ist KEIN echter Mismatch sondern korrekte Shop-Architektur
+                $url_slug = basename(parse_url($r['url'], PHP_URL_PATH));
+                $canonical_slug = basename(parse_url($r['canonical'], PHP_URL_PATH));
+                if ($url_slug === $canonical_slug && !empty($url_slug)) {
+                    // Gleicher Produktname in URL und Canonical = korrekte Sub-Kategorie-Architektur
+                    continue;
+                }
                 $problems[] = array(
                     'type' => 'canonical_mismatch',
                     'severity' => 'warning',
@@ -867,16 +876,18 @@ class FpcSeo {
             }
         }
 
-        // 6. 404s mit hohem Hit-Count
+        // 6. 404s mit hohem Hit-Count (v10.2.3: System-URLs filtern)
         foreach ($log404 as $entry) {
             if (!$entry['resolved'] && !$entry['dismissed'] && $entry['hit_count'] > 10) {
+                // v10.2.3: System-URLs nicht als Problem melden
+                if (self::isSystemUrl($entry['url'])) continue;
                 $problems[] = array(
                     'type' => '404_high_hits',
                     'severity' => $entry['hit_count'] > 50 ? 'critical' : 'warning',
                     'url' => $entry['url'],
                     'description' => $entry['hit_count'] . ' Aufrufe auf 404-Seite',
                     'hit_count' => $entry['hit_count'],
-                    'referers' => $entry['referers'],
+                    'referers' => isset($entry['referers']) ? $entry['referers'] : array(),
                     'suggestion' => 'Redirect erstellen',
                 );
             }
@@ -976,6 +987,12 @@ class FpcSeo {
      */
     public function getAiSummary() {
         $ist = $this->getIstZustand();
+
+        // v10.2.3: System-URLs aus 404-Liste filtern bevor sie an die KI gehen
+        $filtered_404 = array_filter($ist['log_404']['top_404'], function($e) {
+            return !self::isSystemUrl($e['url']);
+        });
+
         $summary = array(
             'health_score' => $ist['health']['score'],
             'total_redirects' => $ist['redirects']['total'],
@@ -991,8 +1008,38 @@ class FpcSeo {
             'no_cache_urls' => $ist['health']['no_cache'],
             'top_404_urls' => array_slice(array_map(function($e) {
                 return $e['url'] . ' (' . $e['hit_count'] . ' hits)';
-            }, $ist['log_404']['top_404']), 0, 10),
+            }, array_values($filtered_404)), 0, 10),
         );
         return $summary;
+    }
+
+    /**
+     * v10.2.3: Pruefen ob eine URL eine System-URL ist die nicht als SEO-Problem gemeldet werden soll
+     */
+    private static function isSystemUrl($url) {
+        $system_patterns = array(
+            '/fpc_serve.php',
+            '/fpc_preloader.php',
+            '/fpc_seo.php',
+            '/fpc_api.php',
+            '/fpc_session_init.php',
+            '/opcache_reset.php',
+            '/index.php',
+            '/favicon.ico',
+            '/robots.txt',
+        );
+        // Exakte Treffer
+        if (in_array($url, $system_patterns)) return true;
+        // Prefix-Treffer
+        $system_prefixes = array(
+            '/.well-known/',
+            '/admin_',
+            '/cache/',
+            '/sitemap',
+        );
+        foreach ($system_prefixes as $prefix) {
+            if (strpos($url, $prefix) === 0) return true;
+        }
+        return false;
     }
 }
