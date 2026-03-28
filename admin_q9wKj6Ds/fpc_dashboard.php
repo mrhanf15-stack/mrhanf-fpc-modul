@@ -1,6 +1,6 @@
 <?php
 /**
- * Mr. Hanf FPC Control Center v9.1.6
+ * Mr. Hanf FPC Control Center v9.2.0
  *
  * Enterprise-Level Dashboard for the Full Page Cache System.
  *
@@ -263,9 +263,15 @@ if (isset($_GET['ajax'])) {
             echo json_encode(fpc_save_settings($cfg, $cache_dir));
             exit;
 
-        // v9.1.0: Google Search Console
+        // v9.2.0: Google Search Console (extended)
         case 'gsc_data':
-            echo json_encode(fpc_get_gsc_data($cache_dir, $base_dir));
+            $gsc_days = isset($_GET['days']) ? intval($_GET['days']) : 28;
+            echo json_encode(fpc_get_gsc_data($cache_dir, $base_dir, $gsc_days));
+            exit;
+
+        case 'gsc_inspect':
+            $urls = json_decode(file_get_contents('php://input'), true);
+            echo json_encode(fpc_get_gsc_inspection($cache_dir, $base_dir, $urls ?: []));
             exit;
 
         // v9.1.0: Google Analytics 4
@@ -1122,20 +1128,37 @@ function fpc_save_api_credentials($cache_dir, $creds) {
     return array('ok' => true, 'msg' => 'API credentials saved');
 }
 
-function fpc_get_gsc_data($cache_dir, $base_dir) {
+function fpc_get_gsc_data($cache_dir, $base_dir, $days = 28) {
     $creds = fpc_load_api_credentials($cache_dir);
     $sa_file = $creds['gsc_service_account'];
     if (empty($sa_file) || !is_file($base_dir . $sa_file)) {
         return array('error' => true, 'msg' => 'Google Service Account JSON not configured. Go to Settings > API Credentials to set the path.', 'configured' => false);
     }
+    $allowed_days = array(7, 28, 90, 180, 365, 480);
+    if (!in_array($days, $allowed_days)) $days = 28;
     try {
         require_once($base_dir . 'fpc_gsc.php');
         $gsc = new FPC_GoogleSearchConsole($base_dir . $sa_file, $creds['gsc_site_url'], $cache_dir . 'gsc/');
-        $data = $gsc->getDashboardData(28);
+        $data = $gsc->getDashboardData($days);
         $data['configured'] = true;
         return $data;
     } catch (Exception $e) {
         return array('error' => true, 'msg' => 'GSC Error: ' . $e->getMessage(), 'configured' => true);
+    }
+}
+
+function fpc_get_gsc_inspection($cache_dir, $base_dir, $urls) {
+    $creds = fpc_load_api_credentials($cache_dir);
+    $sa_file = $creds['gsc_service_account'];
+    if (empty($sa_file) || !is_file($base_dir . $sa_file)) {
+        return array('error' => true, 'msg' => 'GSC not configured');
+    }
+    try {
+        require_once($base_dir . 'fpc_gsc.php');
+        $gsc = new FPC_GoogleSearchConsole($base_dir . $sa_file, $creds['gsc_site_url'], $cache_dir . 'gsc/');
+        return $gsc->getInspectionData($urls);
+    } catch (Exception $e) {
+        return array('error' => true, 'msg' => 'Inspection Error: ' . $e->getMessage());
     }
 }
 
@@ -1579,24 +1602,75 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
     <div id="gsc-setup" style="display:none;">
         <div style="background:var(--fpc-card);border-radius:10px;padding:30px;border:1px solid var(--fpc-border);max-width:600px;margin:40px auto;text-align:center;">
             <h3 style="color:var(--fpc-teal);margin-bottom:16px;">Google Search Console Setup</h3>
-            <p style="color:var(--fpc-text2);margin-bottom:20px;">To use this feature, you need to configure a Google Service Account.<br>Go to <strong>Settings tab > API Credentials</strong> to set up your credentials.</p>
+            <p style="color:var(--fpc-text2);margin-bottom:20px;">To use this feature, you need to configure a Google Service Account.<br>Go to <strong>Settings tab &gt; API Credentials</strong> to set up your credentials.</p>
             <a href="?tab=settings" class="fpc-btn green" style="text-decoration:none;">Go to Settings</a>
         </div>
     </div>
     <div id="gsc-content" style="display:none;">
+        <!-- Time Range Selector -->
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px;flex-wrap:wrap;">
+            <span style="color:var(--fpc-text2);font-size:13px;">Zeitraum:</span>
+            <button class="fpc-btn small gsc-range" data-days="7" onclick="fpcGscSetRange(7)">7 Tage</button>
+            <button class="fpc-btn small gsc-range active" data-days="28" onclick="fpcGscSetRange(28)">28 Tage</button>
+            <button class="fpc-btn small gsc-range" data-days="90" onclick="fpcGscSetRange(90)">3 Monate</button>
+            <button class="fpc-btn small gsc-range" data-days="180" onclick="fpcGscSetRange(180)">6 Monate</button>
+            <button class="fpc-btn small gsc-range" data-days="365" onclick="fpcGscSetRange(365)">12 Monate</button>
+            <button class="fpc-btn small gsc-range" data-days="480" onclick="fpcGscSetRange(480)">16 Monate</button>
+            <span id="gsc-loading" style="display:none;color:var(--fpc-teal);font-size:12px;margin-left:8px;">Loading...</span>
+            <span id="gsc-timestamp" style="color:var(--fpc-text2);font-size:11px;margin-left:auto;"></span>
+        </div>
+
+        <!-- KPIs with Trends -->
         <div class="fpc-kpis" id="gsc-kpis"></div>
+
+        <!-- Chart: Daily Clicks & Impressions (full width) -->
         <div style="margin-bottom:16px;">
-            <div class="fpc-chart-box" style="width:100%;"><h3>Daily Clicks & Impressions (28 Days)</h3><canvas id="chart-gsc-daily" height="250"></canvas></div>
+            <div class="fpc-chart-box" style="width:100%;"><h3 id="gsc-chart1-title">Daily Clicks &amp; Impressions</h3><canvas id="chart-gsc-daily" height="250"></canvas></div>
         </div>
+
+        <!-- Chart: Position & CTR (full width) -->
         <div style="margin-bottom:16px;">
-            <div class="fpc-chart-box" style="width:100%;"><h3>Average Position & CTR (28 Days)</h3><canvas id="chart-gsc-position" height="250"></canvas></div>
+            <div class="fpc-chart-box" style="width:100%;"><h3 id="gsc-chart2-title">Average Position &amp; CTR</h3><canvas id="chart-gsc-position" height="250"></canvas></div>
         </div>
-        <div class="fpc-section-title">Top Search Queries</div>
-        <div id="gsc-queries" style="overflow-x:auto;"></div>
-        <div class="fpc-section-title" style="margin-top:20px;">Top Pages by Clicks</div>
-        <div id="gsc-pages" style="overflow-x:auto;"></div>
-        <div class="fpc-section-title" style="margin-top:20px;">Sitemaps Status</div>
-        <div id="gsc-sitemaps" style="overflow-x:auto;"></div>
+
+        <!-- Row: Devices + Countries side by side -->
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">
+            <div class="fpc-chart-box"><h3>Ger&auml;te-Verteilung</h3><canvas id="chart-gsc-devices" height="200"></canvas></div>
+            <div class="fpc-chart-box"><h3>Search Types</h3><canvas id="chart-gsc-types" height="200"></canvas></div>
+        </div>
+
+        <!-- Top Countries -->
+        <div class="fpc-section-title">Top L&auml;nder</div>
+        <div id="gsc-countries" style="overflow-x:auto;margin-bottom:16px;"></div>
+
+        <!-- Search Appearance -->
+        <div class="fpc-section-title">Search Appearance (Rich Results, AMP, etc.)</div>
+        <div id="gsc-appearance" style="overflow-x:auto;margin-bottom:16px;"></div>
+
+        <!-- Top Queries -->
+        <div class="fpc-section-title">Top Search Queries (Keywords)</div>
+        <div id="gsc-queries" style="overflow-x:auto;margin-bottom:16px;"></div>
+
+        <!-- Top Pages -->
+        <div class="fpc-section-title">Top Pages by Clicks</div>
+        <div id="gsc-pages" style="overflow-x:auto;margin-bottom:16px;"></div>
+
+        <!-- Query-Page Combinations -->
+        <div class="fpc-section-title">Keyword &rarr; Page Zuordnung (Top 50)</div>
+        <div id="gsc-query-pages" style="overflow-x:auto;margin-bottom:16px;"></div>
+
+        <!-- Sitemaps -->
+        <div class="fpc-section-title">Sitemaps Status</div>
+        <div id="gsc-sitemaps" style="overflow-x:auto;margin-bottom:16px;"></div>
+
+        <!-- URL Inspection -->
+        <div class="fpc-section-title">URL Inspection (Stichprobe)</div>
+        <div style="margin-bottom:8px;display:flex;gap:8px;align-items:center;">
+            <input type="text" class="fpc-input" id="gsc-inspect-url" placeholder="URL eingeben z.B. https://mr-hanf.de/" style="flex:1;">
+            <button class="fpc-btn green" onclick="fpcGscInspectUrl()">Inspect</button>
+            <button class="fpc-btn" onclick="fpcGscInspectSample()">Top 10 pr&uuml;fen</button>
+        </div>
+        <div id="gsc-inspection" style="overflow-x:auto;"></div>
     </div>
     <div id="gsc-error" style="display:none;"></div>
 </div>
@@ -2438,10 +2512,26 @@ function fpcSaveSettings() {
 }
 
 // ============================================================
-// TAB 14: GOOGLE SEARCH CONSOLE
+// TAB 14: GOOGLE SEARCH CONSOLE v2.0 (MAXIMUM API)
 // ============================================================
-function fpcLoadGSC() {
-    fpcAjax('ajax=gsc_data', function(d) {
+var gscCurrentDays = 28;
+var gscTopPages = []; // store for inspection
+
+function fpcGscSetRange(days) {
+    gscCurrentDays = days;
+    document.querySelectorAll('.gsc-range').forEach(function(b) { b.classList.remove('active'); });
+    document.querySelector('.gsc-range[data-days="' + days + '"]').classList.add('active');
+    fpcLoadGSC(days);
+}
+
+function fpcLoadGSC(days) {
+    days = days || gscCurrentDays;
+    var loading = document.getElementById('gsc-loading');
+    if (loading) loading.style.display = 'inline';
+
+    fpcAjax('ajax=gsc_data&days=' + days, function(d) {
+        if (loading) loading.style.display = 'none';
+
         if (!d.configured) {
             document.getElementById('gsc-setup').style.display = 'block';
             document.getElementById('gsc-content').style.display = 'none';
@@ -2453,27 +2543,41 @@ function fpcLoadGSC() {
             return;
         }
         document.getElementById('gsc-content').style.display = 'block';
+        document.getElementById('gsc-error').style.display = 'none';
 
-        // KPIs from performance data
-        var perf = d.performance;
-        var totalClicks = 0, totalImpressions = 0, avgCtr = 0, avgPos = 0;
-        if (perf && perf.rows) {
-            perf.rows.forEach(function(r) {
-                totalClicks += r.clicks || 0;
-                totalImpressions += r.impressions || 0;
-            });
-            avgCtr = totalImpressions > 0 ? (totalClicks / totalImpressions * 100) : 0;
-            var posSum = 0, posCount = 0;
-            perf.rows.forEach(function(r) { if (r.position) { posSum += r.position; posCount++; } });
-            avgPos = posCount > 0 ? (posSum / posCount) : 0;
+        // Timestamp
+        if (d.timestamp) {
+            document.getElementById('gsc-timestamp').textContent = 'Stand: ' + d.timestamp + ' | ' + (d.date_range ? d.date_range.start + ' bis ' + d.date_range.end : '');
         }
-        document.getElementById('gsc-kpis').innerHTML =
-            fpcKpiBox('Total Clicks', fpcNum(totalClicks), 'teal') +
-            fpcKpiBox('Total Impressions', fpcNum(totalImpressions), 'blue') +
-            fpcKpiBox('Avg CTR', avgCtr.toFixed(1) + '%', avgCtr > 3 ? 'green' : 'orange') +
-            fpcKpiBox('Avg Position', avgPos.toFixed(1), avgPos < 20 ? 'green' : 'orange');
 
-        // Daily chart
+        // ---- KPIs with Trend ----
+        var comp = d.comparison || {};
+        var cur = comp.current || {};
+        var chg = comp.changes || {};
+        var trendArrow = function(val, inverse) {
+            if (!val) return '';
+            var good = inverse ? (val < 0) : (val > 0);
+            var color = good ? 'var(--fpc-green)' : 'var(--fpc-red)';
+            var arrow = val > 0 ? '&#9650;' : '&#9660;';
+            return ' <span style="font-size:12px;color:' + color + ';">' + arrow + ' ' + Math.abs(val) + '%</span>';
+        };
+        var posArrow = function(val) {
+            if (!val) return '';
+            var good = val < 0; // lower position = better
+            var color = good ? 'var(--fpc-green)' : 'var(--fpc-red)';
+            var arrow = val < 0 ? '&#9650;' : '&#9660;';
+            return ' <span style="font-size:12px;color:' + color + ';">' + arrow + ' ' + Math.abs(val).toFixed(1) + '</span>';
+        };
+
+        document.getElementById('gsc-kpis').innerHTML =
+            fpcKpiBox('Total Clicks', fpcNum(Math.round(cur.clicks || 0)) + trendArrow(chg.clicks), 'teal') +
+            fpcKpiBox('Total Impressions', fpcNum(Math.round(cur.impressions || 0)) + trendArrow(chg.impressions), 'blue') +
+            fpcKpiBox('Avg CTR', ((cur.ctr || 0) * 100).toFixed(1) + '%' + trendArrow(chg.ctr), (cur.ctr||0) > 0.03 ? 'green' : 'orange') +
+            fpcKpiBox('Avg Position', (cur.position || 0).toFixed(1) + posArrow(chg.position), (cur.position||99) < 20 ? 'green' : 'orange');
+
+        // ---- Chart 1: Daily Clicks & Impressions ----
+        var perf = d.performance;
+        document.getElementById('gsc-chart1-title').textContent = 'Daily Clicks & Impressions (' + days + ' Tage)';
         if (perf && perf.rows) {
             var labels = [], clicks = [], impressions = [];
             perf.rows.forEach(function(r) {
@@ -2482,45 +2586,186 @@ function fpcLoadGSC() {
                 impressions.push(r.impressions || 0);
             });
             fpcChart('chart-gsc-daily', 'line', labels, [
-                {label: 'Clicks', data: clicks, borderColor: '#00d4aa', backgroundColor: 'rgba(0,212,170,0.1)', fill: true},
-                {label: 'Impressions', data: impressions, borderColor: '#00a8ff', backgroundColor: 'rgba(0,168,255,0.1)', fill: true, yAxisID: 'y1'}
-            ], {scales: {y: {position: 'left'}, y1: {position: 'right', grid: {drawOnChartArea: false}}}});
+                {label: 'Clicks', data: clicks, borderColor: '#00d4aa', backgroundColor: 'rgba(0,212,170,0.1)', fill: true, tension: 0.3, pointRadius: days > 90 ? 0 : 3},
+                {label: 'Impressions', data: impressions, borderColor: '#00a8ff', backgroundColor: 'rgba(0,168,255,0.1)', fill: true, yAxisID: 'y1', tension: 0.3, pointRadius: days > 90 ? 0 : 3}
+            ], {scales: {y: {position: 'left', title: {display: true, text: 'Clicks'}}, y1: {position: 'right', grid: {drawOnChartArea: false}, title: {display: true, text: 'Impressions'}}}});
         }
 
-        // Top Queries table
+        // ---- Chart 2: Position & CTR ----
+        document.getElementById('gsc-chart2-title').textContent = 'Average Position & CTR (' + days + ' Tage)';
+        if (perf && perf.rows) {
+            var labels2 = [], positions = [], ctrs = [];
+            perf.rows.forEach(function(r) {
+                labels2.push(r.keys ? r.keys[0] : '');
+                positions.push(r.position || 0);
+                ctrs.push((r.ctr || 0) * 100);
+            });
+            fpcChart('chart-gsc-position', 'line', labels2, [
+                {label: 'Avg Position', data: positions, borderColor: '#ff6b35', backgroundColor: 'rgba(255,107,53,0.1)', fill: false, tension: 0.3, pointRadius: days > 90 ? 0 : 3},
+                {label: 'CTR %', data: ctrs, borderColor: '#a855f7', backgroundColor: 'rgba(168,85,247,0.1)', fill: true, yAxisID: 'y1', tension: 0.3, pointRadius: days > 90 ? 0 : 3}
+            ], {scales: {y: {position: 'left', reverse: true, title: {display: true, text: 'Position (lower=better)'}}, y1: {position: 'right', grid: {drawOnChartArea: false}, title: {display: true, text: 'CTR %'}}}});
+        }
+
+        // ---- Chart 3: Devices (Donut) ----
+        var devices = d.devices;
+        if (devices && devices.rows) {
+            var devLabels = [], devClicks = [], devColors = ['#00d4aa', '#00a8ff', '#ff6b35'];
+            devices.rows.forEach(function(r) {
+                devLabels.push(r.keys ? r.keys[0] : 'Unknown');
+                devClicks.push(r.clicks || 0);
+            });
+            fpcChart('chart-gsc-devices', 'doughnut', devLabels, [
+                {data: devClicks, backgroundColor: devColors.slice(0, devLabels.length), borderWidth: 0}
+            ], {plugins: {legend: {position: 'bottom', labels: {color: '#8899aa'}}}});
+        }
+
+        // ---- Chart 4: Search Types (Bar) ----
+        var types = d.search_types;
+        if (types && types.length) {
+            var typeLabels = [], typeClicks = [], typeColors = ['#00d4aa', '#00a8ff', '#ff6b35', '#a855f7', '#f59e0b'];
+            types.forEach(function(t) {
+                if (t.clicks > 0 || t.impressions > 0) {
+                    typeLabels.push(t.type.charAt(0).toUpperCase() + t.type.slice(1));
+                    typeClicks.push(t.clicks);
+                }
+            });
+            fpcChart('chart-gsc-types', 'bar', typeLabels, [
+                {label: 'Clicks', data: typeClicks, backgroundColor: typeColors.slice(0, typeLabels.length), borderWidth: 0}
+            ], {plugins: {legend: {display: false}}, scales: {y: {beginAtZero: true}}});
+        }
+
+        // ---- Countries Table ----
+        var countries = d.countries;
+        if (countries && countries.rows && countries.rows.length) {
+            var html = '<table class="fpc-table"><thead><tr><th>Land</th><th>Clicks</th><th>Impressions</th><th>CTR</th><th>Position</th><th>Anteil</th></tr></thead><tbody>';
+            var totalC = 0; countries.rows.forEach(function(r) { totalC += r.clicks || 0; });
+            countries.rows.slice(0, 30).forEach(function(r) {
+                var pct = totalC > 0 ? ((r.clicks || 0) / totalC * 100).toFixed(1) : '0';
+                html += '<tr><td>' + (r.keys ? r.keys[0] : '') + '</td><td>' + fpcNum(r.clicks||0) + '</td><td>' + fpcNum(r.impressions||0) + '</td><td>' + ((r.ctr||0)*100).toFixed(1) + '%</td><td>' + (r.position||0).toFixed(1) + '</td><td>' + pct + '%</td></tr>';
+            });
+            html += '</tbody></table>';
+            document.getElementById('gsc-countries').innerHTML = html;
+        } else {
+            document.getElementById('gsc-countries').innerHTML = '<p style="color:var(--fpc-text2);">Keine Daten</p>';
+        }
+
+        // ---- Search Appearance Table ----
+        var appear = d.search_appearance;
+        if (appear && appear.rows && appear.rows.length) {
+            var html = '<table class="fpc-table"><thead><tr><th>Appearance</th><th>Clicks</th><th>Impressions</th><th>CTR</th><th>Position</th></tr></thead><tbody>';
+            appear.rows.forEach(function(r) {
+                html += '<tr><td>' + (r.keys ? r.keys[0] : '') + '</td><td>' + fpcNum(r.clicks||0) + '</td><td>' + fpcNum(r.impressions||0) + '</td><td>' + ((r.ctr||0)*100).toFixed(1) + '%</td><td>' + (r.position||0).toFixed(1) + '</td></tr>';
+            });
+            html += '</tbody></table>';
+            document.getElementById('gsc-appearance').innerHTML = html;
+        } else {
+            document.getElementById('gsc-appearance').innerHTML = '<p style="color:var(--fpc-text2);">Keine Search Appearance Daten</p>';
+        }
+
+        // ---- Top Queries Table ----
         var queries = d.top_queries;
         if (queries && queries.rows) {
-            var html = '<table class="fpc-table"><thead><tr><th>Query</th><th>Clicks</th><th>Impressions</th><th>CTR</th><th>Position</th></tr></thead><tbody>';
-            queries.rows.forEach(function(r) {
-                html += '<tr><td>' + (r.keys ? r.keys[0] : '') + '</td><td>' + (r.clicks||0) + '</td><td>' + fpcNum(r.impressions||0) + '</td><td>' + ((r.ctr||0)*100).toFixed(1) + '%</td><td>' + (r.position||0).toFixed(1) + '</td></tr>';
+            var html = '<table class="fpc-table"><thead><tr><th>#</th><th>Keyword</th><th>Clicks</th><th>Impressions</th><th>CTR</th><th>Position</th></tr></thead><tbody>';
+            queries.rows.forEach(function(r, i) {
+                var posColor = (r.position||99) <= 3 ? 'var(--fpc-green)' : ((r.position||99) <= 10 ? 'var(--fpc-teal)' : ((r.position||99) <= 20 ? 'var(--fpc-orange)' : 'var(--fpc-red)'));
+                html += '<tr><td>' + (i+1) + '</td><td>' + (r.keys ? r.keys[0] : '') + '</td><td>' + fpcNum(r.clicks||0) + '</td><td>' + fpcNum(r.impressions||0) + '</td><td>' + ((r.ctr||0)*100).toFixed(1) + '%</td><td style="color:' + posColor + ';font-weight:600;">' + (r.position||0).toFixed(1) + '</td></tr>';
             });
             html += '</tbody></table>';
             document.getElementById('gsc-queries').innerHTML = html;
         }
 
-        // Top Pages table
+        // ---- Top Pages Table ----
         var pages = d.top_pages;
+        gscTopPages = []; // reset
         if (pages && pages.rows) {
-            var html = '<table class="fpc-table"><thead><tr><th>Page</th><th>Clicks</th><th>Impressions</th><th>CTR</th><th>Position</th></tr></thead><tbody>';
-            pages.rows.forEach(function(r) {
+            var html = '<table class="fpc-table"><thead><tr><th>#</th><th>Seite</th><th>Clicks</th><th>Impressions</th><th>CTR</th><th>Position</th></tr></thead><tbody>';
+            pages.rows.forEach(function(r, i) {
                 var url = r.keys ? r.keys[0] : '';
+                if (i < 10) gscTopPages.push(url);
                 var short = url.replace('https://mr-hanf.de', '');
-                html += '<tr><td title="' + url + '">' + short.substring(0,60) + '</td><td>' + (r.clicks||0) + '</td><td>' + fpcNum(r.impressions||0) + '</td><td>' + ((r.ctr||0)*100).toFixed(1) + '%</td><td>' + (r.position||0).toFixed(1) + '</td></tr>';
+                if (short.length > 70) short = short.substring(0, 67) + '...';
+                var posColor = (r.position||99) <= 3 ? 'var(--fpc-green)' : ((r.position||99) <= 10 ? 'var(--fpc-teal)' : ((r.position||99) <= 20 ? 'var(--fpc-orange)' : 'var(--fpc-red)'));
+                html += '<tr><td>' + (i+1) + '</td><td title="' + url + '"><a href="' + url + '" target="_blank" style="color:var(--fpc-teal);text-decoration:none;">' + short + '</a></td><td>' + fpcNum(r.clicks||0) + '</td><td>' + fpcNum(r.impressions||0) + '</td><td>' + ((r.ctr||0)*100).toFixed(1) + '%</td><td style="color:' + posColor + ';font-weight:600;">' + (r.position||0).toFixed(1) + '</td></tr>';
             });
             html += '</tbody></table>';
             document.getElementById('gsc-pages').innerHTML = html;
         }
 
-        // Sitemaps
+        // ---- Query-Page Combinations ----
+        var qp = d.query_pages;
+        if (qp && qp.rows && qp.rows.length) {
+            var html = '<table class="fpc-table"><thead><tr><th>#</th><th>Keyword</th><th>Seite</th><th>Clicks</th><th>Impressions</th><th>CTR</th><th>Position</th></tr></thead><tbody>';
+            qp.rows.forEach(function(r, i) {
+                var query = r.keys ? r.keys[0] : '';
+                var page = r.keys && r.keys[1] ? r.keys[1].replace('https://mr-hanf.de', '') : '';
+                if (page.length > 50) page = page.substring(0, 47) + '...';
+                html += '<tr><td>' + (i+1) + '</td><td>' + query + '</td><td title="' + (r.keys?r.keys[1]:'') + '">' + page + '</td><td>' + fpcNum(r.clicks||0) + '</td><td>' + fpcNum(r.impressions||0) + '</td><td>' + ((r.ctr||0)*100).toFixed(1) + '%</td><td>' + (r.position||0).toFixed(1) + '</td></tr>';
+            });
+            html += '</tbody></table>';
+            document.getElementById('gsc-query-pages').innerHTML = html;
+        } else {
+            document.getElementById('gsc-query-pages').innerHTML = '<p style="color:var(--fpc-text2);">Keine Daten</p>';
+        }
+
+        // ---- Sitemaps ----
         var sitemaps = d.sitemaps;
         if (sitemaps && sitemaps.sitemap) {
-            var html = '<table class="fpc-table"><thead><tr><th>Sitemap</th><th>Type</th><th>Submitted</th><th>Last Downloaded</th><th>Status</th></tr></thead><tbody>';
+            var html = '<table class="fpc-table"><thead><tr><th>Sitemap</th><th>Typ</th><th>Eingereicht</th><th>Zuletzt geladen</th><th>Status</th><th>Errors</th><th>Warnings</th></tr></thead><tbody>';
             sitemaps.sitemap.forEach(function(s) {
-                html += '<tr><td>' + (s.path||'') + '</td><td>' + (s.type||'') + '</td><td>' + (s.lastSubmitted||'').substring(0,10) + '</td><td>' + (s.lastDownloaded||'').substring(0,10) + '</td><td>' + (s.isPending ? 'Pending' : 'OK') + '</td></tr>';
+                var statusColor = s.isPending ? 'var(--fpc-orange)' : 'var(--fpc-green)';
+                var errCount = (s.errors || 0);
+                var warnCount = (s.warnings || 0);
+                html += '<tr><td style="word-break:break-all;">' + (s.path||'') + '</td><td>' + (s.type||'') + '</td><td>' + (s.lastSubmitted||'').substring(0,10) + '</td><td>' + (s.lastDownloaded||'').substring(0,10) + '</td><td style="color:' + statusColor + ';">' + (s.isPending ? 'Pending' : 'OK') + '</td><td style="color:' + (errCount > 0 ? 'var(--fpc-red)' : 'var(--fpc-green)') + ';">' + errCount + '</td><td style="color:' + (warnCount > 0 ? 'var(--fpc-orange)' : 'var(--fpc-green)') + ';">' + warnCount + '</td></tr>';
             });
             html += '</tbody></table>';
             document.getElementById('gsc-sitemaps').innerHTML = html;
         }
+    });
+}
+
+// URL Inspection: single URL
+function fpcGscInspectUrl() {
+    var url = document.getElementById('gsc-inspect-url').value.trim();
+    if (!url) { fpcToast('Bitte URL eingeben', true); return; }
+    fpcGscRunInspection([url]);
+}
+
+// URL Inspection: top 10 pages
+function fpcGscInspectSample() {
+    if (!gscTopPages.length) { fpcToast('Erst Daten laden', true); return; }
+    fpcGscRunInspection(gscTopPages.slice(0, 10));
+}
+
+function fpcGscRunInspection(urls) {
+    document.getElementById('gsc-inspection').innerHTML = '<p style="color:var(--fpc-teal);">Inspecting ' + urls.length + ' URLs... (kann 5-30 Sek. dauern)</p>';
+    fpcAjaxPostJson('gsc_inspect', urls, function(d) {
+        if (d.error) {
+            document.getElementById('gsc-inspection').innerHTML = '<p style="color:var(--fpc-red);">Error: ' + (d.msg||'Unknown') + '</p>';
+            return;
+        }
+        var results = d.urls || [];
+        if (!results.length) {
+            document.getElementById('gsc-inspection').innerHTML = '<p style="color:var(--fpc-text2);">Keine Ergebnisse</p>';
+            return;
+        }
+        var html = '<table class="fpc-table"><thead><tr><th>URL</th><th>Verdict</th><th>Coverage</th><th>Crawled As</th><th>Last Crawl</th><th>Robots.txt</th><th>Mobile</th></tr></thead><tbody>';
+        results.forEach(function(r) {
+            var verdictColor = r.verdict === 'PASS' ? 'var(--fpc-green)' : (r.verdict === 'PARTIAL' ? 'var(--fpc-orange)' : 'var(--fpc-red)');
+            var mobileColor = r.mobileVerdict === 'PASS' ? 'var(--fpc-green)' : (r.mobileVerdict === 'VERDICT_UNSPECIFIED' ? 'var(--fpc-text2)' : 'var(--fpc-red)');
+            var shortUrl = (r.url||'').replace('https://mr-hanf.de', '');
+            if (shortUrl.length > 50) shortUrl = shortUrl.substring(0, 47) + '...';
+            html += '<tr>';
+            html += '<td title="' + (r.url||'') + '">' + shortUrl + '</td>';
+            html += '<td style="color:' + verdictColor + ';font-weight:600;">' + (r.verdict||'-') + '</td>';
+            html += '<td>' + (r.coverageState||'-') + '</td>';
+            html += '<td>' + (r.crawledAs||'-') + '</td>';
+            html += '<td>' + (r.lastCrawl ? r.lastCrawl.substring(0,10) : '-') + '</td>';
+            html += '<td>' + (r.robotsTxt||'-') + '</td>';
+            html += '<td style="color:' + mobileColor + ';">' + (r.mobileVerdict||'-') + '</td>';
+            html += '</tr>';
+        });
+        html += '</tbody></table>';
+        document.getElementById('gsc-inspection').innerHTML = html;
     });
 }
 
