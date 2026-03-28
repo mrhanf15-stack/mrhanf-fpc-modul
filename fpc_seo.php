@@ -469,7 +469,8 @@ class FpcSeo {
             CURLOPT_FOLLOWLOCATION => true,
             CURLOPT_SSL_VERIFYPEER => false,
             CURLOPT_TIMEOUT => 30,
-            CURLOPT_USERAGENT => $ua ?: 'FPC-SEO-Scanner/1.0',
+            CURLOPT_USERAGENT => $ua ?: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+            CURLOPT_HTTPHEADER => array('Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8', 'Accept-Language: de-DE,de;q=0.9,en;q=0.5'),
         ));
         $response = curl_exec($ch);
         $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
@@ -501,8 +502,9 @@ class FpcSeo {
             CURLOPT_FOLLOWLOCATION => false,
             CURLOPT_TIMEOUT => 10,
             CURLOPT_HEADER => true,
-            CURLOPT_USERAGENT => 'FPC-SEO-Scanner/1.0',
+            CURLOPT_USERAGENT => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
             CURLOPT_SSL_VERIFYPEER => false,
+            CURLOPT_HTTPHEADER => array('Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8', 'Accept-Language: de-DE,de;q=0.9,en;q=0.5'),
         ));
         $response = curl_exec($ch);
         $result['response_time_ms'] = round((microtime(true) - $start) * 1000);

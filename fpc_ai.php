@@ -201,14 +201,20 @@ PROMPT;
             require_once $this->base_dir . 'fpc_sistrix.php';
             $creds = @json_decode(file_get_contents($this->base_dir . 'cache/fpc/api_credentials.json'), true);
             if (!empty($creds['sistrix_api_key'])) {
-                $sx = new FPC_Sistrix($creds['sistrix_api_key']);
                 $domain = isset($creds['sistrix_domain']) ? $creds['sistrix_domain'] : 'mr-hanf.de';
-                $si = $sx->getSichtbarkeitsindex($domain);
-                if (isset($si['current'])) {
+                $sx = new FPC_Sistrix($creds['sistrix_api_key'], $domain);
+                $si = $sx->getCurrentVisibility();
+                if (is_array($si) && !isset($si['error'])) {
                     $data['sistrix'] = array(
-                        'sichtbarkeitsindex' => $si['current'],
-                        'trend' => isset($si['history']) ? 'verfuegbar' : 'nicht verfuegbar',
+                        'visibility_data' => $si,
                     );
+                    // History separat laden
+                    try {
+                        $hist = $sx->getVisibilityHistory();
+                        if (is_array($hist) && !isset($hist['error'])) {
+                            $data['sistrix']['history'] = 'verfuegbar';
+                        }
+                    } catch (Exception $e3) { /* History optional */ }
                 }
             }
         } catch (Exception $e) {
