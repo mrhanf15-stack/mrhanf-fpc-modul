@@ -3444,9 +3444,11 @@ function fpcSeo404LoadMore() {
 }
 
 function fpcLoadSeo() {
-    // File Editor laden
-    fpcFileEditorLoad('htaccess');
-    // 1. Overview laden (Health, KPIs)
+    // v10.7.0: SEQUENTIELLES LADEN - verhindert Server-Ueberlastung
+    // Vorher: 10 gleichzeitige AJAX-Calls -> Server-Crash
+    // Jetzt: Overview zuerst, dann 2-3 Calls gleichzeitig mit Verzoegerung
+
+    // 1. Overview laden (Health, KPIs) - ZUERST, alleine
     fpcAjax('ajax=seo_overview', function(d) {
         var h = d.health || {};
         var score = h.score || 0;
@@ -3488,51 +3490,53 @@ function fpcLoadSeo() {
         }
     });
 
-    // 2. Redirects laden
-    fpcSeoLoadRedirects();
+        // v10.7.0: Nach Overview -> Batch 1 laden (Redirects + Canonicals)
+        setTimeout(function() {
+            fpcSeoLoadRedirects();
+            fpcSeoLoadCanonicals();
+        }, 200);
 
-    // 3. Canonicals laden
-    fpcSeoLoadCanonicals();
+        // v10.7.0: Nach 500ms -> Batch 2 laden (404 + Probleme)
+        setTimeout(function() {
+            fpcSeoLoad404('unresolved');
+            fpcSeoLoadProblems();
+        }, 500);
 
-    // 4. 404 Log laden
-    fpcSeoLoad404('unresolved');
+        // v10.7.0: Nach 800ms -> Batch 3 laden (Scan + Bots)
+        setTimeout(function() {
+            fpcSeoLoadScanResults('');
+            fpcAjax('ajax=seo_data', function(d) {
+                if (typeof Chart !== 'undefined' && d.bots) {
+                    var botNames = Object.keys(d.bots);
+                    var botReqs = botNames.map(function(n) { return d.bots[n].requests; });
+                    fpcMakeChart('chart-seo-bots', { type: 'bar', data: { labels: botNames, datasets: [{ label: 'Requests', data: botReqs, backgroundColor: '#00a8ff' }] }, options: { responsive: true, indexAxis: 'y' } });
+                    var botHits = botNames.map(function(n) { return d.bots[n].hits; });
+                    var botMisses = botNames.map(function(n) { return d.bots[n].requests - d.bots[n].hits; });
+                    fpcMakeChart('chart-seo-hitrate', { type: 'bar', data: { labels: botNames, datasets: [{ label: 'HIT', data: botHits, backgroundColor: '#00e676' }, { label: 'MISS', data: botMisses, backgroundColor: '#ff4757' }] }, options: { responsive: true, scales: { x: { stacked: true }, y: { stacked: true } } } });
+                }
+                if (d.bot_top_urls) {
+                    var html = '<table class="fpc-table"><thead><tr><th>URL</th><th>Bot-Requests</th></tr></thead><tbody>';
+                    for (var url in d.bot_top_urls) { html += '<tr><td>' + url + '</td><td>' + d.bot_top_urls[url] + '</td></tr>'; }
+                    html += '</tbody></table>';
+                    if (Object.keys(d.bot_top_urls).length === 0) html = '<p style="color:var(--fpc-text2)">No bot data yet.</p>';
+                    document.getElementById('seo-top-urls').innerHTML = html;
+                }
+            });
+        }, 800);
 
-    // 5. Scan-Ergebnisse laden
-    fpcSeoLoadScanResults('');
-
-    // 6. Probleme laden
-    fpcSeoLoadProblems();
-
-    // 7. Bot-Daten laden (original)
-    fpcAjax('ajax=seo_data', function(d) {
-        if (typeof Chart !== 'undefined' && d.bots) {
-            var botNames = Object.keys(d.bots);
-            var botReqs = botNames.map(function(n) { return d.bots[n].requests; });
-            fpcMakeChart('chart-seo-bots', { type: 'bar', data: { labels: botNames, datasets: [{ label: 'Requests', data: botReqs, backgroundColor: '#00a8ff' }] }, options: { responsive: true, indexAxis: 'y' } });
-            var botHits = botNames.map(function(n) { return d.bots[n].hits; });
-            var botMisses = botNames.map(function(n) { return d.bots[n].requests - d.bots[n].hits; });
-            fpcMakeChart('chart-seo-hitrate', { type: 'bar', data: { labels: botNames, datasets: [{ label: 'HIT', data: botHits, backgroundColor: '#00e676' }, { label: 'MISS', data: botMisses, backgroundColor: '#ff4757' }] }, options: { responsive: true, scales: { x: { stacked: true }, y: { stacked: true } } } });
-        }
-        if (d.bot_top_urls) {
-            var html = '<table class="fpc-table"><thead><tr><th>URL</th><th>Bot-Requests</th></tr></thead><tbody>';
-            for (var url in d.bot_top_urls) { html += '<tr><td>' + url + '</td><td>' + d.bot_top_urls[url] + '</td></tr>'; }
-            html += '</tbody></table>';
-            if (Object.keys(d.bot_top_urls).length === 0) html = '<p style="color:var(--fpc-text2)">No bot data yet.</p>';
-            document.getElementById('seo-top-urls').innerHTML = html;
-        }
+        // v10.7.0: Nach 1200ms -> Batch 4 laden (AI + Chat + File Editor)
+        setTimeout(function() {
+            fpcAjax('ajax=ai_quick_summary', function(d) {
+                if (d.ai_configured) {
+                    document.getElementById('seo-ai-status').innerHTML = '<span style="color:var(--fpc-green);">OpenAI API konfiguriert (Modell: ' + (d.model || 'gpt-4.1-mini') + ')</span>';
+                } else {
+                    document.getElementById('seo-ai-status').innerHTML = '<span style="color:var(--fpc-orange);">OpenAI API nicht konfiguriert. Gehe zu Settings > API Credentials.</span>';
+                }
+            });
+            fpcSeoChatLoadHistory();
+            fpcFileEditorLoad('htaccess');
+        }, 1200);
     });
-
-    // 8. AI Quick Summary
-    fpcAjax('ajax=ai_quick_summary', function(d) {
-        if (d.ai_configured) {
-            document.getElementById('seo-ai-status').innerHTML = '<span style="color:var(--fpc-green);">OpenAI API konfiguriert (Modell: ' + (d.model || 'gpt-4.1-mini') + ')</span>';
-        } else {
-            document.getElementById('seo-ai-status').innerHTML = '<span style="color:var(--fpc-orange);">OpenAI API nicht konfiguriert. Gehe zu Settings > API Credentials.</span>';
-        }
-    });
-
-    // 9. Chat History laden
-    fpcSeoChatLoadHistory();
 }
 
 // --- REDIRECTS ---
