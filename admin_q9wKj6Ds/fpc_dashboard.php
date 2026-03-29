@@ -3312,22 +3312,44 @@ function fpcSeoLoadScanResults(filter) {
     var search = document.getElementById('scan-search') ? document.getElementById('scan-search').value : '';
     fpcAjax('ajax=seo_scan_results&status=' + encodeURIComponent(seoScanFilter) + '&search=' + encodeURIComponent(search), function(d) {
         if (!d || d.length === 0) { document.getElementById('seo-scan-table').innerHTML = '<p style="color:var(--fpc-text2)">Keine Scan-Ergebnisse. Starte einen Scan.</p>'; return; }
-        var html = '<table class="fpc-table"><thead><tr><th>URL</th><th>HTTP</th><th>Canonical</th><th>FPC Cache</th><th>Response (ms)</th><th>Status</th><th>Issues</th></tr></thead><tbody>';
+        var html = '<table class="fpc-table"><thead><tr><th>URL</th><th>HTTP</th><th>Canonical</th><th>FPC Cache</th><th>Response (ms)</th><th>Status</th><th>Issues</th><th>Aktion</th></tr></thead><tbody>';
         d.forEach(function(r) {
             var statusCls = r.status === 'ok' ? 'hit' : (r.status === 'warning' ? 'bypass' : 'miss');
+            var escUrl = (r.url || '').replace(/'/g, "\\'");
+            var fullUrl = (r.url.indexOf('http') === 0) ? r.url : 'https://mr-hanf.de' + r.url;
             html += '<tr>';
-            html += '<td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;" title="' + r.url + '">' + r.url + '</td>';
+            html += '<td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;" title="' + r.url + '"><a href="' + fullUrl + '" target="_blank" style="color:var(--fpc-teal);text-decoration:none;" title="URL im Browser oeffnen">' + r.url + '</a></td>';
             html += '<td><span class="fpc-badge ' + (r.http_status < 300 ? 'hit' : r.http_status < 400 ? 'bypass' : 'miss') + '">' + r.http_status + '</span></td>';
             html += '<td>' + (r.canonical_match === true ? '<span style="color:var(--fpc-green)">OK</span>' : r.canonical_match === false ? '<span style="color:var(--fpc-red)">Mismatch</span>' : '-') + '</td>';
             html += '<td>' + (r.has_fpc_cache ? '<span style="color:var(--fpc-green)">HIT</span>' : '<span style="color:var(--fpc-orange)">MISS</span>') + '</td>';
             html += '<td>' + r.response_time_ms + '</td>';
             html += '<td><span class="fpc-badge ' + statusCls + '">' + r.status + '</span></td>';
             html += '<td style="font-size:11px;">' + (r.issues ? r.issues.join(', ') : '') + '</td>';
+            html += '<td style="white-space:nowrap;">';
+            html += '<button class="fpc-btn" style="padding:2px 6px;font-size:11px;margin-right:3px;background:var(--fpc-blue);" onclick="fpcSeo404Check(\'' + escUrl + '\')" title="URL pruefen">&#128269;</button>';
+            if (r.http_status >= 300 && r.http_status < 400) {
+                html += '<button class="fpc-btn green" style="padding:2px 6px;font-size:11px;margin-right:3px;" onclick="fpcSeoScanRedirect(\'' + escUrl + '\')" title="Redirect anlegen">&#8594;</button>';
+            }
+            if (r.http_status >= 400) {
+                html += '<button class="fpc-btn red" style="padding:2px 6px;font-size:11px;" onclick="fpcSeoScanRedirect(\'' + escUrl + '\')" title="Redirect anlegen">&#8594;</button>';
+            }
+            html += '</td>';
             html += '</tr>';
         });
         html += '</tbody></table>';
         html += '<p style="color:var(--fpc-text2);font-size:12px;margin-top:4px;">' + d.length + ' Ergebnisse</p>';
         document.getElementById('seo-scan-table').innerHTML = html;
+    });
+}
+
+// v10.4.0: Redirect aus Scan-Ergebnissen anlegen
+function fpcSeoScanRedirect(url) {
+    var target = prompt('Redirect-Ziel fuer ' + url + ':', '/');
+    if (target === null) return;
+    fpcAjaxPostJson('seo_redirect_add', { source: url, target: target, type: '301', note: 'Aus Scan-Ergebnis' }, function(r) {
+        fpcToast(r.msg, !r.ok);
+        fpcSeoLoadRedirects();
+        fpcSeoLoadScanResults();
     });
 }
 
