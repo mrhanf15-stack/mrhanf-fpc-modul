@@ -3372,6 +3372,7 @@ function fpcSeoLoad404(filter) {
             html += '<td style="font-size:11px;max-width:200px;overflow:hidden;text-overflow:ellipsis;">' + (e.referers ? e.referers.join(', ') : '-') + '</td>';
             if (!e.resolved && !e.dismissed) {
                 html += '<td style="white-space:nowrap;">';
+                html += '<button class="fpc-btn" style="padding:2px 6px;font-size:11px;margin-right:3px;background:var(--fpc-purple);color:#fff;" onclick="fpcSeo404AiSuggest(' + e.id + ',\'' + e.url.replace(/'/g, "\\'") + '\')" title="KI-Vorschlag fuer bestes Redirect-Ziel">&#129302;</button>';
                 html += '<button class="fpc-btn" style="padding:2px 6px;font-size:11px;margin-right:3px;background:var(--fpc-blue);" onclick="fpcSeo404Check(\'' + e.url.replace(/'/g, "\\'") + '\')" title="URL pruefen">&#128269;</button>';
                 html += '<button class="fpc-btn green" style="padding:2px 6px;font-size:11px;margin-right:3px;" onclick="fpcSeo404Resolve(' + e.id + ',\'' + e.url.replace(/'/g, "\\'") + '\')">Redirect</button>';
                 html += '<button class="fpc-btn red" style="padding:2px 6px;font-size:11px;" onclick="fpcSeo404Dismiss(' + e.id + ')">Ignorieren</button></td>';
@@ -3405,6 +3406,68 @@ function fpcSeo404Resolve(id, url) {
 
 function fpcSeo404Dismiss(id) {
     fpcAjax('ajax=seo_404_dismiss&id=' + id, function(r) { fpcToast(r.msg, !r.ok); fpcSeoLoad404(); });
+}
+
+// v10.4.5: KI-Redirect-Vorschlag fuer einzelne 404-URL
+function fpcSeo404AiSuggest(id, url) {
+    // Button visuell als "ladend" markieren
+    var btns = document.querySelectorAll('button[onclick*="fpcSeo404AiSuggest(' + id + ',"]');
+    var origHtml = '';
+    if (btns.length > 0) { origHtml = btns[0].innerHTML; btns[0].innerHTML = '&#8987;'; btns[0].disabled = true; }
+
+    // KI um Vorschlag bitten (nutzt bestehenden ai_redirect_suggest Endpoint)
+    fpcAjaxPostJson('ai_redirect_suggest', { urls: [{ url: url, http_status: 404, source: '404-log' }] }, function(d) {
+        if (btns.length > 0) { btns[0].innerHTML = origHtml; btns[0].disabled = false; }
+
+        if (d.error) {
+            fpcToast('KI-Fehler: ' + (d.msg || 'Unbekannt'), true);
+            return;
+        }
+
+        // Vorschlag extrahieren
+        var suggestions = d.suggestions || [];
+        var target = '/';
+        var confidence = '';
+        var reason = '';
+
+        // Passenden Vorschlag fuer diese URL finden
+        for (var i = 0; i < suggestions.length; i++) {
+            var s = suggestions[i];
+            if (s.source === url || (s.urls && s.urls.indexOf(url) !== -1)) {
+                target = s.target || '/';
+                confidence = s.confidence || '';
+                reason = s.reason || '';
+                break;
+            }
+        }
+        // Falls kein spezifischer Match, ersten Vorschlag nehmen
+        if (target === '/' && suggestions.length > 0) {
+            target = suggestions[0].target || '/';
+            confidence = suggestions[0].confidence || '';
+            reason = suggestions[0].reason || '';
+        }
+
+        // Konfidenz-Farbe
+        var confColor = confidence === 'high' ? 'var(--fpc-green)' : confidence === 'medium' ? 'var(--fpc-orange)' : 'var(--fpc-red)';
+        var confLabel = confidence === 'high' ? 'Sicher' : confidence === 'medium' ? 'Wahrscheinlich' : 'Unsicher';
+
+        // Dialog mit Vorschlag anzeigen
+        var msg = 'KI-Vorschlag fuer:\n' + url + '\n\n';
+        msg += 'Redirect-Ziel: ' + target + '\n';
+        msg += 'Konfidenz: ' + confLabel + '\n';
+        if (reason) msg += 'Begruendung: ' + reason + '\n';
+        msg += '\nRedirect anlegen? (Abbrechen = nein, OK = Ziel uebernehmen)';
+
+        var userTarget = prompt(msg, target);
+        if (userTarget === null) return;
+
+        // Redirect anlegen
+        fpcAjaxPostJson('seo_404_resolve', { id: id, target: userTarget }, function(r) {
+            fpcToast(r.ok !== false ? ('Redirect angelegt: ' + url + ' → ' + userTarget + ' (' + confLabel + ')') : (r.msg || 'Fehler'), !r.ok);
+            fpcSeoLoad404();
+            fpcSeoLoadRedirects();
+        });
+    });
 }
 
 // v10.2.6: System-URLs aus 404-Log bereinigen
