@@ -691,6 +691,159 @@ PROMPT;
         );
     }
 
+    // ================================================================
+    // v10.4.0: KI-REDIRECT-VORSCHLAEGE MIT SPRACH-GRUPPIERUNG
+    // ================================================================
+
+    /**
+     * KI-gestuetzte Redirect-Vorschlaege fuer problematische URLs
+     * Analysiert 301/302/404 URLs und schlaegt passende Ziele vor.
+     * Erkennt Sprach-Varianten und gruppiert sie automatisch.
+     *
+     * @param array $urls Array von URLs mit HTTP-Status und Issues
+     * @return array KI-Vorschlaege mit Sprach-Gruppierung
+     */
+    public function suggestRedirects($urls) {
+        if (!$this->isConfigured()) {
+            return array('error' => true, 'msg' => 'OpenAI API Key nicht konfiguriert.');
+        }
+
+        if (empty($urls)) {
+            return array('error' => true, 'msg' => 'Keine URLs zum Analysieren.');
+        }
+
+        // Sprach-Prefixe erkennen und gruppieren
+        $lang_prefixes = array('/en/', '/fr/', '/es/', '/nl/', '/it/');
+        $groups = array();
+        $ungrouped = array();
+
+        foreach ($urls as $u) {
+            $url = is_array($u) ? $u['url'] : $u;
+            $found_lang = false;
+            foreach ($lang_prefixes as $prefix) {
+                if (strpos($url, $prefix) === 0) {
+                    $base_path = substr($url, strlen($prefix) - 1); // z.B. /bushplanet/...
+                    $lang = trim($prefix, '/');
+                    if (!isset($groups[$base_path])) {
+                        $groups[$base_path] = array('base' => $base_path, 'languages' => array(), 'urls' => array());
+                    }
+                    $groups[$base_path]['languages'][] = $lang;
+                    $groups[$base_path]['urls'][] = $u;
+                    $found_lang = true;
+                    break;
+                }
+            }
+            // Deutsche URLs (kein Prefix) oder unbekannte
+            if (!$found_lang) {
+                // Pruefen ob es eine Basis-URL ist die auch in anderen Sprachen existiert
+                $base_path = $url;
+                if (!isset($groups[$base_path])) {
+                    $groups[$base_path] = array('base' => $base_path, 'languages' => array(), 'urls' => array());
+                }
+                $groups[$base_path]['languages'][] = 'de';
+                $groups[$base_path]['urls'][] = $u;
+            }
+        }
+
+        // Nur Gruppen mit > 1 Sprache sind echte Sprach-Gruppen
+        $language_groups = array();
+        $single_urls = array();
+        foreach ($groups as $base => $group) {
+            if (count($group['languages']) > 1) {
+                $language_groups[] = $group;
+            } else {
+                foreach ($group['urls'] as $u) {
+                    $single_urls[] = $u;
+                }
+            }
+        }
+
+        // Prompt fuer KI bauen
+        $prompt = "Du bist der SEO-Analyst fuer mr-hanf.de (Cannabis-Samen Shop).\n";
+        $prompt .= "Analysiere diese problematischen URLs und schlage passende 301-Redirect-Ziele vor.\n\n";
+        $prompt .= "SHOP-STRUKTUR:\n";
+        $prompt .= "- Hauptkategorien: /samen-shop/, /growshop/, /seedbanks/\n";
+        $prompt .= "- Sprachen: DE (kein Prefix), EN (/en/), FR (/fr/), ES (/es/), NL (/nl/), IT (/it/)\n";
+        $prompt .= "- Produkte: /samen-shop/KATEGORIE/PRODUKT/\n";
+        $prompt .= "- Bushplanet: /bushplanet/ (Grow-Equipment)\n\n";
+
+        if (!empty($language_groups)) {
+            $prompt .= "SPRACH-GRUPPEN (gleiche Seite in verschiedenen Sprachen):\n";
+            foreach ($language_groups as $i => $g) {
+                $prompt .= ($i + 1) . ". Basis: " . $g['base'] . " (Sprachen: " . implode(', ', $g['languages']) . ")\n";
+                foreach ($g['urls'] as $u) {
+                    $url_str = is_array($u) ? $u['url'] : $u;
+                    $status = is_array($u) && isset($u['http_status']) ? $u['http_status'] : '?';
+                    $target = is_array($u) && isset($u['redirect_target']) ? $u['redirect_target'] : '';
+                    $prompt .= "   - " . $url_str . " (HTTP " . $status;
+                    if ($target) $prompt .= " → " . $target;
+                    $prompt .= ")\n";
+                }
+            }
+            $prompt .= "\n";
+        }
+
+        if (!empty($single_urls)) {
+            $prompt .= "EINZELNE URLs:\n";
+            foreach (array_slice($single_urls, 0, 30) as $i => $u) {
+                $url_str = is_array($u) ? $u['url'] : $u;
+                $status = is_array($u) && isset($u['http_status']) ? $u['http_status'] : '?';
+                $target = is_array($u) && isset($u['redirect_target']) ? $u['redirect_target'] : '';
+                $issues = is_array($u) && isset($u['issues']) ? implode(', ', $u['issues']) : '';
+                $prompt .= ($i + 1) . ". " . $url_str . " (HTTP " . $status;
+                if ($target) $prompt .= " → " . $target;
+                if ($issues) $prompt .= " | " . $issues;
+                $prompt .= ")\n";
+            }
+        }
+
+        $prompt .= "\nAntworte im JSON-Format:\n";
+        $prompt .= '{"suggestions": [{"source": "/alte-url/", "target": "/neue-url/", "type": "301", "reason": "Kurze Begruendung", "confidence": "high|medium|low", "language_group": [{"lang": "de", "source": "/alte-url/", "target": "/neue-url/"}, {"lang": "en", "source": "/en/alte-url/", "target": "/en/neue-url/"}]}]}';
+        $prompt .= "\n\nWICHTIG:\n";
+        $prompt .= "- Wenn eine URL bereits auf ein Ziel redirected (→), pruefe ob das Ziel korrekt ist\n";
+        $prompt .= "- Bei Sprach-Gruppen: Schlage fuer JEDE Sprache den passenden Redirect vor\n";
+        $prompt .= "- Wenn das Redirect-Ziel bereits korrekt aussieht, setze confidence=high\n";
+        $prompt .= "- Bei 404-URLs: Versuche die naechstliegende existierende Seite zu finden\n";
+        $prompt .= "- Bushplanet-URLs: Oft umbenannt zu Growshop-Kategorien\n";
+        $prompt .= "- Gib NUR das JSON zurueck, keinen weiteren Text\n";
+
+        $response = $this->callOpenAI(
+            "Du bist ein SEO-Redirect-Experte fuer mr-hanf.de. Antworte NUR mit validem JSON.",
+            $prompt
+        );
+
+        if (isset($response['error'])) {
+            return $response;
+        }
+
+        // JSON parsen
+        $content = $response['content'];
+        $json_start = strpos($content, '{');
+        $json_end = strrpos($content, '}');
+
+        if ($json_start !== false && $json_end !== false) {
+            $json_str = substr($content, $json_start, $json_end - $json_start + 1);
+            $parsed = @json_decode($json_str, true);
+            if ($parsed && isset($parsed['suggestions'])) {
+                return array(
+                    'ok' => true,
+                    'suggestions' => $parsed['suggestions'],
+                    'language_groups' => $language_groups,
+                    'total_urls' => count($urls),
+                    'grouped_urls' => array_sum(array_map(function($g) { return count($g['urls']); }, $language_groups)),
+                    'timestamp' => date('Y-m-d H:i:s'),
+                );
+            }
+        }
+
+        return array(
+            'ok' => true,
+            'suggestions' => array(),
+            'raw' => $content,
+            'msg' => 'KI-Antwort konnte nicht als JSON geparst werden',
+        );
+    }
+
     /**
      * Schnelle Problem-Zusammenfassung (ohne API-Call, nur lokale Daten)
      */
