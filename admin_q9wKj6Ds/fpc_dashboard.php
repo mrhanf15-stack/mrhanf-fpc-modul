@@ -3521,6 +3521,7 @@ function fpcSeoRenderFlatTable(filtered) {
 // v10.4.0: Gruppierte Tabelle - URLs nach Basis-Pfad gruppiert
 function fpcSeoRenderGroupedTable(filtered) {
     var langColorMap = {de:'#00d4aa', en:'#00a8ff', fr:'#ff6b6b', es:'#ffa726', nl:'#ff9800', it:'#ab47bc'};
+    var langNames = {de:'DE', en:'EN', fr:'FR', es:'ES', nl:'NL', it:'IT'};
     var langOrder = ['de','en','fr','es','nl','it'];
 
     // Nach Basis-Pfad gruppieren
@@ -3548,9 +3549,9 @@ function fpcSeoRenderGroupedTable(filtered) {
     var multiLangGroups = 0;
     var singleGroups = 0;
 
-    groupOrder.forEach(function(base) {
+    groupOrder.forEach(function(base, gIdx) {
         var langs = groups[base];
-        var langKeys = Object.keys(langs);
+        var langKeys = Object.keys(langs).sort(function(a,b) { return langOrder.indexOf(a) - langOrder.indexOf(b); });
         var isMultiLang = langKeys.length > 1;
         if (isMultiLang) multiLangGroups++; else singleGroups++;
 
@@ -3564,79 +3565,110 @@ function fpcSeoRenderGroupedTable(filtered) {
             else if (langs[l].status === 'redirect' && worstStatus !== 'error') worstStatus = 'redirect';
             else if (langs[l].status === 'warning' && worstStatus === 'ok') worstStatus = 'warning';
         });
-        var groupColor = worstStatus === 'error' ? 'var(--fpc-red)' : worstStatus === 'redirect' ? 'var(--fpc-blue)' : worstStatus === 'warning' ? 'var(--fpc-orange)' : 'var(--fpc-green)';
-        var groupBorder = isMultiLang ? 'border-left:3px solid ' + groupColor + ';' : '';
-
-        // Gruppen-Container
-        html += '<div style="background:var(--fpc-card);border-radius:8px;padding:0;margin-bottom:' + (isMultiLang ? '12' : '4') + 'px;border:1px solid var(--fpc-border);' + groupBorder + 'overflow:hidden;">';
+        var groupColor = worstStatus === 'error' ? '#ff6b6b' : worstStatus === 'redirect' ? '#00a8ff' : worstStatus === 'warning' ? '#ffa726' : '#00d4aa';
 
         if (isMultiLang) {
-            // Gruppen-Header mit Basis-Pfad und Sprach-Badges
-            var langBadges = langKeys.sort(function(a,b) { return langOrder.indexOf(a) - langOrder.indexOf(b); }).map(function(l) {
+            // ===== MULTI-LANG GRUPPE =====
+            var displayBase = base === '/' ? '/ (Startseite)' : base;
+            html += '<div style="background:var(--fpc-card);border-radius:10px;margin-bottom:10px;border:1px solid var(--fpc-border);border-left:4px solid ' + groupColor + ';overflow:hidden;" id="scan-group-' + gIdx + '">';
+
+            // Gruppen-Header
+            html += '<div style="padding:10px 16px;background:var(--fpc-card2);display:flex;align-items:center;gap:12px;cursor:pointer;" onclick="var b=this.nextElementSibling;b.style.display=b.style.display===\'none\'?\'block\':\'none\';this.querySelector(\'.grp-arrow\').textContent=b.style.display===\'none\'?\'\u25B6\':\'\u25BC\'">';
+            // Pfeil
+            html += '<span class="grp-arrow" style="color:var(--fpc-text2);font-size:12px;">&#9660;</span>';
+            // Basis-Pfad
+            html += '<code style="color:var(--fpc-teal);font-size:13px;font-weight:bold;">' + displayBase + '</code>';
+            // Sprach-Count
+            html += '<span style="background:' + groupColor + '22;color:' + groupColor + ';font-size:11px;font-weight:bold;padding:2px 8px;border-radius:10px;">' + langKeys.length + ' Sprachen</span>';
+            // Sprach-Badges kompakt
+            langKeys.forEach(function(l) {
                 var c = langColorMap[l] || '#ccc';
                 var s = langs[l].http_status;
-                return '<span style="display:inline-block;background:' + c + '22;color:' + c + ';font-size:10px;font-weight:bold;padding:2px 6px;border-radius:3px;border:1px solid ' + c + '44;">' + l.toUpperCase() + ' (' + s + ')</span>';
-            }).join(' ');
-
-            html += '<div style="padding:10px 14px;background:var(--fpc-card2);display:flex;align-items:center;gap:10px;flex-wrap:wrap;cursor:pointer;" onclick="this.parentElement.querySelector(\'.scan-group-body\').style.display=this.parentElement.querySelector(\'.scan-group-body\').style.display===\'none\'?\'block\':\'none\'">';
-            html += '<span style="color:var(--fpc-text);font-weight:bold;font-size:13px;">&#127760; ' + base + '</span>';
-            html += '<span style="font-size:11px;color:var(--fpc-text2);">' + langKeys.length + ' Sprachen</span>';
-            html += langBadges;
-            // Gruppen-Aktionen
+                var sCls = s < 300 ? 'hit' : s < 400 ? 'bypass' : 'miss';
+                html += '<span class="fpc-badge ' + sCls + '" style="font-size:10px;padding:2px 6px;">' + langNames[l] + ' ' + s + '</span>';
+            });
+            // Gruppen-Aktionen (rechts)
+            html += '<span style="margin-left:auto;display:flex;gap:6px;">';
             if (worstHttp >= 300) {
                 var escBase = base.replace(/'/g, "\\'");
-                html += '<button class="fpc-btn" style="padding:3px 8px;font-size:11px;margin-left:auto;background:linear-gradient(135deg,#667eea,#764ba2);color:#fff;" onclick="event.stopPropagation();fpcSeoGroupRedirect(\'' + escBase + '\')" title="Redirect fuer ALLE Sprachen dieser URL anlegen">&#127760; Redirect alle Sprachen</button>';
+                html += '<button class="fpc-btn" style="padding:4px 10px;font-size:11px;background:linear-gradient(135deg,#667eea,#764ba2);color:#fff;white-space:nowrap;" onclick="event.stopPropagation();fpcSeoGroupRedirect(\'' + escBase + '\')" title="Redirect fuer ALLE Sprachen anlegen">&#8594; Alle Sprachen</button>';
             }
+            html += '</span>';
             html += '</div>';
 
-            // Gruppen-Body: Einzelne Sprach-Zeilen
-            html += '<div class="scan-group-body" style="display:block;">';
-            html += '<table class="fpc-table" style="margin:0;border-radius:0;"><tbody>';
-        }
+            // Gruppen-Body
+            html += '<div style="display:block;">';
+            langKeys.forEach(function(lang, lIdx) {
+                var r = langs[lang];
+                var escUrl = (r.url || '').replace(/'/g, "\\'");
+                var fullUrl = 'https://mr-hanf.de' + r.url;
+                var lc = langColorMap[lang] || '#ccc';
+                var statusCls = r.status === 'ok' ? 'hit' : (r.status === 'warning' ? 'bypass' : 'miss');
+                var isLast = lIdx === langKeys.length - 1;
 
-        // Zeilen fuer jede Sprache
-        langKeys.sort(function(a,b) { return langOrder.indexOf(a) - langOrder.indexOf(b); }).forEach(function(lang) {
+                html += '<div style="display:flex;align-items:center;padding:6px 16px;gap:10px;border-top:1px solid var(--fpc-border);' + (!isLast ? '' : '') + '">';
+                // Sprach-Badge
+                html += '<span style="display:inline-block;width:32px;text-align:center;color:' + lc + ';font-size:12px;font-weight:bold;background:' + lc + '15;padding:3px 0;border-radius:4px;border-left:3px solid ' + lc + ';">' + langNames[lang] + '</span>';
+                // URL (flexibel, nimmt verfuegbaren Platz)
+                html += '<a href="' + fullUrl + '" target="_blank" style="color:var(--fpc-teal);text-decoration:none;font-size:12px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + r.url + '">' + r.url + '</a>';
+                // HTTP Status
+                html += '<span class="fpc-badge ' + (r.http_status < 300 ? 'hit' : r.http_status < 400 ? 'bypass' : 'miss') + '" style="font-size:11px;">' + r.http_status + '</span>';
+                // FPC Cache
+                html += '<span style="color:' + (r.has_fpc_cache ? 'var(--fpc-green)' : 'var(--fpc-orange)') + ';font-size:11px;width:32px;text-align:center;">' + (r.has_fpc_cache ? 'HIT' : 'MISS') + '</span>';
+                // Response Time
+                html += '<span style="color:var(--fpc-text2);font-size:11px;width:50px;text-align:right;">' + r.response_time_ms + 'ms</span>';
+                // Status
+                html += '<span class="fpc-badge ' + statusCls + '" style="font-size:10px;">' + r.status + '</span>';
+                // Aktions-Buttons
+                html += '<span style="display:flex;gap:3px;min-width:55px;justify-content:flex-end;">';
+                html += '<button class="fpc-btn" style="padding:3px 6px;font-size:11px;background:var(--fpc-blue);" onclick="fpcSeo404Check(\'' + escUrl + '\')" title="URL pruefen">&#128269;</button>';
+                if (r.http_status >= 300) {
+                    html += '<button class="fpc-btn ' + (r.http_status < 400 ? 'green' : 'red') + '" style="padding:3px 6px;font-size:11px;" onclick="fpcSeoScanRedirect(\'' + escUrl + '\')" title="Redirect anlegen">&#8594;</button>';
+                }
+                html += '</span>';
+                html += '</div>';
+            });
+            html += '</div>'; // close body
+            html += '</div>'; // close group container
+
+        } else {
+            // ===== EINZEL-URL (nur 1 Sprache) =====
+            var lang = langKeys[0];
             var r = langs[lang];
-            var statusCls = r.status === 'ok' ? 'hit' : (r.status === 'warning' ? 'bypass' : 'miss');
             var escUrl = (r.url || '').replace(/'/g, "\\'");
             var fullUrl = 'https://mr-hanf.de' + r.url;
+            var lc = langColorMap[lang] || '#ccc';
+            var statusCls = r.status === 'ok' ? 'hit' : (r.status === 'warning' ? 'bypass' : 'miss');
 
-            if (!isMultiLang) {
-                html += '<table class="fpc-table" style="margin:0;border-radius:0;"><tbody>';
-            }
-
-            html += '<tr style="' + (isMultiLang ? 'border-left:3px solid ' + (langColorMap[lang]||'#ccc') + ';' : '') + '">';
-            html += '<td style="width:30px;text-align:center;"><span style="color:' + (langColorMap[lang]||'#ccc') + ';font-size:11px;font-weight:bold;">' + lang.toUpperCase() + '</span></td>';
-            html += '<td style="max-width:280px;overflow:hidden;text-overflow:ellipsis;" title="' + r.url + '"><a href="' + fullUrl + '" target="_blank" style="color:var(--fpc-teal);text-decoration:none;font-size:12px;">' + r.url + '</a></td>';
-            html += '<td style="width:50px;"><span class="fpc-badge ' + (r.http_status < 300 ? 'hit' : r.http_status < 400 ? 'bypass' : 'miss') + '">' + r.http_status + '</span></td>';
-            html += '<td style="width:60px;">' + (r.has_fpc_cache ? '<span style="color:var(--fpc-green);font-size:11px;">HIT</span>' : '<span style="color:var(--fpc-orange);font-size:11px;">MISS</span>') + '</td>';
-            html += '<td style="width:50px;font-size:11px;">' + r.response_time_ms + 'ms</td>';
-            html += '<td style="width:60px;"><span class="fpc-badge ' + statusCls + '" style="font-size:10px;">' + r.status + '</span></td>';
-            html += '<td style="font-size:10px;color:var(--fpc-text2);">' + (r.issues ? r.issues.join(', ') : '') + '</td>';
-            html += '<td style="white-space:nowrap;width:70px;">';
-            html += '<button class="fpc-btn" style="padding:2px 5px;font-size:10px;margin-right:2px;background:var(--fpc-blue);" onclick="fpcSeo404Check(\'' + escUrl + '\')" title="Pruefen">&#128269;</button>';
+            html += '<div style="display:flex;align-items:center;padding:6px 16px;gap:10px;background:var(--fpc-card);border-radius:6px;margin-bottom:3px;border:1px solid var(--fpc-border);">';
+            // Sprach-Badge
+            html += '<span style="display:inline-block;width:32px;text-align:center;color:' + lc + ';font-size:12px;font-weight:bold;background:' + lc + '15;padding:3px 0;border-radius:4px;">' + langNames[lang] + '</span>';
+            // URL
+            html += '<a href="' + fullUrl + '" target="_blank" style="color:var(--fpc-teal);text-decoration:none;font-size:12px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + r.url + '">' + r.url + '</a>';
+            // HTTP
+            html += '<span class="fpc-badge ' + (r.http_status < 300 ? 'hit' : r.http_status < 400 ? 'bypass' : 'miss') + '" style="font-size:11px;">' + r.http_status + '</span>';
+            // FPC
+            html += '<span style="color:' + (r.has_fpc_cache ? 'var(--fpc-green)' : 'var(--fpc-orange)') + ';font-size:11px;width:32px;text-align:center;">' + (r.has_fpc_cache ? 'HIT' : 'MISS') + '</span>';
+            // ms
+            html += '<span style="color:var(--fpc-text2);font-size:11px;width:50px;text-align:right;">' + r.response_time_ms + 'ms</span>';
+            // Status
+            html += '<span class="fpc-badge ' + statusCls + '" style="font-size:10px;">' + r.status + '</span>';
+            // Buttons
+            html += '<span style="display:flex;gap:3px;min-width:55px;justify-content:flex-end;">';
+            html += '<button class="fpc-btn" style="padding:3px 6px;font-size:11px;background:var(--fpc-blue);" onclick="fpcSeo404Check(\'' + escUrl + '\')" title="URL pruefen">&#128269;</button>';
             if (r.http_status >= 300) {
-                var btnCls = r.http_status < 400 ? 'green' : 'red';
-                html += '<button class="fpc-btn ' + btnCls + '" style="padding:2px 5px;font-size:10px;" onclick="fpcSeoScanRedirect(\'' + escUrl + '\')" title="Redirect">&#8594;</button>';
+                html += '<button class="fpc-btn ' + (r.http_status < 400 ? 'green' : 'red') + '" style="padding:3px 6px;font-size:11px;" onclick="fpcSeoScanRedirect(\'' + escUrl + '\')" title="Redirect anlegen">&#8594;</button>';
             }
-            html += '</td></tr>';
-
-            if (!isMultiLang) {
-                html += '</tbody></table>';
-            }
-        });
-
-        if (isMultiLang) {
-            html += '</tbody></table></div>'; // close group-body
+            html += '</span>';
+            html += '</div>';
         }
-        html += '</div>'; // close group container
     });
 
     // Zusammenfassung oben
-    var summary = '<div style="display:flex;gap:12px;margin-bottom:10px;font-size:12px;color:var(--fpc-text2);">';
-    summary += '<span>&#127760; <strong>' + multiLangGroups + '</strong> Sprach-Gruppen</span>';
-    summary += '<span>&#128196; <strong>' + singleGroups + '</strong> Einzel-URLs</span>';
-    summary += '<span>&#128202; <strong>' + groupOrder.length + '</strong> Basis-Pfade gesamt</span>';
+    var summary = '<div style="display:flex;gap:16px;margin-bottom:12px;padding:8px 12px;background:var(--fpc-card2);border-radius:8px;font-size:12px;">';
+    summary += '<span style="color:var(--fpc-teal);"><strong>' + multiLangGroups + '</strong> ' + (multiLangGroups === 1 ? 'Sprach-Gruppe' : 'Sprach-Gruppen') + '</span>';
+    summary += '<span style="color:var(--fpc-text2);"><strong>' + singleGroups + '</strong> ' + (singleGroups === 1 ? 'Einzel-URL' : 'Einzel-URLs') + '</span>';
+    summary += '<span style="color:var(--fpc-text2);"><strong>' + groupOrder.length + '</strong> ' + (groupOrder.length === 1 ? 'Basis-Pfad' : 'Basis-Pfade') + ' gesamt</span>';
     summary += '</div>';
 
     document.getElementById('seo-scan-table').innerHTML = summary + html;
