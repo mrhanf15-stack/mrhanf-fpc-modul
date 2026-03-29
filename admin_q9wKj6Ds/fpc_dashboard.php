@@ -1840,7 +1840,7 @@ $page_title = 'FPC Control Center';
 <title><?php echo $page_title; ?> v9.1.5</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4" defer></script>
 <style>
-:root { --fpc-bg:#0d1b2a; --fpc-card:#1b2838; --fpc-border:#2a3a4a; --fpc-text:#e0e6ed; --fpc-text2:#8899aa; --fpc-teal:#00d4aa; --fpc-green:#00e676; --fpc-red:#ff4757; --fpc-orange:#ffa502; --fpc-yellow:#ffd32a; --fpc-blue:#00a8ff; }
+:root { --fpc-bg:#0d1b2a; --fpc-card:#1b2838; --fpc-card2:#162232; --fpc-border:#2a3a4a; --fpc-text:#e0e6ed; --fpc-text2:#8899aa; --fpc-teal:#00d4aa; --fpc-green:#00e676; --fpc-red:#ff4757; --fpc-orange:#ffa502; --fpc-yellow:#ffd32a; --fpc-blue:#00a8ff; --fpc-purple:#ab47bc; }
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: var(--fpc-bg); color: var(--fpc-text); font-size: 14px; line-height: 1.5; }
 .fpc-header { background: linear-gradient(135deg, #0d1b2a 0%, #1b2838 100%); padding: 16px 24px; border-bottom: 2px solid var(--fpc-teal); display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; position: sticky; top: 0; z-index: 100; }
@@ -1916,6 +1916,16 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 .fpc-pagination button.active { background: var(--fpc-teal); color: #000; border-color: var(--fpc-teal); }
 .fpc-pagination button:hover:not(.active) { border-color: var(--fpc-teal); }
 .fpc-pagination .ellipsis { padding: 4px 6px; color: var(--fpc-text2); }
+.fpc-accordion { margin-bottom:20px; }
+.fpc-accordion-header { display:flex; align-items:center; gap:12px; padding:12px 16px; background:var(--fpc-card); border:1px solid var(--fpc-border); border-radius:10px 10px 0 0; cursor:pointer; user-select:none; transition:all 0.2s; }
+.fpc-accordion-header:hover { border-color:var(--fpc-teal); }
+.fpc-accordion-header.collapsed { border-radius:10px; }
+.fpc-accordion-arrow { font-size:14px; color:var(--fpc-text2); transition:transform 0.3s; min-width:16px; text-align:center; }
+.fpc-accordion-header.collapsed .fpc-accordion-arrow { transform:rotate(-90deg); }
+.fpc-accordion-title { font-size:16px; font-weight:700; color:var(--fpc-text); flex:1; }
+.fpc-accordion-badge { font-size:11px; padding:2px 10px; border-radius:10px; font-weight:600; }
+.fpc-accordion-body { border:1px solid var(--fpc-border); border-top:none; border-radius:0 0 10px 10px; background:var(--fpc-card); padding:20px; overflow:hidden; transition:max-height 0.3s ease, padding 0.3s ease; }
+.fpc-accordion-body.collapsed { max-height:0 !important; padding:0 20px; border:none; overflow:hidden; }
 @media (max-width: 768px) { .fpc-kpis { grid-template-columns: repeat(2, 1fr); } .fpc-charts { grid-template-columns: 1fr; } .fpc-tabs { gap: 2px; } .fpc-tab { padding: 6px 8px; font-size: 11px; } }
 </style>
 </head>
@@ -2131,49 +2141,92 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
     <div class="fpc-section-title" style="color:var(--fpc-red);">&#9888; Erkannte Probleme (Cross-API)</div>
     <div id="seo-problems" style="margin-bottom:20px;"></div>
 
-    <!-- REDIRECTS -->
-    <div class="fpc-section-title">&#8594; Redirect Manager</div>
-    <div style="background:var(--fpc-card);border-radius:10px;padding:20px;border:1px solid var(--fpc-border);margin-bottom:20px;">
-        <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;align-items:end;">
-            <div style="flex:1;min-width:200px;"><label style="color:var(--fpc-text2);font-size:11px;display:block;margin-bottom:4px;">Source URL</label><input type="text" class="fpc-input" id="redir-source" placeholder="/alte-seite/" style="width:100%;"></div>
-            <div style="flex:1;min-width:200px;"><label style="color:var(--fpc-text2);font-size:11px;display:block;margin-bottom:4px;">Target URL</label><input type="text" class="fpc-input" id="redir-target" placeholder="/neue-seite/" style="width:100%;"></div>
-            <div style="width:80px;"><label style="color:var(--fpc-text2);font-size:11px;display:block;margin-bottom:4px;">Typ</label><select class="fpc-input" id="redir-type" style="width:100%;"><option value="301">301</option><option value="302">302</option><option value="307">307</option><option value="410">410</option></select></div>
-            <div style="width:60px;"><label style="color:var(--fpc-text2);font-size:11px;display:block;margin-bottom:4px;">Regex</label><input type="checkbox" id="redir-regex"></div>
-            <div style="flex:1;min-width:150px;"><label style="color:var(--fpc-text2);font-size:11px;display:block;margin-bottom:4px;">Notiz</label><input type="text" class="fpc-input" id="redir-note" placeholder="Optional" style="width:100%;"></div>
-            <button class="fpc-btn green" onclick="fpcSeoRedirectAdd()">+ Hinzufuegen</button>
+    <!-- REDIRECTS (Accordion) -->
+    <div class="fpc-accordion" id="accordion-redirects">
+        <div class="fpc-accordion-header" onclick="fpcToggleAccordion('accordion-redirects')">
+            <span class="fpc-accordion-arrow">&#9660;</span>
+            <span class="fpc-accordion-title">&#8594; Redirect Manager</span>
+            <span class="fpc-accordion-badge" id="badge-redirects" style="background:rgba(0,212,170,0.15);color:var(--fpc-teal);">0</span>
         </div>
-        <div style="margin-bottom:8px;"><input type="text" class="fpc-input" id="redir-search" placeholder="Redirects durchsuchen..." oninput="fpcSeoLoadRedirects()" style="width:300px;"></div>
-        <div id="seo-redirects-table"></div>
+        <div class="fpc-accordion-body">
+            <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;align-items:end;">
+                <div style="flex:1;min-width:200px;"><label style="color:var(--fpc-text2);font-size:11px;display:block;margin-bottom:4px;">Source URL</label><input type="text" class="fpc-input" id="redir-source" placeholder="/alte-seite/" style="width:100%;"></div>
+                <div style="flex:1;min-width:200px;"><label style="color:var(--fpc-text2);font-size:11px;display:block;margin-bottom:4px;">Target URL</label><input type="text" class="fpc-input" id="redir-target" placeholder="/neue-seite/" style="width:100%;"></div>
+                <div style="width:80px;"><label style="color:var(--fpc-text2);font-size:11px;display:block;margin-bottom:4px;">Typ</label><select class="fpc-input" id="redir-type" style="width:100%;"><option value="301">301</option><option value="302">302</option><option value="307">307</option><option value="410">410</option></select></div>
+                <div style="width:60px;"><label style="color:var(--fpc-text2);font-size:11px;display:block;margin-bottom:4px;">Regex</label><input type="checkbox" id="redir-regex"></div>
+                <div style="flex:1;min-width:150px;"><label style="color:var(--fpc-text2);font-size:11px;display:block;margin-bottom:4px;">Notiz</label><input type="text" class="fpc-input" id="redir-note" placeholder="Optional" style="width:100%;"></div>
+                <button class="fpc-btn green" onclick="fpcSeoRedirectAdd()">+ Hinzufuegen</button>
+            </div>
+            <div style="margin-bottom:8px;"><input type="text" class="fpc-input" id="redir-search" placeholder="Redirects durchsuchen..." oninput="fpcSeoLoadRedirects()" style="width:300px;"></div>
+            <div id="seo-redirects-table"></div>
+        </div>
     </div>
 
-    <!-- CANONICAL OVERRIDES -->
-    <div class="fpc-section-title">&#128279; Canonical Overrides</div>
-    <div style="background:var(--fpc-card);border-radius:10px;padding:20px;border:1px solid var(--fpc-border);margin-bottom:20px;">
-        <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;align-items:end;">
-            <div style="flex:1;min-width:200px;"><label style="color:var(--fpc-text2);font-size:11px;display:block;margin-bottom:4px;">Seiten-URL</label><input type="text" class="fpc-input" id="canon-page" placeholder="/seite/" style="width:100%;"></div>
-            <div style="flex:1;min-width:200px;"><label style="color:var(--fpc-text2);font-size:11px;display:block;margin-bottom:4px;">Canonical URL</label><input type="text" class="fpc-input" id="canon-url" placeholder="https://mr-hanf.de/richtige-seite/" style="width:100%;"></div>
-            <div style="flex:1;min-width:150px;"><label style="color:var(--fpc-text2);font-size:11px;display:block;margin-bottom:4px;">Notiz</label><input type="text" class="fpc-input" id="canon-note" placeholder="Optional" style="width:100%;"></div>
-            <button class="fpc-btn green" onclick="fpcSeoCanonicalAdd()">+ Hinzufuegen</button>
+    <!-- CANONICAL OVERRIDES (Accordion) -->
+    <div class="fpc-accordion" id="accordion-canonicals">
+        <div class="fpc-accordion-header collapsed" onclick="fpcToggleAccordion('accordion-canonicals')">
+            <span class="fpc-accordion-arrow">&#9660;</span>
+            <span class="fpc-accordion-title">&#128279; Canonical Overrides</span>
+            <span class="fpc-accordion-badge" id="badge-canonicals" style="background:rgba(171,71,188,0.15);color:var(--fpc-purple);">0</span>
         </div>
-        <div id="seo-canonicals-table"></div>
+        <div class="fpc-accordion-body collapsed">
+            <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;align-items:end;">
+                <div style="flex:1;min-width:200px;"><label style="color:var(--fpc-text2);font-size:11px;display:block;margin-bottom:4px;">Seiten-URL</label><input type="text" class="fpc-input" id="canon-page" placeholder="/seite/" style="width:100%;"></div>
+                <div style="flex:1;min-width:200px;"><label style="color:var(--fpc-text2);font-size:11px;display:block;margin-bottom:4px;">Canonical URL</label><input type="text" class="fpc-input" id="canon-url" placeholder="https://mr-hanf.de/richtige-seite/" style="width:100%;"></div>
+                <div style="flex:1;min-width:150px;"><label style="color:var(--fpc-text2);font-size:11px;display:block;margin-bottom:4px;">Notiz</label><input type="text" class="fpc-input" id="canon-note" placeholder="Optional" style="width:100%;"></div>
+                <button class="fpc-btn green" onclick="fpcSeoCanonicalAdd()">+ Hinzufuegen</button>
+            </div>
+            <div id="seo-canonicals-table"></div>
+        </div>
     </div>
 
-    <!-- 404 LOG -->
-    <div class="fpc-section-title" style="color:var(--fpc-orange);">&#128683; 404 Fehler-Log</div>
-    <div style="background:var(--fpc-card);border-radius:10px;padding:20px;border:1px solid var(--fpc-border);margin-bottom:20px;">
-        <div style="display:flex;gap:8px;margin-bottom:12px;">
-            <button class="fpc-btn orange active" onclick="fpcSeoLoad404('unresolved')" id="btn-404-unresolved">Offen</button>
-            <button class="fpc-btn teal" onclick="fpcSeoLoad404('resolved')" id="btn-404-resolved">Geloest</button>
-            <button class="fpc-btn red" onclick="fpcSeoLoad404('dismissed')" id="btn-404-dismissed">Ignoriert</button>
-            <input type="text" class="fpc-input" id="404-search" placeholder="404 URLs suchen..." oninput="fpcSeoLoad404()" style="width:250px;margin-left:auto;">
-            <button class="fpc-btn" style="background:var(--fpc-text2);font-size:11px;" onclick="fpcSeo404Cleanup()" title="System-URLs (fpc_serve.php, index.php etc.) aus dem Log entfernen">&#128465; Bereinigen</button>
+    <!-- 404 LOG (Accordion) -->
+    <div class="fpc-accordion" id="accordion-404">
+        <div class="fpc-accordion-header" onclick="fpcToggleAccordion('accordion-404')">
+            <span class="fpc-accordion-arrow">&#9660;</span>
+            <span class="fpc-accordion-title" style="color:var(--fpc-orange);">&#128683; 404 Fehler-Log</span>
+            <span class="fpc-accordion-badge" id="badge-404" style="background:rgba(255,165,2,0.15);color:var(--fpc-orange);">0</span>
         </div>
-        <div id="seo-404-table"></div>
+        <div class="fpc-accordion-body">
+            <!-- Status-Filter -->
+            <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center;">
+                <button class="fpc-btn orange active" onclick="fpcSeoLoad404('unresolved')" id="btn-404-unresolved">Offen <span id="cnt-404-unresolved"></span></button>
+                <button class="fpc-btn teal" onclick="fpcSeoLoad404('resolved')" id="btn-404-resolved">Geloest <span id="cnt-404-resolved"></span></button>
+                <button class="fpc-btn red" onclick="fpcSeoLoad404('dismissed')" id="btn-404-dismissed">Ignoriert <span id="cnt-404-dismissed"></span></button>
+                <span style="border-left:1px solid var(--fpc-border);height:24px;margin:0 4px;"></span>
+                <!-- Dateityp-Filter -->
+                <button class="fpc-btn" style="font-size:11px;padding:4px 10px;background:var(--fpc-blue);color:#fff;" onclick="fpcSeo404SetTypeFilter('pages')" id="btn-404t-pages">Seiten <span id="cnt-404t-pages"></span></button>
+                <button class="fpc-btn" style="font-size:11px;padding:4px 10px;background:var(--fpc-card2);color:var(--fpc-text);" onclick="fpcSeo404SetTypeFilter('images')" id="btn-404t-images">Bilder <span id="cnt-404t-images"></span></button>
+                <button class="fpc-btn" style="font-size:11px;padding:4px 10px;background:var(--fpc-card2);color:var(--fpc-text);" onclick="fpcSeo404SetTypeFilter('pdfs')" id="btn-404t-pdfs">PDFs <span id="cnt-404t-pdfs"></span></button>
+                <button class="fpc-btn" style="font-size:11px;padding:4px 10px;background:var(--fpc-card2);color:var(--fpc-text);" onclick="fpcSeo404SetTypeFilter('assets')" id="btn-404t-assets">Assets <span id="cnt-404t-assets"></span></button>
+                <button class="fpc-btn" style="font-size:11px;padding:4px 10px;background:var(--fpc-card2);color:var(--fpc-text);" onclick="fpcSeo404SetTypeFilter('all')" id="btn-404t-all">Alle Typen</button>
+                <input type="text" class="fpc-input" id="404-search" placeholder="404 URLs suchen..." oninput="fpcSeo404Render()" style="width:200px;margin-left:auto;font-size:12px;padding:5px 8px;">
+                <button class="fpc-btn" style="background:var(--fpc-text2);font-size:11px;" onclick="fpcSeo404Cleanup()" title="System-URLs (fpc_serve.php, index.php etc.) aus dem Log entfernen">&#128465; Bereinigen</button>
+            </div>
+            <!-- Sprach-Filter -->
+            <div style="display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap;align-items:center;">
+                <span style="color:var(--fpc-text2);font-size:11px;">Sprache:</span>
+                <button class="fpc-btn teal" style="font-size:11px;padding:3px 7px;" onclick="fpcSeo404SetLangFilter('')" id="btn-404l-all">Alle</button>
+                <button class="fpc-btn" style="font-size:11px;padding:3px 7px;background:var(--fpc-card2);color:var(--fpc-text);" onclick="fpcSeo404SetLangFilter('de')" id="btn-404l-de">DE</button>
+                <button class="fpc-btn" style="font-size:11px;padding:3px 7px;background:var(--fpc-card2);color:var(--fpc-text);" onclick="fpcSeo404SetLangFilter('en')" id="btn-404l-en">EN</button>
+                <button class="fpc-btn" style="font-size:11px;padding:3px 7px;background:var(--fpc-card2);color:var(--fpc-text);" onclick="fpcSeo404SetLangFilter('fr')" id="btn-404l-fr">FR</button>
+                <button class="fpc-btn" style="font-size:11px;padding:3px 7px;background:var(--fpc-card2);color:var(--fpc-text);" onclick="fpcSeo404SetLangFilter('es')" id="btn-404l-es">ES</button>
+                <button class="fpc-btn" style="font-size:11px;padding:3px 7px;background:var(--fpc-card2);color:var(--fpc-text);" onclick="fpcSeo404SetLangFilter('nl')" id="btn-404l-nl">NL</button>
+                <button class="fpc-btn" style="font-size:11px;padding:3px 7px;background:var(--fpc-card2);color:var(--fpc-text);" onclick="fpcSeo404SetLangFilter('it')" id="btn-404l-it">IT</button>
+                <span id="404-result-count" style="color:var(--fpc-text2);font-size:11px;margin-left:auto;"></span>
+            </div>
+            <div id="seo-404-table"></div>
+        </div>
     </div>
 
-    <!-- SCAN ERGEBNISSE -->
-    <div class="fpc-section-title">&#128269; Scan-Ergebnisse</div>
-    <div style="background:var(--fpc-card);border-radius:10px;padding:20px;border:1px solid var(--fpc-border);margin-bottom:20px;">
+    <!-- SCAN ERGEBNISSE (Accordion) -->
+    <div class="fpc-accordion" id="accordion-scan">
+        <div class="fpc-accordion-header" onclick="fpcToggleAccordion('accordion-scan')">
+            <span class="fpc-accordion-arrow">&#9660;</span>
+            <span class="fpc-accordion-title">&#128269; Scan-Ergebnisse</span>
+            <span class="fpc-accordion-badge" id="badge-scan" style="background:rgba(0,168,255,0.15);color:var(--fpc-blue);">0</span>
+        </div>
+        <div class="fpc-accordion-body">
         <!-- Haupt-Tabs: Status + Dateityp -->
         <div style="display:flex;gap:0;margin-bottom:0;border-bottom:2px solid var(--fpc-border);flex-wrap:wrap;">
             <!-- Status-Tabs -->
@@ -2211,6 +2264,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
         <div id="seo-scan-table"></div>
         <!-- KI-Vorschlaege Container -->
         <div id="seo-ai-suggestions" style="display:none;margin-top:16px;"></div>
+        </div>
     </div>
 
     <!-- FILE EDITORS (.htaccess + robots.txt) -->
@@ -3101,6 +3155,9 @@ function fpcLoadFehler() {
 // TAB 8: SEO - FULL SEO CONTROL CENTER
 // ============================================================
 var seo404Filter = 'unresolved';
+var seo404TypeFilter = 'pages';  // pages|images|pdfs|assets|all
+var seo404LangFilter = '';       // ''|de|en|fr|es|nl|it
+var seo404RawData = [];          // Rohdaten vom Server
 var seoScanFilter = '';
 var seoScanTypeFilter = 'pages'; // pages|images|pdfs|assets|all
 var seoScanLangFilter = '';      // ''|de|en|fr|es|nl|it
@@ -3108,6 +3165,158 @@ var seoScanGrouped = false;      // Gruppierte Ansicht
 var seoScanData = [];            // Rohdaten fuer KI-Analyse
 var seoManualRedirects = [];     // Manuell angelegte Redirects
 var _fpcAiResults = {};          // KI-Ergebnisse persistent pro Tab
+
+// v10.5.0: Accordion Toggle
+function fpcToggleAccordion(id) {
+    var el = document.getElementById(id);
+    if (!el) return;
+    var header = el.querySelector('.fpc-accordion-header');
+    var body = el.querySelector('.fpc-accordion-body');
+    if (!header || !body) return;
+    var isCollapsed = header.classList.contains('collapsed');
+    if (isCollapsed) {
+        header.classList.remove('collapsed');
+        body.classList.remove('collapsed');
+        body.style.maxHeight = body.scrollHeight + 'px';
+        setTimeout(function() { body.style.maxHeight = 'none'; }, 350);
+    } else {
+        body.style.maxHeight = body.scrollHeight + 'px';
+        requestAnimationFrame(function() {
+            body.style.maxHeight = '0';
+            header.classList.add('collapsed');
+            body.classList.add('collapsed');
+        });
+    }
+}
+
+// v10.5.0: 404 Dateityp-Filter
+function fpcSeo404SetTypeFilter(type) {
+    seo404TypeFilter = type;
+    var types = ['pages','images','pdfs','assets','all'];
+    var TYPE_COLORS = {pages:'var(--fpc-blue)', images:'#ffa726', pdfs:'#ff6b6b', assets:'var(--fpc-text2)', all:'var(--fpc-text2)'};
+    types.forEach(function(t) {
+        var btn = document.getElementById('btn-404t-' + t);
+        if (!btn) return;
+        var isActive = (t === type);
+        btn.style.background = isActive ? (TYPE_COLORS[t] || 'var(--fpc-blue)') : 'var(--fpc-card2)';
+        btn.style.color = isActive ? (t === 'pages' || t === 'pdfs' ? '#fff' : '#000') : 'var(--fpc-text)';
+    });
+    fpcSeo404Render();
+}
+
+// v10.5.0: 404 Sprach-Filter
+function fpcSeo404SetLangFilter(lang) {
+    seo404LangFilter = lang;
+    var langs = ['all','de','en','fr','es','nl','it'];
+    langs.forEach(function(l) {
+        var id = l === 'all' ? 'btn-404l-all' : 'btn-404l-' + l;
+        var btn = document.getElementById(id);
+        var match = (l === 'all' && lang === '') || l === lang;
+        if (btn) { btn.style.background = match ? '' : 'var(--fpc-card2)'; btn.style.color = match ? '' : 'var(--fpc-text)'; btn.className = 'fpc-btn' + (match ? ' teal' : ''); }
+    });
+    fpcSeo404Render();
+}
+
+// v10.5.0: 404 Daten client-seitig filtern und rendern
+function fpcSeo404Render() {
+    var d = seo404RawData;
+    if (!Array.isArray(d) || d.length === 0) {
+        document.getElementById('seo-404-table').innerHTML = '<p style="color:var(--fpc-green)">Keine 404-Fehler in dieser Kategorie.</p>';
+        var rc = document.getElementById('404-result-count'); if (rc) rc.textContent = '';
+        return;
+    }
+    var search = (document.getElementById('404-search') ? document.getElementById('404-search').value : '').toLowerCase();
+
+    // Typ-Zaehler berechnen (vor Filter)
+    var typeCounts = {pages:0, images:0, pdfs:0, assets:0};
+    d.forEach(function(e) {
+        if (!e || !e.url || typeof e.url !== 'string') return;
+        if (fpcSeoIsImage(e.url)) typeCounts.images++;
+        else if (fpcSeoIsPdf(e.url)) typeCounts.pdfs++;
+        else if (fpcSeoIsPureAsset(e.url)) typeCounts.assets++;
+        else typeCounts.pages++;
+    });
+    ['pages','images','pdfs','assets'].forEach(function(k) {
+        var el = document.getElementById('cnt-404t-' + k);
+        if (el) el.textContent = '(' + (typeCounts[k] || 0) + ')';
+    });
+
+    // Sprach-Zaehler berechnen (vor Filter)
+    var langCounts = {de:0, en:0, fr:0, es:0, nl:0, it:0};
+    d.forEach(function(e) {
+        if (!e || !e.url || typeof e.url !== 'string') return;
+        var l = fpcSeoGetUrlLang(e.url);
+        if (langCounts[l] !== undefined) langCounts[l]++;
+    });
+    ['de','en','fr','es','nl','it'].forEach(function(l) {
+        var btn = document.getElementById('btn-404l-' + l);
+        if (btn) btn.textContent = l.toUpperCase() + ' (' + langCounts[l] + ')';
+    });
+
+    // Client-seitige Filter
+    var filtered = d.filter(function(e) {
+        if (!e || !e.url || typeof e.url !== 'string') return false;
+        // Dateityp
+        if (seo404TypeFilter === 'pages' && fpcSeoIsAsset(e.url)) return false;
+        if (seo404TypeFilter === 'images' && !fpcSeoIsImage(e.url)) return false;
+        if (seo404TypeFilter === 'pdfs' && !fpcSeoIsPdf(e.url)) return false;
+        if (seo404TypeFilter === 'assets' && !fpcSeoIsPureAsset(e.url)) return false;
+        // Sprache
+        if (seo404LangFilter !== '' && fpcSeoGetUrlLang(e.url) !== seo404LangFilter) return false;
+        // Suche
+        if (search && e.url.toLowerCase().indexOf(search) === -1) return false;
+        return true;
+    });
+
+    // Badge aktualisieren
+    var badge = document.getElementById('badge-404');
+    if (badge) badge.textContent = d.length;
+
+    // Ergebnis-Zaehler
+    var rc = document.getElementById('404-result-count');
+    if (rc) rc.textContent = filtered.length + ' von ' + d.length + ' Eintraege';
+
+    // Tabelle rendern
+    var html = '<table class="fpc-table"><thead><tr><th>URL</th><th>Typ</th><th>Sprache</th><th>Hits</th><th>Erstmals</th><th>Letzter Hit</th><th>Referers</th><th>Aktion</th></tr></thead><tbody>';
+    filtered.forEach(function(e) {
+        if (!e || !e.url || typeof e.url !== 'string') return;
+        html += '<tr>';
+        var checkUrl = (e.url.indexOf('http') === 0) ? e.url : 'https://mr-hanf.de' + e.url;
+        html += '<td style="max-width:280px;overflow:hidden;text-overflow:ellipsis;" title="' + e.url + '"><a href="' + checkUrl + '" target="_blank" style="color:var(--fpc-text);text-decoration:none;" title="URL oeffnen">' + e.url + '</a></td>';
+        // Dateityp-Badge
+        var typeLabel = fpcSeoIsImage(e.url) ? 'Bild' : fpcSeoIsPdf(e.url) ? 'PDF' : fpcSeoIsPureAsset(e.url) ? 'Asset' : 'Seite';
+        var typeColor = fpcSeoIsImage(e.url) ? '#ffa726' : fpcSeoIsPdf(e.url) ? '#ff6b6b' : fpcSeoIsPureAsset(e.url) ? 'var(--fpc-text2)' : 'var(--fpc-blue)';
+        html += '<td><span style="font-size:10px;padding:1px 6px;border-radius:3px;background:' + typeColor + '22;color:' + typeColor + ';font-weight:600;">' + typeLabel + '</span></td>';
+        // Sprache
+        var langColorMap = {de:'#00d4aa', en:'#00a8ff', fr:'#ff6b6b', es:'#ffa726', nl:'#ff9800', it:'#ab47bc'};
+        var lang = fpcSeoGetUrlLang(e.url);
+        html += '<td><span style="color:' + (langColorMap[lang]||'#ccc') + ';font-size:11px;font-weight:bold;">' + lang.toUpperCase() + '</span></td>';
+        html += '<td><strong style="color:' + (e.hit_count > 50 ? 'var(--fpc-red)' : e.hit_count > 10 ? 'var(--fpc-orange)' : 'var(--fpc-text)') + '">' + e.hit_count + '</strong></td>';
+        html += '<td style="font-size:11px;">' + (e.first_seen || '') + '</td>';
+        html += '<td style="font-size:11px;">' + (e.last_hit || '') + '</td>';
+        html += '<td style="font-size:11px;max-width:180px;overflow:hidden;text-overflow:ellipsis;">' + (e.referers ? e.referers.join(', ') : '-') + '</td>';
+        if (!e.resolved && !e.dismissed) {
+            html += '<td style="white-space:nowrap;">';
+            html += '<button class="fpc-btn" style="padding:2px 6px;font-size:11px;margin-right:3px;background:var(--fpc-purple);color:#fff;" onclick="fpcSeo404AiSuggest(' + e.id + ',\'' + e.url.replace(/'/g, "\\'") + '\')" title="KI-Vorschlag fuer bestes Redirect-Ziel">&#129302;</button>';
+            html += '<button class="fpc-btn" style="padding:2px 6px;font-size:11px;margin-right:3px;background:var(--fpc-blue);" onclick="fpcSeo404Check(\'' + e.url.replace(/'/g, "\\'") + '\')" title="URL pruefen">&#128269;</button>';
+            html += '<button class="fpc-btn green" style="padding:2px 6px;font-size:11px;margin-right:3px;" onclick="fpcSeo404Resolve(' + e.id + ',\'' + e.url.replace(/'/g, "\\'") + '\')">Redirect</button>';
+            html += '<button class="fpc-btn red" style="padding:2px 6px;font-size:11px;" onclick="fpcSeo404Dismiss(' + e.id + ')">Ignorieren</button></td>';
+        } else {
+            html += '<td style="white-space:nowrap;font-size:11px;">';
+            if (e.resolved && e.resolved_to) {
+                html += '<button class="fpc-btn" style="padding:2px 6px;font-size:11px;margin-right:3px;background:var(--fpc-blue);" onclick="fpcSeo404Check(\'' + e.url.replace(/'/g, "\\'") + '\')" title="Redirect pruefen">&#128269;</button>';
+                html += '<span style="color:var(--fpc-text2);">&#8594; ' + e.resolved_to + '</span>';
+            } else {
+                html += '<span style="color:var(--fpc-text2);">' + (e.resolved ? 'Resolved' : 'Dismissed') + '</span>';
+            }
+            html += '</td>';
+        }
+        html += '</tr>';
+    });
+    html += '</tbody></table>';
+    html += '<p style="color:var(--fpc-text2);font-size:12px;margin-top:4px;">' + filtered.length + ' von ' + d.length + ' Eintraege</p>';
+    document.getElementById('seo-404-table').innerHTML = html;
+}
 
 function fpcLoadSeo() {
     // File Editor laden
@@ -3205,6 +3414,7 @@ function fpcLoadSeo() {
 function fpcSeoLoadRedirects() {
     var search = document.getElementById('redir-search') ? document.getElementById('redir-search').value : '';
     fpcAjax('ajax=seo_redirects&search=' + encodeURIComponent(search), function(d) {
+        var badge = document.getElementById('badge-redirects'); if (badge) badge.textContent = (d && d.length) ? d.length : 0;
         if (!d || d.length === 0) { document.getElementById('seo-redirects-table').innerHTML = '<p style="color:var(--fpc-text2)">Keine Redirects vorhanden.</p>'; return; }
         var html = '<table class="fpc-table"><thead><tr><th>Source</th><th>Target</th><th>Typ</th><th>Regex</th><th>Hits</th><th>Letzter Hit</th><th>Notiz</th><th>Aktiv</th><th>Aktion</th></tr></thead><tbody>';
         d.forEach(function(r) {
@@ -3311,6 +3521,7 @@ function fpcSeoRedirectCancelEdit(id) {
 // --- CANONICALS ---
 function fpcSeoLoadCanonicals() {
     fpcAjax('ajax=seo_canonicals', function(d) {
+        var badge = document.getElementById('badge-canonicals'); if (badge) badge.textContent = (d && d.length) ? d.length : 0;
         if (!d || d.length === 0) { document.getElementById('seo-canonicals-table').innerHTML = '<p style="color:var(--fpc-text2)">Keine Canonical Overrides vorhanden.</p>'; return; }
         var html = '<table class="fpc-table"><thead><tr><th>Seiten-URL</th><th>Canonical URL</th><th>Aktiv</th><th>Notiz</th><th>Aktion</th></tr></thead><tbody>';
         d.forEach(function(c) {
@@ -3352,6 +3563,15 @@ function fpcSeoCanonicalDelete(id) {
 // --- 404 LOG ---
 function fpcSeoLoad404(filter) {
     if (filter) seo404Filter = filter;
+    // Status-Buttons aktualisieren
+    var statusBtns = {unresolved:'btn-404-unresolved', resolved:'btn-404-resolved', dismissed:'btn-404-dismissed'};
+    for (var k in statusBtns) {
+        var btn = document.getElementById(statusBtns[k]);
+        if (btn) {
+            var isActive = (k === seo404Filter);
+            btn.className = 'fpc-btn' + (k === 'unresolved' ? (isActive ? ' orange active' : ' orange') : k === 'resolved' ? (isActive ? ' teal active' : ' teal') : (isActive ? ' red active' : ' red'));
+        }
+    }
     var search = document.getElementById('404-search') ? document.getElementById('404-search').value : '';
     var params = 'ajax=seo_404_log&search=' + encodeURIComponent(search);
     if (seo404Filter === 'unresolved') params += '&resolved=false&dismissed=false';
@@ -3359,38 +3579,11 @@ function fpcSeoLoad404(filter) {
     else if (seo404Filter === 'dismissed') params += '&dismissed=true';
 
     fpcAjax(params, function(d) {
-        if (!Array.isArray(d) || d.length === 0) { document.getElementById('seo-404-table').innerHTML = '<p style="color:var(--fpc-green)">Keine 404-Fehler in dieser Kategorie.</p>'; return; }
-        var html = '<table class="fpc-table"><thead><tr><th>URL</th><th>Hits</th><th>Erstmals</th><th>Letzter Hit</th><th>Referers</th><th>Aktion</th></tr></thead><tbody>';
-        d.forEach(function(e) {
-            if (!e || !e.url || typeof e.url !== 'string') return;
-            html += '<tr>';
-            var checkUrl = (e.url.indexOf('http') === 0) ? e.url : 'https://mr-hanf.de' + e.url;
-            html += '<td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;" title="' + e.url + '"><a href="' + checkUrl + '" target="_blank" style="color:var(--fpc-text);text-decoration:none;" title="URL oeffnen">' + e.url + '</a></td>';
-            html += '<td><strong style="color:' + (e.hit_count > 50 ? 'var(--fpc-red)' : e.hit_count > 10 ? 'var(--fpc-orange)' : 'var(--fpc-text)') + '">' + e.hit_count + '</strong></td>';
-            html += '<td style="font-size:11px;">' + (e.first_seen || '') + '</td>';
-            html += '<td style="font-size:11px;">' + (e.last_hit || '') + '</td>';
-            html += '<td style="font-size:11px;max-width:200px;overflow:hidden;text-overflow:ellipsis;">' + (e.referers ? e.referers.join(', ') : '-') + '</td>';
-            if (!e.resolved && !e.dismissed) {
-                html += '<td style="white-space:nowrap;">';
-                html += '<button class="fpc-btn" style="padding:2px 6px;font-size:11px;margin-right:3px;background:var(--fpc-purple);color:#fff;" onclick="fpcSeo404AiSuggest(' + e.id + ',\'' + e.url.replace(/'/g, "\\'") + '\')" title="KI-Vorschlag fuer bestes Redirect-Ziel">&#129302;</button>';
-                html += '<button class="fpc-btn" style="padding:2px 6px;font-size:11px;margin-right:3px;background:var(--fpc-blue);" onclick="fpcSeo404Check(\'' + e.url.replace(/'/g, "\\'") + '\')" title="URL pruefen">&#128269;</button>';
-                html += '<button class="fpc-btn green" style="padding:2px 6px;font-size:11px;margin-right:3px;" onclick="fpcSeo404Resolve(' + e.id + ',\'' + e.url.replace(/'/g, "\\'") + '\')">Redirect</button>';
-                html += '<button class="fpc-btn red" style="padding:2px 6px;font-size:11px;" onclick="fpcSeo404Dismiss(' + e.id + ')">Ignorieren</button></td>';
-            } else {
-                html += '<td style="white-space:nowrap;font-size:11px;">';
-                if (e.resolved && e.resolved_to) {
-                    html += '<button class="fpc-btn" style="padding:2px 6px;font-size:11px;margin-right:3px;background:var(--fpc-blue);" onclick="fpcSeo404Check(\'' + e.url.replace(/'/g, "\\'") + '\')" title="Redirect pruefen">&#128269;</button>';
-                    html += '<span style="color:var(--fpc-text2);">&#8594; ' + e.resolved_to + '</span>';
-                } else {
-                    html += '<span style="color:var(--fpc-text2);">' + (e.resolved ? 'Resolved' : 'Dismissed') + '</span>';
-                }
-                html += '</td>';
-            }
-            html += '</tr>';
-        });
-        html += '</tbody></table>';
-        html += '<p style="color:var(--fpc-text2);font-size:12px;margin-top:4px;">' + d.length + ' Eintraege</p>';
-        document.getElementById('seo-404-table').innerHTML = html;
+        seo404RawData = Array.isArray(d) ? d : [];
+        // Badge aktualisieren
+        var badge = document.getElementById('badge-404');
+        if (badge) badge.textContent = seo404RawData.length;
+        fpcSeo404Render();
     });
 }
 
@@ -3693,6 +3886,7 @@ function fpcSeoRenderScanTable() {
         fpcSeoRenderFlatTable(filtered);
     }
     document.getElementById('scan-result-count').textContent = filtered.length + ' von ' + d.length + ' URLs' + (seoScanGrouped ? ' (gruppiert)' : '');
+    var scanBadge = document.getElementById('badge-scan'); if (scanBadge) scanBadge.textContent = d.length;
 }
 
 // Tab-Zaehler aktualisieren
