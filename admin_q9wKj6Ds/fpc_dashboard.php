@@ -157,6 +157,43 @@ if (isset($_GET['ajax'])) {
             echo json_encode(array('ok' => true, 'msg' => 'Cache flushed successfully'));
             exit;
 
+        case 'flush_url':
+            $url = isset($_GET['url']) ? trim($_GET['url']) : '';
+            if (empty($url)) { echo json_encode(array('ok' => false, 'msg' => 'URL fehlt')); exit; }
+            $hash = md5($url);
+            $file = $cache_dir . '/' . $hash . '.html';
+            $gz = $cache_dir . '/' . $hash . '.html.gz';
+            $deleted = false;
+            if (file_exists($file)) { unlink($file); $deleted = true; }
+            if (file_exists($gz)) { unlink($gz); $deleted = true; }
+            echo json_encode(array('ok' => true, 'msg' => $deleted ? 'Cache fuer ' . $url . ' geloescht' : 'Keine Cache-Datei gefunden fuer ' . $url));
+            exit;
+
+        case 'preload_url':
+            $url = isset($_GET['url']) ? trim($_GET['url']) : '';
+            if (empty($url)) { echo json_encode(array('ok' => false, 'msg' => 'URL fehlt')); exit; }
+            $full_url = 'https://mr-hanf.de' . $url;
+            $ctx = stream_context_create(array('http' => array('timeout' => 15, 'header' => 'User-Agent: FPC-Preloader/10.4\r\nX-FPC-Preload: 1')));
+            $result = @file_get_contents($full_url, false, $ctx);
+            $ok = ($result !== false);
+            echo json_encode(array('ok' => $ok, 'msg' => $ok ? 'Cache aufgewaermt: ' . $url : 'Fehler beim Laden von ' . $url));
+            exit;
+
+        case 'seo_404_dismiss_url':
+            $url = isset($_GET['url']) ? trim($_GET['url']) : '';
+            if (empty($url)) { echo json_encode(array('ok' => false, 'msg' => 'URL fehlt')); exit; }
+            $seo = new FpcSeo($base_dir);
+            $log = $seo->get404Log('unresolved');
+            $dismissed = 0;
+            foreach ($log as $entry) {
+                if (isset($entry['url']) && $entry['url'] === $url && isset($entry['id'])) {
+                    $seo->dismiss404($entry['id']);
+                    $dismissed++;
+                }
+            }
+            echo json_encode(array('ok' => true, 'msg' => $dismissed > 0 ? '404 ignoriert: ' . $url : 'URL nicht im 404-Log gefunden'));
+            exit;
+
         case 'rebuild':
             echo json_encode(fpc_trigger_rebuild($base_dir, $cache_dir, $pid_file));
             exit;
@@ -5710,7 +5747,8 @@ function fpcAiRenderResult(container, data) {
             a.findings.forEach(function(f, idx) {
                 var c = typeColors[f.type] || '#00a8ff';
                 var icon = typeIcons[f.type] || '&#8505;';
-                html += '<div style="padding:10px 14px;margin-bottom:8px;background:' + c + '08;border:1px solid ' + c + '33;border-left:4px solid ' + c + ';border-radius:6px;">';
+                var fid = 'ai-finding-' + Date.now() + '-' + idx;
+                html += '<div id="' + fid + '" style="padding:10px 14px;margin-bottom:8px;background:' + c + '08;border:1px solid ' + c + '33;border-left:4px solid ' + c + ';border-radius:6px;">';
                 html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">';
                 html += '<span style="color:' + c + ';font-size:14px;">' + icon + '</span>';
                 html += '<span style="color:var(--fpc-text);font-size:13px;font-weight:bold;">' + (f.title || 'Finding ' + (idx+1)) + '</span>';
@@ -5720,7 +5758,8 @@ function fpcAiRenderResult(container, data) {
                 }
                 html += '</div>';
                 if (f.detail) html += '<div style="color:var(--fpc-text2);font-size:12px;margin-bottom:4px;padding-left:22px;">' + f.detail + '</div>';
-                if (f.action) html += '<div style="color:var(--fpc-teal);font-size:12px;font-weight:bold;padding-left:22px;">&#8594; ' + f.action + '</div>';
+                if (f.action) html += '<div style="color:var(--fpc-teal);font-size:12px;padding-left:22px;">&#8594; ' + f.action + '</div>';
+                // URLs anzeigen
                 if (f.urls && f.urls.length > 0) {
                     html += '<div style="padding-left:22px;margin-top:4px;">';
                     f.urls.slice(0, 5).forEach(function(u) {
@@ -5728,6 +5767,10 @@ function fpcAiRenderResult(container, data) {
                     });
                     if (f.urls.length > 5) html += '<span style="font-size:11px;color:var(--fpc-text2);">... und ' + (f.urls.length - 5) + ' weitere</span>';
                     html += '</div>';
+                }
+                // ===== FIX-BUTTONS: Klickbare Aktionen zum Loesen =====
+                if (f.fix && f.fix.type) {
+                    html += fpcAiRenderFixButton(f, fid);
                 }
                 html += '</div>';
             });
@@ -5752,6 +5795,205 @@ function fpcAiRenderResult(container, data) {
     }
 
     container.innerHTML = html;
+}
+
+// ===== FIX-BUTTON RENDERING UND AKTIONEN =====
+
+var FIX_BUTTON_CONFIG = {
+    redirect:        { label: 'Redirect anlegen',       icon: '&#8594;',    color: '#667eea', confirm: false },
+    bulk_redirect:   { label: 'Alle Redirects anlegen',  icon: '&#8694;',    color: '#667eea', confirm: true  },
+    preload:         { label: 'Jetzt cachen',            icon: '&#9889;',    color: '#00d4aa', confirm: false },
+    flush:           { label: 'Cache leeren & neu',      icon: '&#128260;',  color: '#ffa726', confirm: false },
+    canonical:       { label: 'Im Inspector pruefen',    icon: '&#128269;',  color: '#00a8ff', confirm: false },
+    ignore_404:      { label: '404 ignorieren',          icon: '&#128683;',  color: '#ff6b6b', confirm: false },
+    delete_redirect: { label: 'Redirect entfernen',      icon: '&#128465;',  color: '#ff6b6b', confirm: true  },
+    monitor:         { label: 'Beobachten',              icon: '&#128065;',  color: '#00a8ff', confirm: false }
+};
+
+// Globaler Speicher fuer Fix-Daten (vermeidet JSON-Escaping-Probleme in onclick)
+var _fpcFixData = {};
+
+function fpcAiRenderFixButton(finding, findingId) {
+    var fix = finding.fix;
+    var cfg = FIX_BUTTON_CONFIG[fix.type];
+    if (!cfg) return '';
+
+    // Fix-Daten global speichern statt inline im onclick
+    _fpcFixData[findingId] = fix;
+
+    var html = '<div style="padding-left:22px;margin-top:8px;display:flex;flex-wrap:wrap;gap:6px;align-items:center;">';
+
+    // Haupt-Fix-Button
+    html += '<button class="fpc-btn" id="fix-btn-' + findingId + '" ';
+    html += 'style="padding:5px 12px;font-size:12px;background:' + cfg.color + ';color:#fff;border:none;border-radius:4px;cursor:pointer;display:flex;align-items:center;gap:4px;" ';
+    html += 'onclick="fpcAiExecuteFixById(\'' + findingId + '\', this)">';
+    html += '<span>' + cfg.icon + '</span> ' + cfg.label;
+    html += '</button>';
+
+    // Bei Redirects: Ziel-URL anzeigen
+    if (fix.type === 'redirect' && fix.params && fix.params.target) {
+        html += '<span style="font-size:11px;color:var(--fpc-text2);">&#8594; <code style="color:var(--fpc-green);">' + fix.params.target + '</code></span>';
+    }
+    if (fix.type === 'bulk_redirect' && fix.params && fix.params.redirects) {
+        html += '<span style="font-size:11px;color:var(--fpc-text2);">(' + fix.params.redirects.length + ' Redirects)</span>';
+    }
+    if (fix.type === 'preload' && fix.params && fix.params.url) {
+        html += '<span style="font-size:11px;color:var(--fpc-text2);">&#9889; ' + fix.params.url + '</span>';
+    }
+    if (fix.type === 'monitor' && fix.params && fix.params.reason) {
+        html += '<span style="font-size:11px;color:var(--fpc-text2);font-style:italic;">(' + fix.params.reason + ')</span>';
+    }
+
+    // Ergebnis-Anzeige (wird nach Klick befuellt)
+    html += '<span id="fix-result-' + findingId + '" style="font-size:11px;"></span>';
+
+    html += '</div>';
+    return html;
+}
+
+// Wrapper: Fix-Daten aus globalem Speicher holen
+function fpcAiExecuteFixById(findingId, btn) {
+    var fixData = _fpcFixData[findingId];
+    if (!fixData) { fpcToast('Fix-Daten nicht gefunden', true); return; }
+    fpcAiExecuteFix(fixData.type, fixData, btn);
+}
+
+// Universelle Fix-Ausfuehrung
+function fpcAiExecuteFix(type, fixData, btn) {
+    var params = fixData.params || {};
+    var resultSpan = btn.parentElement.querySelector('[id^=fix-result]');
+
+    // Bestaetigungs-Dialog bei kritischen Aktionen
+    var cfg = FIX_BUTTON_CONFIG[type];
+    if (cfg && cfg.confirm) {
+        if (!confirm('Aktion ausfuehren: ' + cfg.label + '?')) return;
+    }
+
+    // Button deaktivieren und Loading anzeigen
+    btn.disabled = true;
+    var origHtml = btn.innerHTML;
+    btn.innerHTML = '<span style="animation:spin 0.8s linear infinite;display:inline-block;">&#8987;</span> Wird ausgefuehrt...';
+    btn.style.opacity = '0.7';
+
+    switch (type) {
+        case 'redirect':
+            var src = params.source || (params.url || '');
+            var tgt = params.target || '/';
+            var code = params.code || 301;
+            fpcAjaxPostJson('seo_redirect_add', {
+                source: src, target: tgt, type: String(code), note: 'KI-Vorschlag'
+            }, function(r) {
+                fpcAiFixDone(btn, resultSpan, origHtml, r.ok !== false, r.msg || 'Redirect angelegt');
+                if (r.ok !== false) fpcSeoLoadRedirects();
+            });
+            break;
+
+        case 'bulk_redirect':
+            var redirects = params.redirects || [];
+            if (redirects.length === 0) { fpcAiFixDone(btn, resultSpan, origHtml, false, 'Keine Redirects'); return; }
+            var done = 0, errors = 0;
+            redirects.forEach(function(rd) {
+                fpcAjaxPostJson('seo_redirect_add', {
+                    source: rd.source, target: rd.target, type: String(rd.code || 301), note: 'KI-Bulk-Vorschlag'
+                }, function(r) {
+                    done++;
+                    if (r.ok === false) errors++;
+                    if (done >= redirects.length) {
+                        fpcAiFixDone(btn, resultSpan, origHtml, errors === 0,
+                            done + ' Redirects angelegt' + (errors > 0 ? ' (' + errors + ' Fehler)' : ''));
+                        fpcSeoLoadRedirects();
+                    }
+                });
+            });
+            break;
+
+        case 'preload':
+            var pUrl = params.url || '';
+            fpcAjax('ajax=preload_url&url=' + encodeURIComponent(pUrl), function(r) {
+                fpcAiFixDone(btn, resultSpan, origHtml, r.ok !== false, r.msg || 'Gecacht');
+            });
+            break;
+
+        case 'flush':
+            var fUrl = params.url || '';
+            fpcAjax('ajax=flush_url&url=' + encodeURIComponent(fUrl), function(r) {
+                // Nach Flush: Seite neu cachen
+                fpcAjax('ajax=preload_url&url=' + encodeURIComponent(fUrl), function(r2) {
+                    fpcAiFixDone(btn, resultSpan, origHtml, true, 'Cache geleert und neu aufgebaut');
+                });
+            });
+            break;
+
+        case 'canonical':
+            var cUrl = params.url || '';
+            // Inspector oeffnen mit der URL
+            fpcSwitchTab('inspector');
+            setTimeout(function() {
+                var inp = document.getElementById('inspector-url');
+                if (inp) { inp.value = cUrl; }
+                var inspBtn = document.querySelector('#panel-inspector .fpc-btn.teal');
+                if (inspBtn) inspBtn.click();
+            }, 200);
+            fpcAiFixDone(btn, resultSpan, origHtml, true, 'Inspector geoeffnet');
+            break;
+
+        case 'ignore_404':
+            var iUrl = params.url || '';
+            fpcAjax('ajax=seo_404_dismiss_url&url=' + encodeURIComponent(iUrl), function(r) {
+                fpcAiFixDone(btn, resultSpan, origHtml, r.ok !== false, r.msg || '404 ignoriert');
+                fpcSeoLoad404();
+            });
+            break;
+
+        case 'delete_redirect':
+            var dSrc = params.source || '';
+            // Redirect per Source-URL finden und loeschen
+            fpcAjax('ajax=seo_redirects&search=' + encodeURIComponent(dSrc), function(list) {
+                var found = false;
+                (list || []).forEach(function(rd) {
+                    if (rd.source === dSrc && rd.id) {
+                        found = true;
+                        fpcAjax('ajax=seo_redirect_delete&id=' + rd.id, function(r) {
+                            fpcAiFixDone(btn, resultSpan, origHtml, r.ok !== false, r.msg || 'Redirect geloescht');
+                            fpcSeoLoadRedirects();
+                        });
+                    }
+                });
+                if (!found) fpcAiFixDone(btn, resultSpan, origHtml, false, 'Redirect nicht gefunden');
+            });
+            break;
+
+        case 'monitor':
+            // Nur visuelles Feedback - nichts tun
+            fpcAiFixDone(btn, resultSpan, origHtml, true, 'Wird beobachtet');
+            break;
+
+        default:
+            fpcAiFixDone(btn, resultSpan, origHtml, false, 'Unbekannte Aktion: ' + type);
+    }
+}
+
+// Fix-Button Ergebnis anzeigen
+function fpcAiFixDone(btn, resultSpan, origHtml, success, msg) {
+    btn.disabled = false;
+    btn.style.opacity = '1';
+    if (success) {
+        btn.innerHTML = '<span>&#10003;</span> Erledigt';
+        btn.style.background = 'var(--fpc-green)';
+        btn.style.cursor = 'default';
+        btn.disabled = true;
+        if (resultSpan) {
+            resultSpan.style.color = 'var(--fpc-green)';
+            resultSpan.innerHTML = '&#10003; ' + msg;
+        }
+    } else {
+        btn.innerHTML = origHtml;
+        if (resultSpan) {
+            resultSpan.style.color = '#ff6b6b';
+            resultSpan.innerHTML = '&#9888; ' + msg;
+        }
+    }
+    fpcToast(msg, !success);
 }
 
 // CSS Animation fuer Spinner

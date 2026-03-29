@@ -943,7 +943,19 @@ PROMPT;
         }
 
         $user_prompt .= "\n\nAntworte im folgenden JSON-Format:\n";
-        $user_prompt .= '{"summary": "Kurze Zusammenfassung in 1-2 Saetzen", "score": 0-100, "findings": [{"type": "critical|warning|info|success", "title": "Kurztitel", "detail": "Erklaerung", "action": "Konkrete Handlungsempfehlung", "action_type": "redirect|cache|fix|optimize|monitor", "urls": ["betroffene URLs"]}], "quick_wins": ["Sofort umsetzbare Verbesserungen"]}';
+        $user_prompt .= '{"summary": "Kurze Zusammenfassung in 1-2 Saetzen", "score": 0-100, "findings": [{"type": "critical|warning|info|success", "title": "Kurztitel", "detail": "Erklaerung", "action": "Konkrete Handlungsempfehlung", "action_type": "redirect|cache|fix|optimize|monitor", "urls": ["betroffene URLs"], "fix": {"type": "redirect|preload|flush|canonical|delete_redirect|ignore_404|bulk_redirect", "params": {}}}], "quick_wins": ["Sofort umsetzbare Verbesserungen"]}';
+
+        $user_prompt .= "\n\nWICHTIG: Jedes Finding MUSS ein 'fix' Objekt enthalten mit einer konkreten Aktion die der Benutzer per Klick ausfuehren kann:\n";
+        $user_prompt .= "- fix.type='redirect': Redirect anlegen. params={source:'/alte-url/', target:'/neue-url/', code:301}\n";
+        $user_prompt .= "- fix.type='bulk_redirect': Mehrere Redirects auf einmal. params={redirects:[{source:'/url1/',target:'/ziel1/'},{source:'/url2/',target:'/ziel2/'}]}\n";
+        $user_prompt .= "- fix.type='preload': Seite im Cache aufwaermen. params={url:'/seite/'}\n";
+        $user_prompt .= "- fix.type='flush': Cache fuer URL leeren und neu aufbauen. params={url:'/seite/'}\n";
+        $user_prompt .= "- fix.type='canonical': Canonical-Tag Problem. params={url:'/seite/', expected_canonical:'https://mr-hanf.de/richtige-url/'}\n";
+        $user_prompt .= "- fix.type='ignore_404': 404 als ignoriert markieren. params={url:'/unwichtige-url/'}\n";
+        $user_prompt .= "- fix.type='delete_redirect': Unnuetigen Redirect entfernen. params={source:'/url/'}\n";
+        $user_prompt .= "- fix.type='monitor': Nur beobachten, keine Aktion. params={url:'/seite/', reason:'Grund'}\n";
+        $user_prompt .= "Bei Redirect-Vorschlaegen: Nutze dein Wissen ueber mr-hanf.de (Cannabis-Samen-Shop) um sinnvolle Ziel-URLs vorzuschlagen. Verwende existierende Kategorien wie /growshop/, /samen-shop/, /autoflowering-seeds/ etc.\n";
+        $user_prompt .= "Bei Sprach-Varianten: Wenn eine URL ein Sprach-Prefix hat (/en/, /fr/, /es/, /nl/, /it/), schlage den Redirect MIT dem gleichen Prefix vor.\n";
 
         $response = $this->callOpenAI($this->system_prompt, $user_prompt);
 
