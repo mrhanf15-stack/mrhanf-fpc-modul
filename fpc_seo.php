@@ -177,33 +177,49 @@ class FpcSeo {
         $path = parse_url($request_uri, PHP_URL_PATH);
         if (empty($path)) $path = '/';
 
+        // v10.6.1: URL-decoded Variante fuer Vergleich (z.B. %3Cspan -> <span, %20 -> Leerzeichen)
+        $path_decoded = rawurldecode($path);
+
         foreach ($redirects as &$r) {
             if (!$r['active']) continue;
 
+            // Source auch decoded vorbereiten
+            $source = $r['source'];
+            $source_decoded = rawurldecode($source);
+
             if ($r['is_regex']) {
-                // Regex-Match
-                if (@preg_match('#' . $r['source'] . '#i', $path, $matches)) {
-                    $target = preg_replace('#' . $r['source'] . '#i', $r['target'], $path);
+                // Regex-Match: teste gegen beide Varianten
+                if (@preg_match('#' . $source . '#i', $path, $matches) ||
+                    @preg_match('#' . $source . '#i', $path_decoded, $matches)) {
+                    $target = preg_replace('#' . $source . '#i', $r['target'], $path);
                     $r['hit_count']++;
                     $r['last_hit'] = date('Y-m-d H:i:s');
                     $this->writeJson($this->file_redirects, $redirects);
                     return array('target' => $target, 'type' => (int)$r['type'], 'id' => $r['id']);
                 }
             } else {
-                // Exakter Match
-                if ($path === $r['source']) {
-                    $r['hit_count']++;
-                    $r['last_hit'] = date('Y-m-d H:i:s');
-                    $this->writeJson($this->file_redirects, $redirects);
-                    return array('target' => $r['target'], 'type' => (int)$r['type'], 'id' => $r['id']);
-                }
-                // Trailing-Slash Variante
-                $alt = (substr($path, -1) === '/') ? rtrim($path, '/') : $path . '/';
-                if ($alt === $r['source']) {
-                    $r['hit_count']++;
-                    $r['last_hit'] = date('Y-m-d H:i:s');
-                    $this->writeJson($this->file_redirects, $redirects);
-                    return array('target' => $r['target'], 'type' => (int)$r['type'], 'id' => $r['id']);
+                // v10.6.1: Alle Kombinationen vergleichen (encoded/decoded Source vs encoded/decoded Path)
+                $path_variants = array_unique(array($path, $path_decoded));
+                $source_variants = array_unique(array($source, $source_decoded));
+
+                foreach ($path_variants as $p) {
+                    foreach ($source_variants as $s) {
+                        // Exakter Match
+                        if ($p === $s) {
+                            $r['hit_count']++;
+                            $r['last_hit'] = date('Y-m-d H:i:s');
+                            $this->writeJson($this->file_redirects, $redirects);
+                            return array('target' => $r['target'], 'type' => (int)$r['type'], 'id' => $r['id']);
+                        }
+                        // Trailing-Slash Variante
+                        $alt = (substr($p, -1) === '/') ? rtrim($p, '/') : $p . '/';
+                        if ($alt === $s) {
+                            $r['hit_count']++;
+                            $r['last_hit'] = date('Y-m-d H:i:s');
+                            $this->writeJson($this->file_redirects, $redirects);
+                            return array('target' => $r['target'], 'type' => (int)$r['type'], 'id' => $r['id']);
+                        }
+                    }
                 }
             }
         }
