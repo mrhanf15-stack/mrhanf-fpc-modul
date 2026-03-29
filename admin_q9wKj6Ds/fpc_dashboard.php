@@ -3482,17 +3482,10 @@ function fpcSeoSwitchTypeTab(type) {
 }
 
 // Dateityp-Erkennung: Bild?
-// Erkennt Bilder anhand von Dateiendungen UND Pfad-Mustern
-var IMAGE_PATH_PATTERNS = ['/images/', '/img/', '/bilder/', '/fotos/', '/photos/', '/thumbnails/', '/thumb/', '/media/image', '/product_images/', '/popup_images/', '/original_images/', '/info_images/', '/banner/'];
 function fpcSeoIsImage(url) {
     var lower = url.toLowerCase();
-    // 1. Endungs-basiert: .jpg, .png, .webp etc.
     for (var i = 0; i < IMAGE_EXTENSIONS.length; i++) {
-        if (lower.endsWith(IMAGE_EXTENSIONS[i]) || lower.indexOf(IMAGE_EXTENSIONS[i] + '?') !== -1 || lower.indexOf(IMAGE_EXTENSIONS[i] + '#') !== -1) return true;
-    }
-    // 2. Pfad-basiert: /images/, /img/, /product_images/ etc.
-    for (var i = 0; i < IMAGE_PATH_PATTERNS.length; i++) {
-        if (lower.indexOf(IMAGE_PATH_PATTERNS[i]) !== -1) return true;
+        if (lower.endsWith(IMAGE_EXTENSIONS[i]) || lower.indexOf(IMAGE_EXTENSIONS[i] + '?') !== -1) return true;
     }
     return false;
 }
@@ -3563,12 +3556,13 @@ function fpcSeoGetBasePath(url) {
     return url;
 }
 
-// v10.4.0: Pruefen ob URL ein Asset ist (Bild, PDF, CSS, JS, Font etc.)
+// v10.4.0: Pruefen ob URL ein Asset ist
 function fpcSeoIsAsset(url) {
-    // Bilder und PDFs sind auch Assets
-    if (fpcSeoIsImage(url)) return true;
-    if (fpcSeoIsPdf(url)) return true;
-    if (fpcSeoIsPureAsset(url)) return true;
+    var lower = url.toLowerCase();
+    for (var i = 0; i < ASSET_EXTENSIONS.length; i++) {
+        if (lower.indexOf(ASSET_EXTENSIONS[i]) === lower.length - ASSET_EXTENSIONS[i].length) return true;
+        if (lower.indexOf(ASSET_EXTENSIONS[i] + '?') !== -1) return true;
+    }
     return false;
 }
 
