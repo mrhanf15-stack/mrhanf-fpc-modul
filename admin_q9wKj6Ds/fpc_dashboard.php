@@ -2137,22 +2137,27 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
     <!-- SCAN ERGEBNISSE -->
     <div class="fpc-section-title">&#128269; Scan-Ergebnisse</div>
     <div style="background:var(--fpc-card);border-radius:10px;padding:20px;border:1px solid var(--fpc-border);margin-bottom:20px;">
-        <!-- Status-Filter -->
-        <div style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap;align-items:center;">
-            <button class="fpc-btn teal active" onclick="fpcSeoLoadScanResults('')">Alle</button>
-            <button class="fpc-btn green" onclick="fpcSeoLoadScanResults('ok')">OK</button>
-            <button class="fpc-btn orange" onclick="fpcSeoLoadScanResults('warning')">Warnings</button>
-            <button class="fpc-btn red" onclick="fpcSeoLoadScanResults('error')">Errors</button>
-            <button class="fpc-btn blue" onclick="fpcSeoLoadScanResults('redirect')">Redirects</button>
-            <span style="color:var(--fpc-text2);font-size:11px;margin-left:8px;">|</span>
-            <!-- v10.4.0: Dateityp-Filter -->
-            <button class="fpc-btn teal" style="font-size:11px;padding:4px 8px;" onclick="fpcSeoSetTypeFilter('pages')" id="btn-type-pages" title="Nur Shop-Seiten (HTML)">Seiten</button>
-            <button class="fpc-btn" style="font-size:11px;padding:4px 8px;background:var(--fpc-card2);color:var(--fpc-text);" onclick="fpcSeoSetTypeFilter('all')" id="btn-type-all" title="Alle URLs anzeigen">Alle Typen</button>
-            <button class="fpc-btn" style="font-size:11px;padding:4px 8px;background:var(--fpc-card2);color:var(--fpc-text);" onclick="fpcSeoSetTypeFilter('assets')" id="btn-type-assets" title="Nur Assets (PDF, Bilder, CSS, JS)">Assets</button>
-            <input type="text" class="fpc-input" id="scan-search" placeholder="URLs suchen..." oninput="fpcSeoLoadScanResults()" style="width:200px;margin-left:auto;">
+        <!-- Haupt-Tabs: Status + Dateityp -->
+        <div style="display:flex;gap:0;margin-bottom:0;border-bottom:2px solid var(--fpc-border);flex-wrap:wrap;">
+            <!-- Status-Tabs -->
+            <button class="scan-tab active" data-tab="alle" onclick="fpcSeoSwitchScanTab('alle')" style="padding:10px 16px;font-size:13px;font-weight:bold;background:none;border:none;border-bottom:3px solid var(--fpc-teal);color:var(--fpc-teal);cursor:pointer;">Alle <span class="scan-tab-count" id="stc-alle"></span></button>
+            <button class="scan-tab" data-tab="ok" onclick="fpcSeoSwitchScanTab('ok')" style="padding:10px 16px;font-size:13px;font-weight:bold;background:none;border:none;border-bottom:3px solid transparent;color:var(--fpc-text2);cursor:pointer;">OK <span class="scan-tab-count" id="stc-ok"></span></button>
+            <button class="scan-tab" data-tab="warning" onclick="fpcSeoSwitchScanTab('warning')" style="padding:10px 16px;font-size:13px;font-weight:bold;background:none;border:none;border-bottom:3px solid transparent;color:var(--fpc-text2);cursor:pointer;">Warnings <span class="scan-tab-count" id="stc-warning"></span></button>
+            <button class="scan-tab" data-tab="redirect" onclick="fpcSeoSwitchScanTab('redirect')" style="padding:10px 16px;font-size:13px;font-weight:bold;background:none;border:none;border-bottom:3px solid transparent;color:var(--fpc-text2);cursor:pointer;">Redirects <span class="scan-tab-count" id="stc-redirect"></span></button>
+            <button class="scan-tab" data-tab="error" onclick="fpcSeoSwitchScanTab('error')" style="padding:10px 16px;font-size:13px;font-weight:bold;background:none;border:none;border-bottom:3px solid transparent;color:var(--fpc-text2);cursor:pointer;">Errors <span class="scan-tab-count" id="stc-error"></span></button>
+            <button class="scan-tab" data-tab="manuell" onclick="fpcSeoSwitchScanTab('manuell')" style="padding:10px 16px;font-size:13px;font-weight:bold;background:none;border:none;border-bottom:3px solid transparent;color:var(--fpc-text2);cursor:pointer;">Manuell <span class="scan-tab-count" id="stc-manuell"></span></button>
+            <span style="border-left:1px solid var(--fpc-border);margin:6px 4px;"></span>
+            <!-- Dateityp-Tabs -->
+            <button class="scan-tab active" data-typetab="pages" onclick="fpcSeoSwitchTypeTab('pages')" style="padding:10px 12px;font-size:12px;background:none;border:none;border-bottom:3px solid var(--fpc-blue);color:var(--fpc-blue);cursor:pointer;">Seiten <span class="scan-tab-count" id="stc-pages"></span></button>
+            <button class="scan-tab" data-typetab="images" onclick="fpcSeoSwitchTypeTab('images')" style="padding:10px 12px;font-size:12px;background:none;border:none;border-bottom:3px solid transparent;color:var(--fpc-text2);cursor:pointer;">Bilder <span class="scan-tab-count" id="stc-images"></span></button>
+            <button class="scan-tab" data-typetab="pdfs" onclick="fpcSeoSwitchTypeTab('pdfs')" style="padding:10px 12px;font-size:12px;background:none;border:none;border-bottom:3px solid transparent;color:var(--fpc-text2);cursor:pointer;">PDFs <span class="scan-tab-count" id="stc-pdfs"></span></button>
+            <button class="scan-tab" data-typetab="assets" onclick="fpcSeoSwitchTypeTab('assets')" style="padding:10px 12px;font-size:12px;background:none;border:none;border-bottom:3px solid transparent;color:var(--fpc-text2);cursor:pointer;">Assets <span class="scan-tab-count" id="stc-assets"></span></button>
+            <button class="scan-tab" data-typetab="all" onclick="fpcSeoSwitchTypeTab('all')" style="padding:10px 12px;font-size:12px;background:none;border:none;border-bottom:3px solid transparent;color:var(--fpc-text2);cursor:pointer;">Alle Typen</button>
+            <!-- Suche rechts -->
+            <input type="text" class="fpc-input" id="scan-search" placeholder="URLs suchen..." oninput="fpcSeoRenderScanTable()" style="width:180px;margin-left:auto;align-self:center;font-size:12px;padding:5px 8px;">
         </div>
-        <!-- v10.4.0: Sprach-Filter + KI-Aktionen -->
-        <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center;">
+        <!-- Zweite Zeile: Sprach-Filter + Aktionen -->
+        <div style="display:flex;gap:6px;padding:10px 0;flex-wrap:wrap;align-items:center;">
             <span style="color:var(--fpc-text2);font-size:11px;">Sprache:</span>
             <button class="fpc-btn teal" style="font-size:11px;padding:3px 7px;" onclick="fpcSeoSetLangFilter('')" id="btn-lang-all">Alle</button>
             <button class="fpc-btn" style="font-size:11px;padding:3px 7px;background:var(--fpc-card2);color:var(--fpc-text);" onclick="fpcSeoSetLangFilter('de')" id="btn-lang-de">DE</button>
@@ -2161,13 +2166,13 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
             <button class="fpc-btn" style="font-size:11px;padding:3px 7px;background:var(--fpc-card2);color:var(--fpc-text);" onclick="fpcSeoSetLangFilter('es')" id="btn-lang-es">ES</button>
             <button class="fpc-btn" style="font-size:11px;padding:3px 7px;background:var(--fpc-card2);color:var(--fpc-text);" onclick="fpcSeoSetLangFilter('nl')" id="btn-lang-nl">NL</button>
             <button class="fpc-btn" style="font-size:11px;padding:3px 7px;background:var(--fpc-card2);color:var(--fpc-text);" onclick="fpcSeoSetLangFilter('it')" id="btn-lang-it">IT</button>
-            <span style="color:var(--fpc-text2);font-size:11px;margin-left:12px;">|</span>
+            <span style="color:var(--fpc-border);margin:0 4px;">|</span>
             <button class="fpc-btn" style="font-size:11px;padding:4px 10px;background:var(--fpc-card2);color:var(--fpc-text);" onclick="fpcSeoToggleGroupView()" id="btn-group-toggle" title="URLs nach Basis-Pfad gruppieren (alle Sprachen zusammen)">&#127760; Gruppiert</button>
             <button class="fpc-btn" style="font-size:11px;padding:4px 10px;background:linear-gradient(135deg,#667eea,#764ba2);color:#fff;" onclick="fpcSeoAiSuggestRedirects()" id="btn-ai-suggest" title="KI analysiert problematische URLs und schlaegt Redirects vor">&#129302; KI Redirect-Vorschlaege</button>
             <span id="scan-result-count" style="color:var(--fpc-text2);font-size:11px;margin-left:auto;"></span>
         </div>
         <div id="seo-scan-table"></div>
-        <!-- v10.4.0: KI-Vorschlaege Container -->
+        <!-- KI-Vorschlaege Container -->
         <div id="seo-ai-suggestions" style="display:none;margin-top:16px;"></div>
     </div>
 
@@ -3060,10 +3065,12 @@ function fpcLoadFehler() {
 // ============================================================
 var seo404Filter = 'unresolved';
 var seoScanFilter = '';
-var seoScanTypeFilter = 'pages'; // v10.4.0: pages|all|assets
-var seoScanLangFilter = '';      // v10.4.0: ''|de|en|fr|es|nl|it
-var seoScanGrouped = false;      // v10.4.0: Gruppierte Ansicht
-var seoScanData = [];            // v10.4.0: Rohdaten fuer KI-Analyse
+var seoScanTypeFilter = 'pages'; // pages|images|pdfs|assets|all
+var seoScanLangFilter = '';      // ''|de|en|fr|es|nl|it
+var seoScanGrouped = false;      // Gruppierte Ansicht
+var seoScanData = [];            // Rohdaten fuer KI-Analyse
+var seoManualRedirects = [];     // Manuell angelegte Redirects
+var _fpcAiResults = {};          // KI-Ergebnisse persistent pro Tab
 
 function fpcLoadSeo() {
     // File Editor laden
@@ -3404,19 +3411,69 @@ function fpcSeoRunScan(mode) {
     });
 }
 
-// v10.4.0: Dateityp-Filter Definitionen
+// Dateityp-Filter Definitionen
 var ASSET_EXTENSIONS = ['.pdf', '.jpg', '.jpeg', '.png', '.gif', '.svg', '.webp', '.ico', '.css', '.js', '.txt', '.xml', '.json', '.woff', '.woff2', '.ttf', '.eot', '.map', '.zip', '.gz'];
-var IMAGE_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.gif', '.svg', '.webp', '.ico'];
+var IMAGE_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.gif', '.svg', '.webp', '.ico', '.avif', '.bmp', '.tiff'];
+var PDF_EXTENSIONS = ['.pdf'];
+var PURE_ASSET_EXTENSIONS = ['.css', '.js', '.txt', '.xml', '.json', '.woff', '.woff2', '.ttf', '.eot', '.map', '.zip', '.gz'];
 var LANG_PREFIXES = ['/en/', '/fr/', '/es/', '/nl/', '/it/'];
+var SCAN_TAB_COLORS = {alle:'var(--fpc-teal)', ok:'var(--fpc-green)', warning:'var(--fpc-orange)', redirect:'var(--fpc-blue)', error:'var(--fpc-red)', manuell:'#ab47bc'};
+var TYPE_TAB_COLORS = {pages:'var(--fpc-blue)', images:'#ffa726', pdfs:'#ff6b6b', assets:'var(--fpc-text2)', all:'var(--fpc-text2)'};
 
-// v10.4.0: Dateityp-Filter setzen
-function fpcSeoSetTypeFilter(type) {
-    seoScanTypeFilter = type;
-    ['pages','all','assets'].forEach(function(t) {
-        var btn = document.getElementById('btn-type-' + t);
-        if (btn) { btn.style.background = (t === type) ? '' : 'var(--fpc-card2)'; btn.style.color = (t === type) ? '' : 'var(--fpc-text)'; btn.className = 'fpc-btn' + (t === type ? ' teal' : ''); }
+// Sub-Tab: Status wechseln
+function fpcSeoSwitchScanTab(tab) {
+    seoScanFilter = tab === 'alle' ? '' : tab;
+    document.querySelectorAll('.scan-tab[data-tab]').forEach(function(btn) {
+        var isActive = btn.getAttribute('data-tab') === tab;
+        var c = SCAN_TAB_COLORS[btn.getAttribute('data-tab')] || 'var(--fpc-text2)';
+        btn.style.borderBottomColor = isActive ? c : 'transparent';
+        btn.style.color = isActive ? c : 'var(--fpc-text2)';
     });
     fpcSeoRenderScanTable();
+}
+
+// Sub-Tab: Dateityp wechseln
+function fpcSeoSwitchTypeTab(type) {
+    seoScanTypeFilter = type;
+    document.querySelectorAll('.scan-tab[data-typetab]').forEach(function(btn) {
+        var isActive = btn.getAttribute('data-typetab') === type;
+        var c = TYPE_TAB_COLORS[btn.getAttribute('data-typetab')] || 'var(--fpc-text2)';
+        btn.style.borderBottomColor = isActive ? c : 'transparent';
+        btn.style.color = isActive ? c : 'var(--fpc-text2)';
+    });
+    fpcSeoRenderScanTable();
+}
+
+// Dateityp-Erkennung: Bild?
+function fpcSeoIsImage(url) {
+    var lower = url.toLowerCase();
+    for (var i = 0; i < IMAGE_EXTENSIONS.length; i++) {
+        if (lower.endsWith(IMAGE_EXTENSIONS[i]) || lower.indexOf(IMAGE_EXTENSIONS[i] + '?') !== -1) return true;
+    }
+    return false;
+}
+
+// Dateityp-Erkennung: PDF?
+function fpcSeoIsPdf(url) {
+    var lower = url.toLowerCase();
+    return lower.endsWith('.pdf') || lower.indexOf('.pdf?') !== -1;
+}
+
+// Dateityp-Erkennung: Reines Asset (CSS/JS/Font etc, NICHT Bild/PDF)?
+function fpcSeoIsPureAsset(url) {
+    var lower = url.toLowerCase();
+    for (var i = 0; i < PURE_ASSET_EXTENSIONS.length; i++) {
+        if (lower.endsWith(PURE_ASSET_EXTENSIONS[i]) || lower.indexOf(PURE_ASSET_EXTENSIONS[i] + '?') !== -1) return true;
+    }
+    return false;
+}
+
+// Manuell angelegte Redirects laden (aus Redirect-Manager)
+function fpcSeoLoadManualRedirects() {
+    fpcAjax('ajax=seo_redirects&search=', function(d) {
+        seoManualRedirects = d || [];
+        fpcSeoUpdateTabCounts();
+    });
 }
 
 // v10.4.0: Sprach-Filter setzen
@@ -3472,8 +3529,14 @@ function fpcSeoIsAsset(url) {
     return false;
 }
 
-// v10.4.0: Client-seitige Filterung und Rendering
+// Client-seitige Filterung und Rendering
 function fpcSeoRenderScanTable() {
+    // Manuell-Tab: Zeigt Redirects aus dem Redirect-Manager
+    if (seoScanFilter === 'manuell') {
+        fpcSeoRenderManualTab();
+        return;
+    }
+
     var d = seoScanData;
     if (!d || d.length === 0) {
         document.getElementById('seo-scan-table').innerHTML = '<p style="color:var(--fpc-text2)">Keine Scan-Ergebnisse. Starte einen Scan.</p>';
@@ -3481,16 +3544,31 @@ function fpcSeoRenderScanTable() {
         return;
     }
 
+    // Suche
+    var search = (document.getElementById('scan-search') ? document.getElementById('scan-search').value : '').toLowerCase();
+
     // Client-seitige Filter anwenden
     var filtered = d.filter(function(r) {
-        var isAsset = fpcSeoIsAsset(r.url);
-        if (seoScanTypeFilter === 'pages' && isAsset) return false;
-        if (seoScanTypeFilter === 'assets' && !isAsset) return false;
-        if (seoScanLangFilter !== '') {
-            if (fpcSeoGetUrlLang(r.url) !== seoScanLangFilter) return false;
-        }
+        // Dateityp-Filter
+        if (seoScanTypeFilter === 'pages' && fpcSeoIsAsset(r.url)) return false;
+        if (seoScanTypeFilter === 'images' && !fpcSeoIsImage(r.url)) return false;
+        if (seoScanTypeFilter === 'pdfs' && !fpcSeoIsPdf(r.url)) return false;
+        if (seoScanTypeFilter === 'assets' && !fpcSeoIsPureAsset(r.url)) return false;
+        if (seoScanTypeFilter === 'all') { /* kein Filter */ }
+        // Status-Filter
+        if (seoScanFilter === 'ok' && r.status !== 'ok') return false;
+        if (seoScanFilter === 'warning' && r.status !== 'warning') return false;
+        if (seoScanFilter === 'redirect' && r.status !== 'redirect') return false;
+        if (seoScanFilter === 'error' && r.status !== 'error') return false;
+        // Sprach-Filter
+        if (seoScanLangFilter !== '' && fpcSeoGetUrlLang(r.url) !== seoScanLangFilter) return false;
+        // Suche
+        if (search && r.url.toLowerCase().indexOf(search) === -1) return false;
         return true;
     });
+
+    // Tab-Zaehler aktualisieren
+    fpcSeoUpdateTabCounts();
 
     // Sprach-Statistik zaehlen
     var langCounts = {de:0, en:0, fr:0, es:0, nl:0, it:0};
@@ -3507,6 +3585,86 @@ function fpcSeoRenderScanTable() {
         fpcSeoRenderFlatTable(filtered);
     }
     document.getElementById('scan-result-count').textContent = filtered.length + ' von ' + d.length + ' URLs' + (seoScanGrouped ? ' (gruppiert)' : '');
+}
+
+// Tab-Zaehler aktualisieren
+function fpcSeoUpdateTabCounts() {
+    var d = seoScanData || [];
+    // Dateityp-Filter beruecksichtigen
+    function matchType(r) {
+        if (seoScanTypeFilter === 'pages' && fpcSeoIsAsset(r.url)) return false;
+        if (seoScanTypeFilter === 'images' && !fpcSeoIsImage(r.url)) return false;
+        if (seoScanTypeFilter === 'pdfs' && !fpcSeoIsPdf(r.url)) return false;
+        if (seoScanTypeFilter === 'assets' && !fpcSeoIsPureAsset(r.url)) return false;
+        return true;
+    }
+    var counts = {alle:0, ok:0, warning:0, redirect:0, error:0};
+    d.forEach(function(r) {
+        if (!matchType(r)) return;
+        counts.alle++;
+        if (r.status === 'ok') counts.ok++;
+        else if (r.status === 'warning') counts.warning++;
+        else if (r.status === 'redirect') counts.redirect++;
+        else if (r.status === 'error') counts.error++;
+    });
+    counts.manuell = seoManualRedirects.length;
+
+    // Dateityp-Zaehler (unabhaengig vom Status-Filter)
+    var typeCounts = {pages:0, images:0, pdfs:0, assets:0};
+    d.forEach(function(r) {
+        if (fpcSeoIsImage(r.url)) typeCounts.images++;
+        else if (fpcSeoIsPdf(r.url)) typeCounts.pdfs++;
+        else if (fpcSeoIsPureAsset(r.url)) typeCounts.assets++;
+        else typeCounts.pages++;
+    });
+
+    // Status-Tab-Zaehler setzen
+    ['alle','ok','warning','redirect','error','manuell'].forEach(function(k) {
+        var el = document.getElementById('stc-' + k);
+        if (el) el.textContent = '(' + (counts[k] || 0) + ')';
+    });
+    // Dateityp-Tab-Zaehler setzen
+    ['pages','images','pdfs','assets'].forEach(function(k) {
+        var el = document.getElementById('stc-' + k);
+        if (el) el.textContent = '(' + (typeCounts[k] || 0) + ')';
+    });
+}
+
+// Manuell-Tab: Zeigt alle manuell angelegten Redirects
+function fpcSeoRenderManualTab() {
+    var container = document.getElementById('seo-scan-table');
+    var data = seoManualRedirects;
+    if (!data || data.length === 0) {
+        container.innerHTML = '<p style="color:var(--fpc-text2)">Keine manuell angelegten Redirects. Lege Redirects im Redirect Manager oben an.</p>';
+        document.getElementById('scan-result-count').textContent = '0 Redirects';
+        return;
+    }
+
+    var search = (document.getElementById('scan-search') ? document.getElementById('scan-search').value : '').toLowerCase();
+    var filtered = data.filter(function(r) {
+        if (search && (r.source || '').toLowerCase().indexOf(search) === -1 && (r.target || '').toLowerCase().indexOf(search) === -1) return false;
+        if (seoScanLangFilter !== '' && fpcSeoGetUrlLang(r.source) !== seoScanLangFilter) return false;
+        return true;
+    });
+
+    var html = '<table class="fpc-table"><thead><tr>';
+    html += '<th>Quelle</th><th>Ziel</th><th>Typ</th><th>Hits</th><th>Notiz</th><th>Erstellt</th><th>Status</th>';
+    html += '</tr></thead><tbody>';
+    filtered.forEach(function(r) {
+        var isActive = r.active !== false;
+        html += '<tr style="opacity:' + (isActive ? '1' : '0.5') + ';">';
+        html += '<td style="max-width:250px;overflow:hidden;text-overflow:ellipsis;"><a href="https://mr-hanf.de' + r.source + '" target="_blank" style="color:var(--fpc-teal);text-decoration:none;" title="' + r.source + '">' + r.source + '</a></td>';
+        html += '<td style="max-width:250px;overflow:hidden;text-overflow:ellipsis;"><code style="color:var(--fpc-green);font-size:12px;" title="' + r.target + '">' + r.target + '</code></td>';
+        html += '<td><span class="fpc-badge bypass">' + (r.type || '301') + '</span></td>';
+        html += '<td style="color:var(--fpc-text2);font-size:12px;">' + (r.hit_count || 0) + '</td>';
+        html += '<td style="font-size:11px;color:var(--fpc-text2);max-width:150px;overflow:hidden;text-overflow:ellipsis;">' + (r.note || '-') + '</td>';
+        html += '<td style="font-size:11px;color:var(--fpc-text2);">' + (r.created ? r.created.substring(0,10) : '-') + '</td>';
+        html += '<td><span class="fpc-badge ' + (isActive ? 'hit' : 'miss') + '" style="font-size:10px;">' + (isActive ? 'aktiv' : 'inaktiv') + '</span></td>';
+        html += '</tr>';
+    });
+    html += '</tbody></table>';
+    container.innerHTML = html;
+    document.getElementById('scan-result-count').textContent = filtered.length + ' von ' + data.length + ' Redirects';
 }
 
 // v10.4.0: Flache Tabelle (Standard-Ansicht)
@@ -3739,11 +3897,13 @@ function fpcSeoGroupRedirect(basePath) {
 
 function fpcSeoLoadScanResults(filter) {
     if (filter !== undefined) seoScanFilter = filter;
-    var search = document.getElementById('scan-search') ? document.getElementById('scan-search').value : '';
-    fpcAjax('ajax=seo_scan_results&status=' + encodeURIComponent(seoScanFilter) + '&search=' + encodeURIComponent(search), function(d) {
+    // Alle Daten laden (Filterung passiert client-seitig)
+    fpcAjax('ajax=seo_scan_results&status=&search=', function(d) {
         seoScanData = d || [];
         fpcSeoRenderScanTable();
     });
+    // Manuell angelegte Redirects parallel laden
+    fpcSeoLoadManualRedirects();
 }
 
 // v10.4.0: Redirect aus Scan-Ergebnissen anlegen
@@ -5436,6 +5596,7 @@ function fpcAiAssistantInit() {
 
 function fpcAiTabAssist(panelId, subTab) {
     var aiTab = subTab || AI_TAB_MAP[panelId] || 'dashboard';
+    var cacheKey = panelId + (subTab ? '_' + subTab : '');
     var btn = document.getElementById('ai-assist-btn-' + panelId);
     var resultDiv = document.getElementById('ai-result-' + panelId);
 
@@ -5470,10 +5631,45 @@ function fpcAiTabAssist(panelId, subTab) {
             return;
         }
 
+        // Ergebnis persistent speichern
+        _fpcAiResults[cacheKey] = { data: d, html: '', timestamp: Date.now() };
+
         // Ergebnis rendern
         fpcAiRenderResult(resultDiv, d);
+
+        // HTML nach dem Rendern speichern
+        _fpcAiResults[cacheKey].html = resultDiv.innerHTML;
     });
 }
+
+// KI-Ergebnisse wiederherstellen wenn Tab gewechselt wird
+function fpcAiRestoreResults() {
+    Object.keys(_fpcAiResults).forEach(function(key) {
+        var panelId = key.split('_')[0];
+        var resultDiv = document.getElementById('ai-result-' + panelId);
+        if (resultDiv && _fpcAiResults[key].html) {
+            resultDiv.innerHTML = _fpcAiResults[key].html;
+            resultDiv.style.display = 'block';
+        }
+    });
+}
+
+// Tab-Wechsel abfangen und KI-Ergebnisse wiederherstellen
+(function() {
+    var origSwitchTab = window.fpcSwitchTab;
+    if (typeof origSwitchTab === 'function') {
+        window.fpcSwitchTab = function(tab) {
+            origSwitchTab(tab);
+            // KI-Ergebnisse nach kurzem Delay wiederherstellen (DOM muss bereit sein)
+            setTimeout(fpcAiRestoreResults, 50);
+        };
+    }
+    // Auch bei Tab-Klick auf die Tab-Buttons
+    document.addEventListener('click', function(e) {
+        var btn = e.target.closest('.fpc-tab');
+        if (btn) setTimeout(fpcAiRestoreResults, 100);
+    });
+})();
 
 function fpcAiRenderResult(container, data) {
     var html = '';
