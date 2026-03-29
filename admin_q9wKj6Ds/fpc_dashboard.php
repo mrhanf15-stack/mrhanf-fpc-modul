@@ -438,6 +438,13 @@ if (isset($_GET['ajax'])) {
             $urls = isset($data['urls']) ? $data['urls'] : array();
             fpc_json_exit(fpc_ai_redirect_suggest($base_dir, $urls));
 
+        // v10.4.1: Universeller KI-Assistent pro Tab
+        case 'ai_tab_assist':
+            $data = json_decode(file_get_contents('php://input'), true);
+            $tab = isset($data['tab']) ? $data['tab'] : 'dashboard';
+            $context = isset($data['context']) ? $data['context'] : array();
+            fpc_json_exit(fpc_ai_tab_assist($base_dir, $tab, $context));
+
         // v10.4.0: Bulk-Redirect (mehrere auf einmal anlegen, z.B. alle Sprachen)
         case 'seo_redirect_bulk_add':
             $data = json_decode(file_get_contents('php://input'), true);
@@ -722,6 +729,17 @@ function fpc_ai_redirect_suggest($base_dir, $urls) {
         $ai = fpc_ai_init($base_dir);
         set_time_limit(120);
         return $ai->suggestRedirects($urls);
+    } catch (Exception $e) {
+        return array('error' => true, 'msg' => 'KI-Fehler: ' . $e->getMessage());
+    }
+}
+
+// v10.4.1: Universeller KI-Assistent pro Tab
+function fpc_ai_tab_assist($base_dir, $tab, $context = array()) {
+    try {
+        $ai = fpc_ai_init($base_dir);
+        set_time_limit(120);
+        return $ai->analyzeTab($tab, $context);
     } catch (Exception $e) {
         return array('error' => true, 'msg' => 'KI-Fehler: ' . $e->getMessage());
     }
@@ -5335,6 +5353,218 @@ document.addEventListener('DOMContentLoaded', function() {
         if (d.running) fpcStartProgressPoll();
     });
 });
+
+// ============================================================
+// v10.4.1: UNIVERSELLER KI-ASSISTENT PRO TAB
+// ============================================================
+
+// Tab-Name zu AI-Tab Mapping
+var AI_TAB_MAP = {
+    'dashboard': 'dashboard', 'performance': 'performance', 'coverage': 'coverage',
+    'steuerung': 'cache_tools', 'urls': 'cache_tools', 'preloader': 'cache_tools',
+    'fehler': 'fehler', 'seo': 'seo', 'inspector': 'performance',
+    'health': 'health', 'statistik': 'stats', 'alerts': 'dashboard',
+    'settings': 'dashboard', 'gsc': 'gsc', 'analytics': 'ga4', 'sistrix': 'sistrix'
+};
+
+// Tab-spezifische Beschreibungen fuer den Button
+var AI_TAB_LABELS = {
+    'dashboard': 'Dashboard analysieren',
+    'performance': 'Performance optimieren',
+    'coverage': 'Cache-Luecken finden',
+    'steuerung': 'Cache-Empfehlungen',
+    'urls': 'URL-Empfehlungen',
+    'preloader': 'Preloader optimieren',
+    'fehler': 'Fehler analysieren & loesen',
+    'seo': 'SEO analysieren',
+    'inspector': 'Request-Muster analysieren',
+    'health': 'System-Gesundheit pruefen',
+    'statistik': 'Traffic analysieren',
+    'alerts': 'Alert-Empfehlungen',
+    'settings': 'Einstellungen pruefen',
+    'gsc': 'SEO-Chancen finden',
+    'analytics': 'Traffic & Conversions analysieren',
+    'sistrix': 'Sichtbarkeit analysieren'
+};
+
+// Sub-Kontext fuer SEO-Tab (je nach sichtbarer Sektion)
+var AI_SEO_SUBTABS = {
+    'seo_404': '404-Fehler analysieren & Redirects vorschlagen',
+    'seo_scan': 'Scan-Ergebnisse analysieren',
+    'seo_redirects': 'Redirects optimieren'
+};
+
+function fpcAiAssistantInit() {
+    // KI-Button in jeden Tab einfuegen
+    var panels = document.querySelectorAll('.fpc-panel');
+    panels.forEach(function(panel) {
+        var panelId = panel.id.replace('panel-', '');
+        if (panelId === 'settings') return; // Settings braucht keinen KI-Button
+
+        // Container fuer KI-Assistent erstellen
+        var aiBar = document.createElement('div');
+        aiBar.id = 'ai-bar-' + panelId;
+        aiBar.style.cssText = 'display:flex;align-items:center;gap:8px;padding:10px 0;margin-bottom:12px;flex-wrap:wrap;';
+
+        var label = AI_TAB_LABELS[panelId] || 'KI analysieren';
+        var aiTab = AI_TAB_MAP[panelId] || 'dashboard';
+
+        // Haupt-Button
+        aiBar.innerHTML = '<button class="fpc-btn" id="ai-assist-btn-' + panelId + '" '
+            + 'style="padding:6px 14px;font-size:12px;background:linear-gradient(135deg,#667eea,#764ba2);color:#fff;border-radius:6px;cursor:pointer;" '
+            + 'onclick="fpcAiTabAssist(\'' + panelId + '\')" '
+            + 'title="KI analysiert die aktuellen Daten und gibt Empfehlungen">'
+            + '&#129302; ' + label + '</button>';
+
+        // SEO-Tab: Zusaetzliche Sub-Buttons
+        if (panelId === 'seo') {
+            aiBar.innerHTML += '<button class="fpc-btn" style="padding:5px 10px;font-size:11px;background:linear-gradient(135deg,#f093fb,#f5576c);color:#fff;border-radius:6px;" '
+                + 'onclick="fpcAiTabAssist(\'' + panelId + '\', \'seo_404\')" title="404-Fehler analysieren">&#128683; 404 loesen</button>';
+            aiBar.innerHTML += '<button class="fpc-btn" style="padding:5px 10px;font-size:11px;background:linear-gradient(135deg,#4facfe,#00f2fe);color:#fff;border-radius:6px;" '
+                + 'onclick="fpcAiTabAssist(\'' + panelId + '\', \'seo_scan\')" title="Scan-Ergebnisse analysieren">&#128269; Scan analysieren</button>';
+            aiBar.innerHTML += '<button class="fpc-btn" style="padding:5px 10px;font-size:11px;background:linear-gradient(135deg,#43e97b,#38f9d7);color:#fff;border-radius:6px;" '
+                + 'onclick="fpcAiTabAssist(\'' + panelId + '\', \'seo_redirects\')" title="Redirects optimieren">&#8594; Redirects pruefen</button>';
+        }
+
+        // Ergebnis-Container
+        aiBar.innerHTML += '<div id="ai-result-' + panelId + '" style="width:100%;display:none;"></div>';
+
+        // Am Anfang des Panels einfuegen
+        panel.insertBefore(aiBar, panel.firstChild);
+    });
+}
+
+function fpcAiTabAssist(panelId, subTab) {
+    var aiTab = subTab || AI_TAB_MAP[panelId] || 'dashboard';
+    var btn = document.getElementById('ai-assist-btn-' + panelId);
+    var resultDiv = document.getElementById('ai-result-' + panelId);
+
+    // Loading-State
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '&#129302; Analysiere...';
+        btn.style.opacity = '0.7';
+    }
+    resultDiv.style.display = 'block';
+    resultDiv.innerHTML = '<div style="padding:16px;background:var(--fpc-card2);border-radius:8px;border:1px solid var(--fpc-border);">' +
+        '<div style="display:flex;align-items:center;gap:8px;"><span style="animation:spin 1s linear infinite;display:inline-block;">&#129302;</span>' +
+        '<span style="color:var(--fpc-text2);font-size:13px;">KI analysiert ' + (AI_TAB_LABELS[panelId] || 'Daten') + '...</span></div></div>';
+
+    // Kontext sammeln (sichtbare Daten vom Frontend)
+    var context = {};
+    if (subTab) context.focus = subTab;
+    context.active_tab = panelId;
+
+    fpcAjaxPostJson('ai_tab_assist', {tab: aiTab, context: context}, function(d) {
+        // Button zuruecksetzen
+        var label = AI_TAB_LABELS[panelId] || 'KI analysieren';
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = '&#129302; ' + label;
+            btn.style.opacity = '1';
+        }
+
+        if (d.error) {
+            resultDiv.innerHTML = '<div style="padding:12px;background:#ff6b6b22;border:1px solid #ff6b6b44;border-radius:8px;color:#ff6b6b;font-size:13px;">' +
+                '&#9888; ' + (d.msg || 'Fehler bei der KI-Analyse') + '</div>';
+            return;
+        }
+
+        // Ergebnis rendern
+        fpcAiRenderResult(resultDiv, d);
+    });
+}
+
+function fpcAiRenderResult(container, data) {
+    var html = '';
+
+    // Wenn JSON-Analyse
+    if (data.type === 'analysis' && data.data) {
+        var a = data.data;
+
+        // Header mit Score und Summary
+        html += '<div style="background:var(--fpc-card);border-radius:10px;border:1px solid var(--fpc-border);overflow:hidden;margin-top:8px;">';
+
+        // Score-Header
+        var score = a.score || 0;
+        var scoreColor = score >= 80 ? '#00d4aa' : score >= 60 ? '#ffa726' : '#ff6b6b';
+        html += '<div style="padding:14px 18px;background:var(--fpc-card2);display:flex;align-items:center;gap:16px;border-bottom:1px solid var(--fpc-border);">';
+        html += '<div style="width:48px;height:48px;border-radius:50%;background:' + scoreColor + '22;border:3px solid ' + scoreColor + ';display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:bold;color:' + scoreColor + ';">' + score + '</div>';
+        html += '<div style="flex:1;"><div style="color:var(--fpc-text);font-size:14px;font-weight:bold;">KI-Analyse</div>';
+        if (a.summary) html += '<div style="color:var(--fpc-text2);font-size:12px;margin-top:2px;">' + a.summary + '</div>';
+        html += '</div>';
+        html += '<button class="fpc-btn" style="padding:4px 10px;font-size:11px;background:var(--fpc-card2);color:var(--fpc-text);border:1px solid var(--fpc-border);" onclick="this.closest(\'.fpc-panel\').querySelector(\'[id^=ai-result]\').style.display=\'none\'">&#10005; Schliessen</button>';
+        html += '</div>';
+
+        // Quick Wins
+        if (a.quick_wins && a.quick_wins.length > 0) {
+            html += '<div style="padding:12px 18px;background:#00d4aa11;border-bottom:1px solid var(--fpc-border);">';
+            html += '<div style="color:#00d4aa;font-size:12px;font-weight:bold;margin-bottom:6px;">&#9889; Quick Wins</div>';
+            a.quick_wins.forEach(function(qw) {
+                html += '<div style="color:var(--fpc-text);font-size:12px;padding:2px 0;">&#8226; ' + qw + '</div>';
+            });
+            html += '</div>';
+        }
+
+        // Findings
+        if (a.findings && a.findings.length > 0) {
+            html += '<div style="padding:12px 18px;">';
+            var typeColors = {critical:'#ff6b6b', warning:'#ffa726', info:'#00a8ff', success:'#00d4aa'};
+            var typeIcons = {critical:'&#9888;', warning:'&#9888;', info:'&#8505;', success:'&#10003;'};
+            a.findings.forEach(function(f, idx) {
+                var c = typeColors[f.type] || '#00a8ff';
+                var icon = typeIcons[f.type] || '&#8505;';
+                html += '<div style="padding:10px 14px;margin-bottom:8px;background:' + c + '08;border:1px solid ' + c + '33;border-left:4px solid ' + c + ';border-radius:6px;">';
+                html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">';
+                html += '<span style="color:' + c + ';font-size:14px;">' + icon + '</span>';
+                html += '<span style="color:var(--fpc-text);font-size:13px;font-weight:bold;">' + (f.title || 'Finding ' + (idx+1)) + '</span>';
+                if (f.action_type) {
+                    var atColors = {redirect:'#667eea', cache:'#00d4aa', fix:'#ff6b6b', optimize:'#ffa726', monitor:'#00a8ff'};
+                    html += '<span style="font-size:10px;padding:2px 6px;border-radius:3px;background:' + (atColors[f.action_type]||'#666') + '33;color:' + (atColors[f.action_type]||'#ccc') + ';margin-left:auto;">' + f.action_type + '</span>';
+                }
+                html += '</div>';
+                if (f.detail) html += '<div style="color:var(--fpc-text2);font-size:12px;margin-bottom:4px;padding-left:22px;">' + f.detail + '</div>';
+                if (f.action) html += '<div style="color:var(--fpc-teal);font-size:12px;font-weight:bold;padding-left:22px;">&#8594; ' + f.action + '</div>';
+                if (f.urls && f.urls.length > 0) {
+                    html += '<div style="padding-left:22px;margin-top:4px;">';
+                    f.urls.slice(0, 5).forEach(function(u) {
+                        html += '<code style="display:block;font-size:11px;color:var(--fpc-text2);padding:1px 0;">' + u + '</code>';
+                    });
+                    if (f.urls.length > 5) html += '<span style="font-size:11px;color:var(--fpc-text2);">... und ' + (f.urls.length - 5) + ' weitere</span>';
+                    html += '</div>';
+                }
+                html += '</div>';
+            });
+            html += '</div>';
+        }
+
+        html += '</div>'; // close main container
+
+    } else if (data.type === 'text' && data.raw) {
+        // Text-Antwort (Fallback)
+        html += '<div style="background:var(--fpc-card);border-radius:10px;border:1px solid var(--fpc-border);padding:16px 18px;margin-top:8px;">';
+        html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">';
+        html += '<span style="color:var(--fpc-purple);font-size:13px;font-weight:bold;">&#129302; KI-Analyse</span>';
+        html += '<button class="fpc-btn" style="padding:3px 8px;font-size:10px;background:var(--fpc-card2);color:var(--fpc-text);border:1px solid var(--fpc-border);" onclick="this.closest(\'.fpc-panel\').querySelector(\'[id^=ai-result]\').style.display=\'none\'">&#10005;</button>';
+        html += '</div>';
+        html += '<div style="color:var(--fpc-text);font-size:13px;line-height:1.6;white-space:pre-wrap;">' + data.raw.replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</div>';
+        html += '</div>';
+
+    } else {
+        html += '<div style="padding:12px;background:#ff6b6b22;border:1px solid #ff6b6b44;border-radius:8px;color:#ff6b6b;font-size:13px;margin-top:8px;">' +
+            '&#9888; Unerwartetes Antwortformat von der KI</div>';
+    }
+
+    container.innerHTML = html;
+}
+
+// CSS Animation fuer Spinner
+var aiStyle = document.createElement('style');
+aiStyle.textContent = '@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }';
+document.head.appendChild(aiStyle);
+
+// KI-Buttons initialisieren wenn DOM bereit
+fpcAiAssistantInit();
 </script>
 </body>
 </html>

@@ -891,4 +891,260 @@ PROMPT;
             'ai_configured' => $this->isConfigured(),
         );
     }
+
+    // ================================================================
+    // v10.4.1: UNIVERSELLER KI-ASSISTENT PRO TAB
+    // ================================================================
+
+    /**
+     * Kontextbezogene KI-Analyse fuer einen bestimmten Dashboard-Tab.
+     * Sammelt Tab-spezifische Daten und erstellt passende Vorschlaege.
+     *
+     * @param string $tab  Tab-Name (dashboard, performance, coverage, cache_tools, fehler, seo, health, gsc, ga4, sistrix, stats)
+     * @param array  $context  Zusaetzliche Daten vom Frontend (z.B. aktuelle Filter, sichtbare Daten)
+     * @return array KI-Antwort mit Vorschlaegen
+     */
+    public function analyzeTab($tab, $context = array()) {
+        if (!$this->isConfigured()) {
+            return array('error' => true, 'msg' => 'OpenAI API Key nicht konfiguriert. Gehe zu Settings > API Credentials.');
+        }
+
+        // Tab-spezifische Daten sammeln
+        $tab_data = $this->collectTabData($tab, $context);
+
+        // Tab-spezifischen Prompt bauen
+        $tab_prompts = array(
+            'dashboard' => "Analysiere die Dashboard-Uebersicht von mr-hanf.de. Bewerte die KPIs, erkenne Trends und gib 3-5 priorisierte Empfehlungen was als naechstes getan werden sollte. Fokus: Was ist am dringendsten?",
+            'performance' => "Analysiere die Cache-Performance von mr-hanf.de. Bewerte Hit-Rate, TTFB, Miss-Gruende und gib konkrete Empfehlungen zur Verbesserung. Welche Seiten sollten priorisiert gecacht werden? Gibt es Muster bei Cache-Misses?",
+            'coverage' => "Analysiere die Cache-Abdeckung von mr-hanf.de. Welche Kategorien haben schlechte Abdeckung? Welche wichtigen Seiten fehlen im Cache? Gib Empfehlungen zur Verbesserung der Coverage.",
+            'cache_tools' => "Gib Empfehlungen fuer die Cache-Verwaltung. Welche URLs sollten priorisiert gecacht werden? Gibt es Custom-URLs die fehlen? Wie sollte der Preloader konfiguriert werden?",
+            'fehler' => "Analysiere die Fehler und Probleme. Priorisiere die Fehler nach Schwere und Traffic-Impact. Welche 404-Fehler sollten zuerst behoben werden? Welche langsamen Seiten brauchen Optimierung? Gib fuer jeden Fehler eine konkrete Loesung.",
+            'seo' => "Analysiere den SEO-Zustand von mr-hanf.de. Bewerte Redirects, 404-Fehler, Canonical-Probleme und Scan-Ergebnisse. Gib priorisierte Empfehlungen. Bei Redirects: Schlage konkrete Ziel-URLs vor. Bei 404s: Welche sind am dringendsten? Bei Scan-Ergebnissen: Welche Muster erkennst du?",
+            'seo_404' => "Analysiere die 404-Fehler im Detail. Gruppiere sie nach Muster (z.B. gleiche Kategorie, gleiche Sprache). Schlage fuer jede 404-URL ein konkretes Redirect-Ziel vor. Priorisiere nach Anzahl der Aufrufe. Erkenne ob es Sprach-Varianten gibt die zusammen behoben werden koennen.",
+            'seo_scan' => "Analysiere die Scan-Ergebnisse. Gruppiere problematische URLs nach Muster. Schlage fuer Redirects konkrete Ziel-URLs vor. Erkenne Sprach-Gruppen und empfehle Bulk-Aktionen. Welche URLs haben den groessten SEO-Impact?",
+            'seo_redirects' => "Analysiere die bestehenden Redirects. Gibt es Redirect-Ketten? Fehlen wichtige Redirects? Gibt es Redirects die nicht mehr noetig sind? Gib Empfehlungen zur Optimierung.",
+            'health' => "Analysiere den technischen Gesundheitszustand. Bewerte .htaccess, Layer-Status und Health-Check Details. Welche technischen Probleme sind am kritischsten? Gib konkrete Loesungsvorschlaege.",
+            'gsc' => "Analysiere die Google Search Console Daten. Welche Keywords haben Potenzial (hohe Impressions, niedrige CTR)? Welche Seiten verlieren Rankings? Wo gibt es Quick-Wins? Gib konkrete SEO-Empfehlungen basierend auf den GSC-Daten.",
+            'ga4' => "Analysiere die Google Analytics 4 Daten. Bewerte Traffic-Trends, Bounce-Rate, E-Commerce Performance. Welche Seiten performen schlecht? Wo gibt es Conversion-Potenzial? Gib datenbasierte Empfehlungen.",
+            'sistrix' => "Analysiere die SISTRIX Sichtbarkeitsdaten. Wie entwickelt sich die Sichtbarkeit? Gibt es Einbrueche oder Anstiege? Was koennte die Ursache sein? Gib strategische SEO-Empfehlungen.",
+            'stats' => "Analysiere die Besucherstatistiken. Welche Seiten sind am beliebtesten? Welche Referrer bringen den meisten Traffic? Gibt es auffaellige Muster bei Geraeten oder Tageszeiten?",
+        );
+
+        $tab_prompt = isset($tab_prompts[$tab]) ? $tab_prompts[$tab] : $tab_prompts['dashboard'];
+
+        $user_prompt = $tab_prompt . "\n\n";
+        $user_prompt .= "Hier sind die aktuellen Daten:\n\n";
+        $user_prompt .= json_encode($tab_data, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
+
+        // Zusaetzlicher Frontend-Kontext (z.B. aktive Filter)
+        if (!empty($context)) {
+            $user_prompt .= "\n\nZusaetzlicher Kontext vom Benutzer:\n";
+            $user_prompt .= json_encode($context, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
+        }
+
+        $user_prompt .= "\n\nAntworte im folgenden JSON-Format:\n";
+        $user_prompt .= '{"summary": "Kurze Zusammenfassung in 1-2 Saetzen", "score": 0-100, "findings": [{"type": "critical|warning|info|success", "title": "Kurztitel", "detail": "Erklaerung", "action": "Konkrete Handlungsempfehlung", "action_type": "redirect|cache|fix|optimize|monitor", "urls": ["betroffene URLs"]}], "quick_wins": ["Sofort umsetzbare Verbesserungen"]}';
+
+        $response = $this->callOpenAI($this->system_prompt, $user_prompt);
+
+        if (isset($response['error'])) {
+            return $response;
+        }
+
+        $result = $this->parseAiResponse($response['content']);
+        $result['tab'] = $tab;
+
+        return $result;
+    }
+
+    /**
+     * Tab-spezifische Daten sammeln
+     */
+    private function collectTabData($tab, $context = array()) {
+        $data = array();
+
+        switch ($tab) {
+            case 'dashboard':
+                // Alles sammeln (wie runAnalysis)
+                $data = $this->collectAllData();
+                break;
+
+            case 'performance':
+                // FPC Stats + Monitor
+                $monitor_file = $this->base_dir . 'cache/fpc/monitor.json';
+                if (is_file($monitor_file)) {
+                    $data['fpc_monitor'] = @json_decode(file_get_contents($monitor_file), true);
+                }
+                // Preloader Log (letzte 50 Zeilen)
+                $log_file = $this->base_dir . 'cache/fpc/preloader.log';
+                if (is_file($log_file)) {
+                    $lines = file($log_file, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+                    $data['preloader_log_tail'] = array_slice($lines, -50);
+                }
+                break;
+
+            case 'coverage':
+                // SEO Daten fuer Coverage
+                try {
+                    require_once $this->base_dir . 'fpc_seo.php';
+                    $seo = new FpcSeo($this->base_dir);
+                    $data['seo_summary'] = $seo->getAiSummary();
+                } catch (Exception $e) {
+                    $data['error'] = $e->getMessage();
+                }
+                // Cache-Dateien zaehlen nach Kategorie
+                $cache_dir = $this->base_dir . 'cache/fpc/';
+                if (is_dir($cache_dir)) {
+                    $data['cache_file_count'] = count(glob($cache_dir . '*.html'));
+                }
+                break;
+
+            case 'fehler':
+                // SEO Probleme + 404 Log
+                try {
+                    require_once $this->base_dir . 'fpc_seo.php';
+                    $seo = new FpcSeo($this->base_dir);
+                    $data['problems'] = $seo->getCrossApiProblems();
+                    $data['seo_ist'] = $seo->getIstZustand();
+                    // 404 Log (Top 50)
+                    $log404 = $seo->get404Log('open', 50);
+                    $data['top_404s'] = $log404;
+                    // Scan-Ergebnisse mit Fehlern
+                    $scan = $seo->getScanResults();
+                    $errors = array();
+                    if (is_array($scan)) {
+                        foreach ($scan as $r) {
+                            if (isset($r['http_status']) && $r['http_status'] >= 400) {
+                                $errors[] = $r;
+                            }
+                        }
+                    }
+                    $data['scan_errors'] = array_slice($errors, 0, 50);
+                } catch (Exception $e) {
+                    $data['error'] = $e->getMessage();
+                }
+                break;
+
+            case 'seo':
+            case 'seo_404':
+            case 'seo_scan':
+            case 'seo_redirects':
+                try {
+                    require_once $this->base_dir . 'fpc_seo.php';
+                    $seo = new FpcSeo($this->base_dir);
+                    $data['seo_summary'] = $seo->getAiSummary();
+                    $data['problems'] = $seo->getCrossApiProblems();
+
+                    if ($tab === 'seo_404' || $tab === 'seo') {
+                        $data['open_404s'] = $seo->get404Log('open', 100);
+                    }
+                    if ($tab === 'seo_scan' || $tab === 'seo') {
+                        $scan = $seo->getScanResults();
+                        $problematic = array();
+                        if (is_array($scan)) {
+                            foreach ($scan as $r) {
+                                if (isset($r['http_status']) && $r['http_status'] >= 300) {
+                                    $problematic[] = array(
+                                        'url' => $r['url'],
+                                        'status' => $r['http_status'],
+                                        'issues' => isset($r['issues']) ? $r['issues'] : array(),
+                                    );
+                                }
+                            }
+                        }
+                        $data['problematic_urls'] = array_slice($problematic, 0, 100);
+                    }
+                    if ($tab === 'seo_redirects' || $tab === 'seo') {
+                        $data['redirects'] = $seo->getRedirects();
+                    }
+                } catch (Exception $e) {
+                    $data['error'] = $e->getMessage();
+                }
+                break;
+
+            case 'health':
+                try {
+                    require_once $this->base_dir . 'fpc_seo.php';
+                    $seo = new FpcSeo($this->base_dir);
+                    $data['health'] = $seo->getIstZustand();
+                } catch (Exception $e) {
+                    $data['error'] = $e->getMessage();
+                }
+                // .htaccess pruefen
+                $htaccess = $this->base_dir . '.htaccess';
+                if (is_file($htaccess)) {
+                    $data['htaccess_size'] = filesize($htaccess);
+                    $data['htaccess_lines'] = count(file($htaccess));
+                }
+                break;
+
+            case 'gsc':
+                try {
+                    require_once $this->base_dir . 'fpc_gsc.php';
+                    $creds = @json_decode(file_get_contents($this->config_dir . 'api_credentials.json'), true);
+                    if (!empty($creds['gsc_service_account']) && is_file($this->base_dir . $creds['gsc_service_account'])) {
+                        $gsc = new FPC_GoogleSearchConsole($this->base_dir . $creds['gsc_service_account'], isset($creds['gsc_site_url']) ? $creds['gsc_site_url'] : 'https://mr-hanf.de/');
+                        $data['comparison'] = $gsc->getComparison(28);
+                        $data['top_queries'] = $gsc->getTopQueries(28, 30);
+                        $data['top_pages'] = $gsc->getTopPages(28, 30);
+                    } else {
+                        $data['not_configured'] = true;
+                    }
+                } catch (Exception $e) {
+                    $data['error'] = $e->getMessage();
+                }
+                break;
+
+            case 'ga4':
+                try {
+                    require_once $this->base_dir . 'fpc_ga4.php';
+                    $creds = @json_decode(file_get_contents($this->config_dir . 'api_credentials.json'), true);
+                    $ga4_sa = isset($creds['ga4_service_account']) ? $creds['ga4_service_account'] : '';
+                    $ga4_prop = isset($creds['ga4_property_id']) ? $creds['ga4_property_id'] : '';
+                    if (!empty($ga4_sa) && !empty($ga4_prop) && is_file($this->base_dir . $ga4_sa)) {
+                        $ga4 = new FPC_GoogleAnalytics4($this->base_dir . $ga4_sa, $ga4_prop, $this->base_dir . 'cache/fpc/ga4/');
+                        $data['comparison'] = $ga4->getPeriodComparison(30);
+                        try { $data['ecommerce'] = $ga4->getEcommerceOverview(30); } catch (Exception $e2) {}
+                        try { $data['top_pages'] = $ga4->getTopPages(30, 20); } catch (Exception $e2) {}
+                        try { $data['sources'] = $ga4->getTrafficSources(30, 20); } catch (Exception $e2) {}
+                    } else {
+                        $data['not_configured'] = true;
+                    }
+                } catch (Exception $e) {
+                    $data['error'] = $e->getMessage();
+                }
+                break;
+
+            case 'sistrix':
+                try {
+                    require_once $this->base_dir . 'fpc_sistrix.php';
+                    $creds = @json_decode(file_get_contents($this->config_dir . 'api_credentials.json'), true);
+                    if (!empty($creds['sistrix_api_key'])) {
+                        $domain = isset($creds['sistrix_domain']) ? $creds['sistrix_domain'] : 'mr-hanf.de';
+                        $sx = new FPC_Sistrix($creds['sistrix_api_key'], $domain);
+                        $data['visibility'] = $sx->getCurrentVisibility();
+                        try { $data['history'] = $sx->getVisibilityHistory(); } catch (Exception $e2) {}
+                    } else {
+                        $data['not_configured'] = true;
+                    }
+                } catch (Exception $e) {
+                    $data['error'] = $e->getMessage();
+                }
+                break;
+
+            case 'stats':
+                // FPC Monitor Daten
+                $monitor_file = $this->base_dir . 'cache/fpc/monitor.json';
+                if (is_file($monitor_file)) {
+                    $data['fpc_monitor'] = @json_decode(file_get_contents($monitor_file), true);
+                }
+                break;
+
+            default:
+                $data = $this->collectAllData();
+                break;
+        }
+
+        return $data;
+    }
 }
