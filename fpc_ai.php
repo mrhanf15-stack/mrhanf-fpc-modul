@@ -919,8 +919,8 @@ PROMPT;
             'coverage' => "Analysiere die Cache-Abdeckung von mr-hanf.de. Welche Kategorien haben schlechte Abdeckung? Welche wichtigen Seiten fehlen im Cache? Gib Empfehlungen zur Verbesserung der Coverage.",
             'cache_tools' => "Gib Empfehlungen fuer die Cache-Verwaltung. Welche URLs sollten priorisiert gecacht werden? Gibt es Custom-URLs die fehlen? Wie sollte der Preloader konfiguriert werden?",
             'fehler' => "Analysiere die Fehler und Probleme. Priorisiere die Fehler nach Schwere und Traffic-Impact. Welche 404-Fehler sollten zuerst behoben werden? Welche langsamen Seiten brauchen Optimierung? Gib fuer jeden Fehler eine konkrete Loesung.",
-            'seo' => "Analysiere den SEO-Zustand von mr-hanf.de. Bewerte Redirects, 404-Fehler, Canonical-Probleme und Scan-Ergebnisse. Gib priorisierte Empfehlungen. Bei Redirects: Schlage konkrete Ziel-URLs vor. Bei 404s: Welche sind am dringendsten? Bei Scan-Ergebnissen: Welche Muster erkennst du?",
-            'seo_404' => "Analysiere die 404-Fehler im Detail. Gruppiere sie nach Muster (z.B. gleiche Kategorie, gleiche Sprache). Schlage fuer jede 404-URL ein konkretes Redirect-Ziel vor. Priorisiere nach Anzahl der Aufrufe. Erkenne ob es Sprach-Varianten gibt die zusammen behoben werden koennen.",
+            'seo' => "Analysiere den SEO-Zustand von mr-hanf.de umfassend. Liste ALLE Probleme vollstaendig auf - keine Kuerzungen! Bewerte Redirects, 404-Fehler, Canonical-Probleme und Scan-Ergebnisse. Bei 404-Fehlern: Liste JEDE einzelne URL auf, gruppiert nach Typ (Bilder, Seiten, Assets). Bei Redirects: Schlage fuer JEDE URL ein konkretes Ziel vor. Erstelle separate Findings fuer: 1) Kaputte Bild-URLs 2) Seiten-404s 3) Redirect-Ketten 4) Fehlende Canonicals.",
+            'seo_404' => "Analysiere ALLE 404-Fehler vollstaendig und umfassend. Liste JEDE einzelne 404-URL auf - keine Beispiele, keine Kuerzungen! Gruppiere nach: 1) Bild-URLs (/images/, .jpg, .png etc.) 2) Seiten-URLs nach Kategorie 3) Sprach-Varianten. Schlage fuer JEDE 404-URL ein konkretes Redirect-Ziel vor. Priorisiere nach Anzahl der Aufrufe. Erstelle fuer jede Gruppe ein eigenes Finding mit bulk_redirect fix der ALLE URLs der Gruppe enthaelt.",
             'seo_scan' => "Analysiere die Scan-Ergebnisse. Gruppiere problematische URLs nach Muster. Schlage fuer Redirects konkrete Ziel-URLs vor. Erkenne Sprach-Gruppen und empfehle Bulk-Aktionen. Welche URLs haben den groessten SEO-Impact?",
             'seo_redirects' => "Analysiere die bestehenden Redirects. Gibt es Redirect-Ketten? Fehlen wichtige Redirects? Gibt es Redirects die nicht mehr noetig sind? Gib Empfehlungen zur Optimierung.",
             'health' => "Analysiere den technischen Gesundheitszustand. Bewerte .htaccess, Layer-Status und Health-Check Details. Welche technischen Probleme sind am kritischsten? Gib konkrete Loesungsvorschlaege.",
@@ -956,6 +956,14 @@ PROMPT;
         $user_prompt .= "- fix.type='monitor': Nur beobachten, keine Aktion. params={url:'/seite/', reason:'Grund'}\n";
         $user_prompt .= "Bei Redirect-Vorschlaegen: Nutze dein Wissen ueber mr-hanf.de (Cannabis-Samen-Shop) um sinnvolle Ziel-URLs vorzuschlagen. Verwende existierende Kategorien wie /growshop/, /samen-shop/, /autoflowering-seeds/ etc.\n";
         $user_prompt .= "Bei Sprach-Varianten: Wenn eine URL ein Sprach-Prefix hat (/en/, /fr/, /es/, /nl/, /it/), schlage den Redirect MIT dem gleichen Prefix vor.\n";
+        $user_prompt .= "\nKRITISCH - VOLLSTAENDIGE AUFLISTUNG:\n";
+        $user_prompt .= "- Du MUSST ALLE betroffenen URLs in jedem Finding auflisten, NICHT nur 1-2 Beispiele!\n";
+        $user_prompt .= "- Das 'urls' Array in jedem Finding MUSS JEDE einzelne betroffene URL enthalten.\n";
+        $user_prompt .= "- Bei bulk_redirect MUSS params.redirects ALLE Redirects enthalten, nicht nur Beispiele.\n";
+        $user_prompt .= "- Gruppiere Findings nach Muster (z.B. gleiche Kategorie, gleicher Fehlertyp), aber liste innerhalb jeder Gruppe ALLE URLs auf.\n";
+        $user_prompt .= "- Bei Bild-URLs (/images/, .jpg, .png, .webp etc.): Erstelle ein eigenes Finding mit ALLEN kaputten Bild-URLs.\n";
+        $user_prompt .= "- Kuerze NIEMALS die URL-Liste mit '... und X weitere'. Der Benutzer braucht die komplette Liste um alle Probleme per Klick zu loesen.\n";
+        $user_prompt .= "- Wenn es mehr als 50 URLs gibt, gruppiere sie in mehrere Findings nach Muster/Kategorie.\n";
 
         $response = $this->callOpenAI($this->system_prompt, $user_prompt);
 

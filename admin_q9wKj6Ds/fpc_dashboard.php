@@ -3939,7 +3939,33 @@ function fpcSeoLoadScanResults(filter) {
     // Alle Daten laden (Filterung passiert client-seitig)
     fpcAjax('ajax=seo_scan_results&status=&search=', function(d) {
         seoScanData = d || [];
-        fpcSeoRenderScanTable();
+        // 404-Log laden und Bild/Asset-URLs als zusaetzliche Eintraege einfuegen
+        fpcAjax('ajax=seo_404_log&search=&resolved=false&dismissed=false', function(log404) {
+            if (log404 && log404.length > 0) {
+                var existingUrls = {};
+                seoScanData.forEach(function(r) { existingUrls[r.url] = true; });
+                log404.forEach(function(e) {
+                    if (!existingUrls[e.url]) {
+                        seoScanData.push({
+                            url: e.url,
+                            http_status: 404,
+                            fpc_cache: 'MISS',
+                            response_ms: 0,
+                            canonical: '-',
+                            status: 'error',
+                            issues: ['404-Fehler (aus 404-Log, ' + (e.hit_count || 0) + ' Hits)'],
+                            redirect_target: '',
+                            _source: '404log',
+                            _hits: e.hit_count || 0,
+                            _referers: e.referers || [],
+                            _404id: e.id
+                        });
+                        existingUrls[e.url] = true;
+                    }
+                });
+            }
+            fpcSeoRenderScanTable();
+        });
     });
     // Manuell angelegte Redirects parallel laden
     fpcSeoLoadManualRedirects();
