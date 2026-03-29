@@ -71,7 +71,7 @@ require('includes/application_top.php');
 // ============================================================
 $base_dir       = defined('DIR_FS_DOCUMENT_ROOT') ? DIR_FS_DOCUMENT_ROOT : (defined('DIR_FS_CATALOG') ? DIR_FS_CATALOG : '');
 $cache_dir      = $base_dir . 'cache/fpc/';
-$config_dir     = $base_dir . 'cache/fpc_config/';
+$config_dir     = $base_dir . 'api/fpc/';
 if (!is_dir($config_dir)) @mkdir($config_dir, 0755, true);
 $pid_file       = $cache_dir . 'rebuild.pid';
 $log_file       = $cache_dir . 'preloader.log';
@@ -1498,10 +1498,14 @@ function fpc_load_settings($cache_dir) {
 
     // 2. Preloader settings (from fpc_settings.json) - v10.3.0: config_dir
     $settings_file = $cache_dir . 'fpc_settings.json';
-    // Migration: alte Datei aus cache/fpc/ uebernehmen
+    // Migration: alte Datei aus cache/fpc_config/ oder cache/fpc/ uebernehmen
     if (!is_file($settings_file)) {
-        $old_file = str_replace('fpc_config/', 'fpc/', $cache_dir) . 'fpc_settings.json';
-        if (is_file($old_file)) @copy($old_file, $settings_file);
+        $base = str_replace('api/fpc/', '', $cache_dir);
+        if (is_file($base . 'cache/fpc_config/fpc_settings.json')) {
+            @copy($base . 'cache/fpc_config/fpc_settings.json', $settings_file);
+        } elseif (is_file($base . 'cache/fpc/fpc_settings.json')) {
+            @copy($base . 'cache/fpc/fpc_settings.json', $settings_file);
+        }
     }
     $preloader_defaults = array(
         'request_delay_ms' => 500, 'load_threshold' => 3.0, 'load_pause_sec' => 30,
@@ -1613,11 +1617,13 @@ function fpc_load_api_credentials($config_dir) {
         'openai_api_key' => '',
         'openai_model' => 'gpt-4.1-mini',
     );
-    // v10.3.0: Migration - alte Datei aus cache/fpc/ uebernehmen
+    // v10.3.1: Migration - alte Datei aus cache/fpc_config/ oder cache/fpc/ uebernehmen
     if (!is_file($file)) {
-        $old_file = str_replace('fpc_config/', 'fpc/', $config_dir) . 'api_credentials.json';
-        if (is_file($old_file)) {
-            @copy($old_file, $file);
+        $base = str_replace('api/fpc/', '', $config_dir);
+        if (is_file($base . 'cache/fpc_config/api_credentials.json')) {
+            @copy($base . 'cache/fpc_config/api_credentials.json', $file);
+        } elseif (is_file($base . 'cache/fpc/api_credentials.json')) {
+            @copy($base . 'cache/fpc/api_credentials.json', $file);
         } else {
             return $defaults;
         }
@@ -1640,7 +1646,7 @@ function fpc_save_api_credentials($config_dir, $creds) {
 }
 
 function fpc_get_gsc_data($cache_dir, $base_dir, $days = 28) {
-    $config_dir = str_replace('cache/fpc/', 'cache/fpc_config/', $cache_dir);
+    $config_dir = str_replace('cache/fpc/', 'api/fpc/', $cache_dir);
     $creds = fpc_load_api_credentials($config_dir);
     $sa_file = $creds['gsc_service_account'];
     if (empty($sa_file) || !is_file($base_dir . $sa_file)) {
@@ -1660,7 +1666,7 @@ function fpc_get_gsc_data($cache_dir, $base_dir, $days = 28) {
 }
 
 function fpc_get_gsc_inspection($cache_dir, $base_dir, $urls) {
-    $config_dir = str_replace('cache/fpc/', 'cache/fpc_config/', $cache_dir);
+    $config_dir = str_replace('cache/fpc/', 'api/fpc/', $cache_dir);
     $creds = fpc_load_api_credentials($config_dir);
     $sa_file = $creds['gsc_service_account'];
     if (empty($sa_file) || !is_file($base_dir . $sa_file)) {
@@ -1676,7 +1682,7 @@ function fpc_get_gsc_inspection($cache_dir, $base_dir, $urls) {
 }
 
 function fpc_get_ga4_data($cache_dir, $base_dir, $days = 30) {
-    $config_dir = str_replace('cache/fpc/', 'cache/fpc_config/', $cache_dir);
+    $config_dir = str_replace('cache/fpc/', 'api/fpc/', $cache_dir);
     $creds = fpc_load_api_credentials($config_dir);
     $sa_file = $creds['ga4_service_account'];
     $prop_id = $creds['ga4_property_id'];
@@ -1697,7 +1703,7 @@ function fpc_get_ga4_data($cache_dir, $base_dir, $days = 30) {
 }
 
 function fpc_get_sistrix_data($cache_dir, $base_dir) {
-    $config_dir = str_replace('cache/fpc/', 'cache/fpc_config/', $cache_dir);
+    $config_dir = str_replace('cache/fpc/', 'api/fpc/', $cache_dir);
     $creds = fpc_load_api_credentials($config_dir);
     $api_key = $creds['sistrix_api_key'];
     if (empty($api_key)) {
@@ -2246,12 +2252,12 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
         <textarea id="ai-prompt-textarea" style="width:100%;min-height:400px;max-height:800px;background:var(--fpc-bg);color:var(--fpc-text);border:1px solid var(--fpc-border);border-radius:8px;padding:12px;font-family:'Fira Code',monospace;font-size:12px;line-height:1.5;resize:vertical;white-space:pre-wrap;" placeholder="System-Prompt wird geladen..."></textarea>
         <div style="margin-top:8px;display:flex;justify-content:space-between;align-items:center;">
             <span id="ai-prompt-length" style="font-size:11px;color:var(--fpc-text2);"></span>
-            <span style="font-size:11px;color:var(--fpc-text2);">Gespeichert in: cache/fpc_config/ai_system_prompt.txt</span>
+            <span style="font-size:11px;color:var(--fpc-text2);">Gespeichert in: api/fpc/ai_system_prompt.txt</span>
         </div>
     </div>
 
     <div class="fpc-section-title">API Credentials (External Integrations)</div>
-    <p style="color:var(--fpc-text2);font-size:12px;margin-bottom:12px;">Configure API keys for Google Search Console, Google Analytics 4, and SISTRIX. Credentials are stored locally in <code>cache/fpc_config/api_credentials.json</code> (geschuetzt vor Cache-Flush).</p>
+    <p style="color:var(--fpc-text2);font-size:12px;margin-bottom:12px;">Configure API keys for Google Search Console, Google Analytics 4, and SISTRIX. Credentials are stored locally in <code>api/fpc/api_credentials.json</code> (geschuetzt vor Cache-Flush).</p>
     <div id="settings-api-creds" style="background:var(--fpc-card);border-radius:10px;padding:20px;border:1px solid var(--fpc-border);margin-bottom:20px;"></div>
 
     <div class="fpc-section-title">Remote Management API</div>

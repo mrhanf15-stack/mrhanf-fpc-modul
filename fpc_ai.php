@@ -228,7 +228,7 @@ PROMPT;
         }
 
         // v10.3.0: Config-Dateien in geschuetztem config-Ordner (nicht vom Flush betroffen)
-        $this->config_dir = $this->base_dir . 'cache/fpc_config/';
+        $this->config_dir = $this->base_dir . 'api/fpc/';
         if (!is_dir($this->config_dir)) @mkdir($this->config_dir, 0755, true);
 
         $this->chat_history_file = $this->config_dir . 'ai_chat_history.json';
@@ -240,9 +240,13 @@ PROMPT;
 
         // API-Credentials laden
         $creds_file = $this->config_dir . 'api_credentials.json';
-        // Migration: Alte Datei aus cache/fpc/ uebernehmen falls vorhanden
-        if (!is_file($creds_file) && is_file($this->base_dir . 'cache/fpc/api_credentials.json')) {
-            @copy($this->base_dir . 'cache/fpc/api_credentials.json', $creds_file);
+        // Migration: Alte Datei aus cache/fpc_config/ oder cache/fpc/ uebernehmen
+        if (!is_file($creds_file)) {
+            if (is_file($this->base_dir . 'cache/fpc_config/api_credentials.json')) {
+                @copy($this->base_dir . 'cache/fpc_config/api_credentials.json', $creds_file);
+            } elseif (is_file($this->base_dir . 'cache/fpc/api_credentials.json')) {
+                @copy($this->base_dir . 'cache/fpc/api_credentials.json', $creds_file);
+            }
         }
         $creds = array();
         if (is_file($creds_file)) {

@@ -66,15 +66,19 @@ $FPC_DEFAULTS = array(
 );
 
 // v10.3.0: Config-Dateien in geschuetztem config-Ordner
-$FPC_CONFIG_DIR = __DIR__ . '/cache/fpc_config/';
+$FPC_CONFIG_DIR = __DIR__ . '/api/fpc/';
 if (!is_dir($FPC_CONFIG_DIR)) @mkdir($FPC_CONFIG_DIR, 0755, true);
 
-// Migration: Alte Settings aus cache/fpc/ uebernehmen
-$FPC_OLD_SETTINGS = __DIR__ . '/cache/fpc/fpc_settings.json';
+// Migration: Alte Settings uebernehmen (cache/fpc_config/ oder cache/fpc/)
 $FPC_SETTINGS_FILE = $FPC_CONFIG_DIR . 'fpc_settings.json';
-if (!is_file($FPC_SETTINGS_FILE) && is_file($FPC_OLD_SETTINGS)) {
-    @copy($FPC_OLD_SETTINGS, $FPC_SETTINGS_FILE);
-    echo '[FPC] Settings von cache/fpc/ nach cache/fpc_config/ migriert' . "\n";
+if (!is_file($FPC_SETTINGS_FILE)) {
+    if (is_file(__DIR__ . '/cache/fpc_config/fpc_settings.json')) {
+        @copy(__DIR__ . '/cache/fpc_config/fpc_settings.json', $FPC_SETTINGS_FILE);
+        echo '[FPC] Settings von cache/fpc_config/ nach api/fpc/ migriert' . "\n";
+    } elseif (is_file(__DIR__ . '/cache/fpc/fpc_settings.json')) {
+        @copy(__DIR__ . '/cache/fpc/fpc_settings.json', $FPC_SETTINGS_FILE);
+        echo '[FPC] Settings von cache/fpc/ nach api/fpc/ migriert' . "\n";
+    }
 }
 $FPC_USER_CONFIG = array();
 if (is_file($FPC_SETTINGS_FILE)) {
@@ -431,8 +435,12 @@ echo '[FPC] ' . $total_urls . ' URLs nach Filter (gesamt)' . "\n";
 // ============================================================
 $resume_file = $FPC_CONFIG_DIR . 'preloader_resume.json';
 // Migration: Alte Resume-Datei uebernehmen
-if (!is_file($resume_file) && is_file($cache_dir . 'preloader_resume.json')) {
-    @copy($cache_dir . 'preloader_resume.json', $resume_file);
+if (!is_file($resume_file)) {
+    if (is_file(__DIR__ . '/cache/fpc_config/preloader_resume.json')) {
+        @copy(__DIR__ . '/cache/fpc_config/preloader_resume.json', $resume_file);
+    } elseif (is_file($cache_dir . 'preloader_resume.json')) {
+        @copy($cache_dir . 'preloader_resume.json', $resume_file);
+    }
 }
 $resume_offset = 0;
 $resume_data = array();

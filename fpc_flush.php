@@ -3,7 +3,7 @@
  * Mr. Hanf Full Page Cache v8.2.0 - Cache Flush Script
  *
  * Leert den gesamten FPC-Cache oder einzelne Seiten.
- * Config-Dateien liegen in cache/fpc_config/ und sind NICHT betroffen.
+ * Config-Dateien liegen in api/fpc/ und sind NICHT betroffen.
  *
  * Aufruf:
  *   /usr/local/bin/php fpc_flush.php              # Gesamten Cache leeren
@@ -14,7 +14,7 @@
  * @date      2026-03-29
  *
  * CHANGELOG v8.2.0:
- *   - Config-Dateien in separatem Ordner cache/fpc_config/ (nie vom Flush betroffen)
+ *   - Config-Dateien in separatem Ordner api/fpc/ (nie vom Flush betroffen)
  *   - Flush loescht nur noch HTML-Cache-Dateien und leere Verzeichnisse
  *   - SEO-Daten (seo/, gsc/, ga4/) bleiben erhalten
  *
@@ -52,7 +52,7 @@ if (isset($argv[1])) {
         echo "  php fpc_flush.php              Gesamten HTML-Cache leeren\n";
         echo "  php fpc_flush.php --expired    Nur abgelaufene Dateien loeschen\n";
         echo "  php fpc_flush.php --url /pfad/ Einzelne Seite aus Cache entfernen\n";
-        echo "\nConfig-Dateien in cache/fpc_config/ sind NICHT betroffen.\n";
+        echo "\nConfig-Dateien in api/fpc/ sind NICHT betroffen.\n";
         exit(0);
     }
 }
@@ -105,7 +105,7 @@ if ($mode === 'single') {
 } else {
     // === VOLLSTAENDIGER FLUSH ===
     // Loescht nur HTML-Cache-Dateien und leere Verzeichnisse.
-    // Config liegt in cache/fpc_config/ und ist nicht betroffen.
+    // Config liegt in api/fpc/ und ist nicht betroffen.
     $iter = new RecursiveIteratorIterator(
         new RecursiveDirectoryIterator($cache_dir, RecursiveDirectoryIterator::SKIP_DOTS),
         RecursiveIteratorIterator::CHILD_FIRST
@@ -128,7 +128,7 @@ if ($mode === 'single') {
             $deleted++;
         } else {
             // Sonstige Dateien (z.B. .json, .log, .pid) im cache/fpc/ loeschen
-            // Config-Dateien liegen jetzt in cache/fpc_config/
+            // Config-Dateien liegen jetzt in api/fpc/
             unlink($item->getRealPath());
         }
     }
