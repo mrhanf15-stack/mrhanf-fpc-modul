@@ -71,6 +71,8 @@ require('includes/application_top.php');
 // ============================================================
 $base_dir       = defined('DIR_FS_DOCUMENT_ROOT') ? DIR_FS_DOCUMENT_ROOT : (defined('DIR_FS_CATALOG') ? DIR_FS_CATALOG : '');
 $cache_dir      = $base_dir . 'cache/fpc/';
+$config_dir     = $base_dir . 'cache/fpc_config/';
+if (!is_dir($config_dir)) @mkdir($config_dir, 0755, true);
 $pid_file       = $cache_dir . 'rebuild.pid';
 $log_file       = $cache_dir . 'preloader.log';
 $rebuild_log    = $cache_dir . 'rebuild_manual.log';
@@ -273,12 +275,12 @@ if (isset($_GET['ajax'])) {
 
         // v9.0.6: Settings Tab
         case 'settings_load':
-            echo json_encode(fpc_load_settings($cache_dir));
+            echo json_encode(fpc_load_settings($config_dir));
             exit;
 
         case 'settings_save':
             $cfg = json_decode(file_get_contents('php://input'), true);
-            echo json_encode(fpc_save_settings($cfg, $cache_dir));
+            echo json_encode(fpc_save_settings($cfg, $config_dir));
             exit;
 
         // v9.2.0: Google Search Console (extended)
@@ -306,12 +308,12 @@ if (isset($_GET['ajax'])) {
         // v9.1.0: Save API credentials
         case 'save_api_credentials':
             $creds = json_decode(file_get_contents('php://input'), true);
-            echo json_encode(fpc_save_api_credentials($cache_dir, $creds));
+            echo json_encode(fpc_save_api_credentials($config_dir, $creds));
             exit;
 
         // v9.1.0: Load API credentials
         case 'load_api_credentials':
-            echo json_encode(fpc_load_api_credentials($cache_dir));
+            echo json_encode(fpc_load_api_credentials($config_dir));
             exit;
 
         // v10.0.0: SEO Engine Endpoints
@@ -604,7 +606,7 @@ function fpc_seo_problems($base_dir, $cache_dir) {
     $gsc_data = null;
     $ga4_data = null;
     try {
-        $creds = fpc_load_api_credentials($cache_dir);
+        $creds = fpc_load_api_credentials($config_dir);
         if (!empty($creds['gsc_service_account']) && is_file($base_dir . $creds['gsc_service_account'])) {
             require_once $base_dir . 'fpc_gsc.php';
             $gsc = new FpcGsc($base_dir . $creds['gsc_service_account'], $creds['gsc_site_url']);
@@ -612,7 +614,7 @@ function fpc_seo_problems($base_dir, $cache_dir) {
         }
     } catch (Exception $e) {}
     try {
-        $creds = fpc_load_api_credentials($cache_dir);
+        $creds = fpc_load_api_credentials($config_dir);
         if (!empty($creds['ga4_service_account']) && !empty($creds['ga4_property_id'])) {
             require_once $base_dir . 'fpc_ga4.php';
             $ga4 = new FpcGa4($base_dir . $creds['ga4_service_account'], $creds['ga4_property_id']);
@@ -1494,8 +1496,13 @@ function fpc_load_settings($cache_dir) {
     }
     $settings['db'] = $db_settings;
 
-    // 2. Preloader settings (from fpc_settings.json)
+    // 2. Preloader settings (from fpc_settings.json) - v10.3.0: config_dir
     $settings_file = $cache_dir . 'fpc_settings.json';
+    // Migration: alte Datei aus cache/fpc/ uebernehmen
+    if (!is_file($settings_file)) {
+        $old_file = str_replace('fpc_config/', 'fpc/', $cache_dir) . 'fpc_settings.json';
+        if (is_file($old_file)) @copy($old_file, $settings_file);
+    }
     $preloader_defaults = array(
         'request_delay_ms' => 500, 'load_threshold' => 3.0, 'load_pause_sec' => 30,
         'batch_size' => 100, 'batch_pause_sec' => 30, 'slow_threshold_ms' => 3000,
@@ -1552,7 +1559,7 @@ function fpc_save_settings($cfg, $cache_dir) {
         }
     }
 
-    // Save local settings (preloader, serve, healthcheck)
+    // Save local settings (preloader, serve, healthcheck) - v10.3.0: config_dir
     $settings_file = $cache_dir . 'fpc_settings.json';
     $existing = array();
     if (is_file($settings_file)) {
@@ -1593,8 +1600,9 @@ function fpc_get_preloader_status($cache_dir, $pid_file, $log_file, $rebuild_log
 // v9.1.0: EXTERNAL INTEGRATIONS (GSC, GA4, SISTRIX)
 // ============================================================
 
-function fpc_load_api_credentials($cache_dir) {
-    $file = $cache_dir . 'api_credentials.json';
+function fpc_load_api_credentials($config_dir) {
+    if (!is_dir($config_dir)) @mkdir($config_dir, 0755, true);
+    $file = $config_dir . 'api_credentials.json';
     $defaults = array(
         'gsc_service_account' => '',
         'gsc_site_url' => 'https://mr-hanf.de/',
@@ -1605,13 +1613,22 @@ function fpc_load_api_credentials($cache_dir) {
         'openai_api_key' => '',
         'openai_model' => 'gpt-4.1-mini',
     );
-    if (!is_file($file)) return $defaults;
+    // v10.3.0: Migration - alte Datei aus cache/fpc/ uebernehmen
+    if (!is_file($file)) {
+        $old_file = str_replace('fpc_config/', 'fpc/', $config_dir) . 'api_credentials.json';
+        if (is_file($old_file)) {
+            @copy($old_file, $file);
+        } else {
+            return $defaults;
+        }
+    }
     $data = @json_decode(file_get_contents($file), true);
     return $data ? array_merge($defaults, $data) : $defaults;
 }
 
-function fpc_save_api_credentials($cache_dir, $creds) {
-    $file = $cache_dir . 'api_credentials.json';
+function fpc_save_api_credentials($config_dir, $creds) {
+    if (!is_dir($config_dir)) @mkdir($config_dir, 0755, true);
+    $file = $config_dir . 'api_credentials.json';
     // Only save known keys
     $allowed = array('gsc_service_account','gsc_site_url','ga4_service_account','ga4_property_id','sistrix_api_key','sistrix_domain','openai_api_key','openai_model');
     $save = array();
@@ -1623,7 +1640,8 @@ function fpc_save_api_credentials($cache_dir, $creds) {
 }
 
 function fpc_get_gsc_data($cache_dir, $base_dir, $days = 28) {
-    $creds = fpc_load_api_credentials($cache_dir);
+    $config_dir = str_replace('cache/fpc/', 'cache/fpc_config/', $cache_dir);
+    $creds = fpc_load_api_credentials($config_dir);
     $sa_file = $creds['gsc_service_account'];
     if (empty($sa_file) || !is_file($base_dir . $sa_file)) {
         return array('error' => true, 'msg' => 'Google Service Account JSON not configured. Go to Settings > API Credentials to set the path.', 'configured' => false);
@@ -1642,7 +1660,8 @@ function fpc_get_gsc_data($cache_dir, $base_dir, $days = 28) {
 }
 
 function fpc_get_gsc_inspection($cache_dir, $base_dir, $urls) {
-    $creds = fpc_load_api_credentials($cache_dir);
+    $config_dir = str_replace('cache/fpc/', 'cache/fpc_config/', $cache_dir);
+    $creds = fpc_load_api_credentials($config_dir);
     $sa_file = $creds['gsc_service_account'];
     if (empty($sa_file) || !is_file($base_dir . $sa_file)) {
         return array('error' => true, 'msg' => 'GSC not configured');
@@ -1657,7 +1676,8 @@ function fpc_get_gsc_inspection($cache_dir, $base_dir, $urls) {
 }
 
 function fpc_get_ga4_data($cache_dir, $base_dir, $days = 30) {
-    $creds = fpc_load_api_credentials($cache_dir);
+    $config_dir = str_replace('cache/fpc/', 'cache/fpc_config/', $cache_dir);
+    $creds = fpc_load_api_credentials($config_dir);
     $sa_file = $creds['ga4_service_account'];
     $prop_id = $creds['ga4_property_id'];
     if (empty($sa_file) || empty($prop_id) || !is_file($base_dir . $sa_file)) {
@@ -1677,7 +1697,8 @@ function fpc_get_ga4_data($cache_dir, $base_dir, $days = 30) {
 }
 
 function fpc_get_sistrix_data($cache_dir, $base_dir) {
-    $creds = fpc_load_api_credentials($cache_dir);
+    $config_dir = str_replace('cache/fpc/', 'cache/fpc_config/', $cache_dir);
+    $creds = fpc_load_api_credentials($config_dir);
     $api_key = $creds['sistrix_api_key'];
     if (empty($api_key)) {
         return array('error' => true, 'msg' => 'SISTRIX API key not configured. Go to Settings > API Credentials to set your API key.', 'configured' => false);
@@ -2225,12 +2246,12 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
         <textarea id="ai-prompt-textarea" style="width:100%;min-height:400px;max-height:800px;background:var(--fpc-bg);color:var(--fpc-text);border:1px solid var(--fpc-border);border-radius:8px;padding:12px;font-family:'Fira Code',monospace;font-size:12px;line-height:1.5;resize:vertical;white-space:pre-wrap;" placeholder="System-Prompt wird geladen..."></textarea>
         <div style="margin-top:8px;display:flex;justify-content:space-between;align-items:center;">
             <span id="ai-prompt-length" style="font-size:11px;color:var(--fpc-text2);"></span>
-            <span style="font-size:11px;color:var(--fpc-text2);">Gespeichert in: cache/fpc/ai_system_prompt.txt</span>
+            <span style="font-size:11px;color:var(--fpc-text2);">Gespeichert in: cache/fpc_config/ai_system_prompt.txt</span>
         </div>
     </div>
 
     <div class="fpc-section-title">API Credentials (External Integrations)</div>
-    <p style="color:var(--fpc-text2);font-size:12px;margin-bottom:12px;">Configure API keys for Google Search Console, Google Analytics 4, and SISTRIX. Credentials are stored locally in <code>cache/fpc/api_credentials.json</code>.</p>
+    <p style="color:var(--fpc-text2);font-size:12px;margin-bottom:12px;">Configure API keys for Google Search Console, Google Analytics 4, and SISTRIX. Credentials are stored locally in <code>cache/fpc_config/api_credentials.json</code> (geschuetzt vor Cache-Flush).</p>
     <div id="settings-api-creds" style="background:var(--fpc-card);border-radius:10px;padding:20px;border:1px solid var(--fpc-border);margin-bottom:20px;"></div>
 
     <div class="fpc-section-title">Remote Management API</div>

@@ -24,6 +24,7 @@ class FpcAi {
     private $model;
     private $base_dir;
     private $cache_dir;
+    private $config_dir;
     private $chat_history_file;
     private $analysis_cache_file;
 
@@ -226,15 +227,23 @@ PROMPT;
             @mkdir($this->cache_dir, 0755, true);
         }
 
-        $this->chat_history_file = $this->cache_dir . 'ai_chat_history.json';
+        // v10.3.0: Config-Dateien in geschuetztem config-Ordner (nicht vom Flush betroffen)
+        $this->config_dir = $this->base_dir . 'cache/fpc_config/';
+        if (!is_dir($this->config_dir)) @mkdir($this->config_dir, 0755, true);
+
+        $this->chat_history_file = $this->config_dir . 'ai_chat_history.json';
         $this->analysis_cache_file = $this->cache_dir . 'ai_analysis_cache.json';
-        $this->system_prompt_file = $this->base_dir . 'cache/fpc/ai_system_prompt.txt';
+        $this->system_prompt_file = $this->config_dir . 'ai_system_prompt.txt';
 
         // v1.1.0: System-Prompt aus Datei laden (wenn vorhanden), sonst Default
         $this->system_prompt = $this->loadSystemPrompt();
 
         // API-Credentials laden
-        $creds_file = $this->base_dir . 'cache/fpc/api_credentials.json';
+        $creds_file = $this->config_dir . 'api_credentials.json';
+        // Migration: Alte Datei aus cache/fpc/ uebernehmen falls vorhanden
+        if (!is_file($creds_file) && is_file($this->base_dir . 'cache/fpc/api_credentials.json')) {
+            @copy($this->base_dir . 'cache/fpc/api_credentials.json', $creds_file);
+        }
         $creds = array();
         if (is_file($creds_file)) {
             $creds = @json_decode(file_get_contents($creds_file), true);
@@ -324,7 +333,7 @@ PROMPT;
         // 2. GSC Daten (wenn verfuegbar)
         try {
             require_once $this->base_dir . 'fpc_gsc.php';
-            $creds = @json_decode(file_get_contents($this->base_dir . 'cache/fpc/api_credentials.json'), true);
+            $creds = @json_decode(file_get_contents($this->config_dir . 'api_credentials.json'), true);
             if (!empty($creds['gsc_service_account']) && is_file($this->base_dir . $creds['gsc_service_account'])) {
                 $gsc = new FPC_GoogleSearchConsole($this->base_dir . $creds['gsc_service_account'], isset($creds['gsc_site_url']) ? $creds['gsc_site_url'] : 'https://mr-hanf.de/');
                 $comparison = $gsc->getComparison(28);
@@ -352,7 +361,7 @@ PROMPT;
         // v10.2.4: Cache-Dir Parameter + bessere Fehlerbehandlung
         try {
             require_once $this->base_dir . 'fpc_ga4.php';
-            $creds = @json_decode(file_get_contents($this->base_dir . 'cache/fpc/api_credentials.json'), true);
+            $creds = @json_decode(file_get_contents($this->config_dir . 'api_credentials.json'), true);
             $ga4_sa = isset($creds['ga4_service_account']) ? $creds['ga4_service_account'] : '';
             $ga4_prop = isset($creds['ga4_property_id']) ? $creds['ga4_property_id'] : '';
             $ga4_sa_path = $this->base_dir . $ga4_sa;
@@ -389,7 +398,7 @@ PROMPT;
         // 4. Sistrix Daten (wenn verfuegbar)
         try {
             require_once $this->base_dir . 'fpc_sistrix.php';
-            $creds = @json_decode(file_get_contents($this->base_dir . 'cache/fpc/api_credentials.json'), true);
+            $creds = @json_decode(file_get_contents($this->config_dir . 'api_credentials.json'), true);
             if (!empty($creds['sistrix_api_key'])) {
                 $domain = isset($creds['sistrix_domain']) ? $creds['sistrix_domain'] : 'mr-hanf.de';
                 $sx = new FPC_Sistrix($creds['sistrix_api_key'], $domain);
