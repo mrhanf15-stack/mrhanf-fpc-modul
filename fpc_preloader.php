@@ -1,19 +1,31 @@
 <?php
 //
-// Mr. Hanf Full Page Cache v8.3.0 - Cron Preloader (Ausfallsicher + Rate-Limited + Resume)
+// Mr. Hanf Full Page Cache v10.4.0 - Cron Preloader (Smart Refresh + Resume)
 //
 // Cron-Job der Shop-Seiten abruft und als statische HTML-Dateien speichert.
 // Primaere URL-Quelle: sitemap.xml
 // Fallback: Aktive Produkte/Kategorien aus der DB
 //
-// CHANGELOG v8.0.5:
-//   - FIX: Verzeichnis-Schutz - erstellt cache/fpc/ + .gitkeep automatisch
-//   - FIX: Cronjob-Absicherung gegen fehlendes Verzeichnis
+// MODI:
+//   php fpc_preloader.php              # Normal: Sitemap durchgehen, neue/abgelaufene cachen
+//   php fpc_preloader.php --refresh    # Smart Refresh: Nur bestehende abgelaufene Cache-Dateien erneuern
+//   php fpc_preloader.php --priority   # Nur priorisierte URLs (Startseite, Kategorien, Top-Seiten)
 //
-// CHANGELOG v8.0.3:
-//   - NEU: Kategorie-URLs werden aus DB geladen und priorisiert
-//   - NEU: Startseite + statische Seiten werden immer zuerst gecacht
-//   - FIX: Kategorien fehlten im Cache weil Sitemap nur Produkte enthaelt
+// CHANGELOG v10.4.0:
+//   - NEU: --refresh Modus - scannt cache/fpc/ Ordner und erneuert nur abgelaufene Dateien
+//   - NEU: --priority Modus - nur Startseite + Kategorien + statische Seiten
+//   - NEU: Prioritaets-Queue basierend auf Dateialter (aelteste zuerst)
+//   - NEU: Stale-Schutz: Dateien die > 2x TTL alt sind werden priorisiert
+//   - NEU: Statistik-Ausgabe am Ende (frisch/abgelaufen/stale Verteilung)
+//   - VERBESSERT: Resume-Mechanismus funktioniert auch im Refresh-Modus
+//
+// CHANGELOG v8.3.0:
+//   - NEU: Resume-Mechanismus - Preloader merkt sich wo er aufgehoert hat
+//   - NEU: max_pages ist jetzt Batch-Limit pro Lauf (nicht Gesamt-Limit)
+//   - NEU: Alle URLs werden ueber mehrere Laeufe hinweg gecacht
+//   - NEU: Resume-Position wird in api/fpc/preloader_resume.json gespeichert
+//   - NEU: Default max_pages auf 2000 erhoeht (statt 500)
+//   - NEU: Automatischer Reset wenn alle URLs gecacht sind
 //
 // CHANGELOG v8.0.0:
 //   - NEU: Erweiterte Validierung (DOCTYPE + <html + <body Pflicht)
@@ -32,16 +44,8 @@
 //   - Atomic Write: Erst .tmp schreiben, validieren, dann umbenennen
 //   - Health-Marker: <!-- FPC-VALID --> wird an jede Cache-Datei angehaengt
 //
-// CHANGELOG v8.3.0:
-//   - NEU: Resume-Mechanismus - Preloader merkt sich wo er aufgehoert hat
-//   - NEU: max_pages ist jetzt Batch-Limit pro Lauf (nicht Gesamt-Limit)
-//   - NEU: Alle URLs werden ueber mehrere Laeufe hinweg gecacht
-//   - NEU: Resume-Position wird in cache/fpc/preloader_resume.json gespeichert
-//   - NEU: Default max_pages auf 2000 erhoeht (statt 500)
-//   - NEU: Automatischer Reset wenn alle URLs gecacht sind
-//
-// @version   8.3.0
-// @date      2026-03-28
+// @version   10.4.0
+// @date      2026-03-29
 
 // ============================================================
 // KONFIGURATION (Defaults - werden durch fpc_settings.json ueberschrieben)
@@ -182,7 +186,30 @@ if (!is_file($cache_dir . '.gitkeep')) {
 // Log-Datei
 $log_file = $cache_dir . 'preloader.log';
 
-echo '[FPC] Start: ' . date('Y-m-d H:i:s') . "\n";
+// ============================================================
+// v10.4.0: MODUS ERKENNUNG
+// ============================================================
+$preloader_mode = 'normal';  // normal, refresh, priority
+if (isset($argv[1])) {
+    if ($argv[1] === '--refresh') {
+        $preloader_mode = 'refresh';
+    } elseif ($argv[1] === '--priority') {
+        $preloader_mode = 'priority';
+    } elseif ($argv[1] === '--help') {
+        echo "Mr. Hanf FPC v10.4.0 - Smart Preloader\n";
+        echo "Verwendung:\n";
+        echo "  php fpc_preloader.php              Normal: Alle URLs aus Sitemap (mit Resume)\n";
+        echo "  php fpc_preloader.php --refresh    Smart Refresh: Nur abgelaufene Cache-Dateien erneuern\n";
+        echo "  php fpc_preloader.php --priority   Nur priorisierte URLs (Startseite + Kategorien)\n";
+        echo "\nEmpfohlene Cron-Konfiguration:\n";
+        echo "  Alle 2h:   php fpc_preloader.php --refresh    (erneuert ~500-2000 abgelaufene Seiten)\n";
+        echo "  Taeglich:  php fpc_preloader.php              (fuellt Luecken, neue Seiten)\n";
+        echo "  Taeglich:  php fpc_flush.php --expired        (loescht uralte Dateien > TTL)\n";
+        exit(0);
+    }
+}
+
+echo '[FPC] Start: ' . date('Y-m-d H:i:s') . ' | Modus: ' . strtoupper($preloader_mode) . "\n";
 echo '[FPC] Shop-URL: ' . $shop_url . "\n";
 echo '[FPC] Cache-TTL: ' . $cache_ttl . 's | Max: ' . $max_pages . "\n";
 echo '[FPC] v8.0 Validierung: Min-Size=' . $FPC_MIN_HTML_SIZE . ' | DOCTYPE=' . ($FPC_REQUIRE_DOCTYPE ? 'Ja' : 'Nein') . ' | Body=' . ($FPC_REQUIRE_BODY ? 'Ja' : 'Nein') . ' | Verify-After-Write=' . ($FPC_VERIFY_AFTER_WRITE ? 'Ja' : 'Nein') . "\n";
@@ -267,203 +294,371 @@ function fpc_validate_html($html, $url, $config) {
     return true;
 }
 
-// --- URLs sammeln ---
-$urls = array();
-
-// 1. Sitemap laden (mit Chrome-UA wegen Reverse-Proxy)
-$sitemap_url = $shop_url . '/sitemap.xml';
-$ch_sitemap = curl_init($sitemap_url);
-curl_setopt_array($ch_sitemap, array(
-    CURLOPT_RETURNTRANSFER => true,
-    CURLOPT_FOLLOWLOCATION => true,
-    CURLOPT_SSL_VERIFYPEER => false,
-    CURLOPT_TIMEOUT        => 30,
-    CURLOPT_USERAGENT      => $user_agent,
-));
-$sitemap_xml = curl_exec($ch_sitemap);
-$sitemap_code = curl_getinfo($ch_sitemap, CURLINFO_HTTP_CODE);
-curl_close($ch_sitemap);
-
-if ($sitemap_xml !== false && $sitemap_code == 200 && strlen($sitemap_xml) > 100) {
-    echo '[FPC] Sitemap geladen: ' . $sitemap_url . ' (' . strlen($sitemap_xml) . ' Bytes)' . "\n";
-
-    // Pruefen ob Sitemap-Index
-    if (strpos($sitemap_xml, '<sitemapindex') !== false) {
-        preg_match_all('/<loc>(.*?)<\/loc>/i', $sitemap_xml, $matches);
-        echo '[FPC] Sitemap-Index mit ' . count($matches[1]) . ' Sub-Sitemaps' . "\n";
-        foreach ($matches[1] as $sub_url) {
-            $ch_sub = curl_init(trim($sub_url));
-            curl_setopt_array($ch_sub, array(
-                CURLOPT_RETURNTRANSFER => true,
-                CURLOPT_FOLLOWLOCATION => true,
-                CURLOPT_SSL_VERIFYPEER => false,
-                CURLOPT_TIMEOUT        => 30,
-                CURLOPT_USERAGENT      => $user_agent,
-            ));
-            $sub_xml = curl_exec($ch_sub);
-            curl_close($ch_sub);
-            if ($sub_xml !== false) {
-                preg_match_all('/<loc>(.*?)<\/loc>/i', $sub_xml, $sub_m);
-                foreach ($sub_m[1] as $u) {
-                    $urls[] = trim($u);
-                }
-            }
-        }
-    } else {
-        // Einfache Sitemap
-        preg_match_all('/<loc>(.*?)<\/loc>/i', $sitemap_xml, $matches);
-        foreach ($matches[1] as $u) {
-            $urls[] = trim($u);
-        }
+/**
+ * v10.4.0: Cache-Datei-Pfad zu URL konvertieren
+ * Wandelt z.B. cache/fpc/samen-shop/index.html -> https://mr-hanf.de/samen-shop/
+ */
+function fpc_cache_path_to_url($cache_file, $cache_dir, $shop_url) {
+    $relative = str_replace($cache_dir, '', $cache_file);
+    // index.html am Ende entfernen
+    $relative = preg_replace('#/index\.html$#', '', $relative);
+    $relative = preg_replace('#^index\.html$#', '', $relative);
+    if ($relative === '' || $relative === '/') {
+        return $shop_url . '/';
     }
-    echo '[FPC] ' . count($urls) . ' URLs aus Sitemap' . "\n";
-} else {
-    echo '[FPC] Sitemap nicht verfuegbar (HTTP ' . $sitemap_code . '). Lade aus DB...' . "\n";
+    return $shop_url . '/' . ltrim($relative, '/') . '/';
 }
 
-// 2. Fallback: Aktive Produkte und Kategorien aus DB
-if (empty($urls)) {
-    echo '[FPC] Lade aktive Produkte/Kategorien aus DB...' . "\n";
+// ============================================================
+// v10.4.0: SMART REFRESH MODUS
+// ============================================================
+// Statt alle 28.000 URLs der Sitemap durchzugehen, scannt dieser Modus
+// den cache/fpc/ Ordner und erneuert NUR Dateien die aelter als die TTL sind.
+// Sortierung: Aelteste Dateien zuerst (kritischste zuerst).
 
-    // Startseite
-    $urls[] = $shop_url . '/';
+if ($preloader_mode === 'refresh') {
+    echo '[FPC] v10.4.0: SMART REFRESH - Scanne Cache-Verzeichnis nach abgelaufenen Dateien...' . "\n";
 
-    // Aktive Kategorien mit SEO-URL
-    $r = $db->query("
-        SELECT DISTINCT c.url_text
-        FROM clean_seo_url c
-        INNER JOIN categories cat ON c.id = cat.categories_id AND c.type = 'categories'
-        WHERE cat.categories_status = 1
-          AND c.url_text != ''
-          AND c.language_id = 2
-        LIMIT " . $max_pages);
-    if ($r) {
-        while ($row = $r->fetch_assoc()) {
-            $urls[] = $shop_url . '/' . ltrim($row['url_text'], '/');
+    $expired_files = array();
+    $fresh_count = 0;
+    $stale_count = 0;  // > 2x TTL (kritisch)
+    $total_cache_files = 0;
+    $now = time();
+    $stale_threshold = $cache_ttl * 2;  // 2x TTL = stale (kritisch)
+
+    // Geschuetzte Verzeichnisse ueberspringen
+    $protected_dirs = array('seo', 'gsc', 'ga4', 'sistrix', 'tracker', 'logs');
+
+    $iter = new RecursiveIteratorIterator(
+        new RecursiveDirectoryIterator($cache_dir, RecursiveDirectoryIterator::SKIP_DOTS)
+    );
+
+    foreach ($iter as $file) {
+        if (!$file->isFile() || $file->getExtension() !== 'html') continue;
+
+        $real_path = $file->getRealPath();
+
+        // Geschuetzte Verzeichnisse ueberspringen
+        $relative = str_replace($cache_dir, '', $real_path);
+        $top_dir = explode('/', $relative)[0];
+        if (in_array($top_dir, $protected_dirs)) continue;
+
+        $total_cache_files++;
+        $age = $now - $file->getMTime();
+
+        if ($age > $cache_ttl) {
+            // Abgelaufen - muss erneuert werden
+            $expired_files[] = array(
+                'path' => $real_path,
+                'age'  => $age,
+                'mtime' => $file->getMTime(),
+            );
+            if ($age > $stale_threshold) {
+                $stale_count++;
+            }
+        } else {
+            $fresh_count++;
         }
     }
 
-    // Aktive Produkte mit SEO-URL
-    $remaining = $max_pages - count($urls);
-    if ($remaining > 0) {
+    // Sortierung: Aelteste zuerst (kritischste Dateien zuerst erneuern)
+    usort($expired_files, function($a, $b) {
+        return $b['age'] - $a['age'];  // Absteigend nach Alter
+    });
+
+    echo '[FPC] v10.4.0: Cache-Statistik:' . "\n";
+    echo '[FPC]   Gesamt Cache-Dateien: ' . $total_cache_files . "\n";
+    echo '[FPC]   Frisch (< TTL):       ' . $fresh_count . "\n";
+    echo '[FPC]   Abgelaufen (> TTL):   ' . count($expired_files) . "\n";
+    echo '[FPC]   Stale (> 2x TTL):     ' . $stale_count . ' (KRITISCH)' . "\n";
+
+    if (empty($expired_files)) {
+        echo '[FPC] v10.4.0: Keine abgelaufenen Dateien gefunden. Cache ist aktuell!' . "\n";
+        $db->close();
+        @file_put_contents($log_file, date('Y-m-d H:i:s') . ' [REFRESH] Keine abgelaufenen Dateien. Cache aktuell. (' . $total_cache_files . ' Dateien)' . "\n", FILE_APPEND);
+        exit(0);
+    }
+
+    // Batch-Limit anwenden
+    $refresh_batch = array_slice($expired_files, 0, $max_pages);
+    echo '[FPC] v10.4.0: Erneuere ' . count($refresh_batch) . ' von ' . count($expired_files) . ' abgelaufenen Dateien (Limit: ' . $max_pages . ')' . "\n";
+
+    // URLs aus Cache-Pfaden generieren
+    $batch_urls = array();
+    foreach ($refresh_batch as $entry) {
+        $url = fpc_cache_path_to_url($entry['path'], $cache_dir, $shop_url);
+        // Ausgeschlossene Seiten filtern
+        $skip = false;
+        foreach ($exclude_arr as $ex) {
+            if ($ex !== '' && strpos($url, $ex) !== false) { $skip = true; break; }
+        }
+        if (!$skip) {
+            $batch_urls[] = $url;
+        }
+    }
+
+    echo '[FPC] v10.4.0: ' . count($batch_urls) . ' URLs nach Filter' . "\n";
+
+    // Weiter zur gemeinsamen Preloading-Schleife (unten)
+    $total_urls = count($batch_urls);
+    // Kein Resume im Refresh-Modus (jeder Lauf scannt neu)
+    $resume_offset = 0;
+    $resume_data = array();
+    $resume_file = $FPC_CONFIG_DIR . 'preloader_resume_refresh.json';
+
+} elseif ($preloader_mode === 'priority') {
+    // ============================================================
+    // v10.4.0: PRIORITY MODUS
+    // ============================================================
+    // Nur Startseite, Kategorien und statische Seiten erneuern.
+    // Ideal fuer haeufige Cron-Laeufe (alle 30 Min).
+    echo '[FPC] v10.4.0: PRIORITY MODUS - Nur priorisierte URLs' . "\n";
+
+    $batch_urls = array();
+
+    // Startseite immer zuerst
+    $batch_urls[] = $shop_url . '/';
+
+    // Alle aktiven Sprachen ermitteln
+    $languages = array();
+    $r_lang = $db->query("SELECT languages_id, code FROM languages WHERE status = 1 ORDER BY sort_order");
+    if ($r_lang) {
+        while ($row = $r_lang->fetch_assoc()) {
+            $languages[] = $row;
+        }
+    }
+
+    // Kategorie-URLs fuer alle Sprachen laden
+    foreach ($languages as $lang) {
+        $r_cat = $db->query("
+            SELECT DISTINCT c.url_text
+            FROM clean_seo_url c
+            INNER JOIN categories cat ON c.id = cat.categories_id AND c.type = 'categories'
+            WHERE cat.categories_status = 1
+              AND c.url_text != ''
+              AND c.language_id = " . (int)$lang['languages_id'] . "
+            ORDER BY cat.sort_order, cat.categories_id
+        ");
+        if ($r_cat) {
+            while ($row = $r_cat->fetch_assoc()) {
+                $batch_urls[] = $shop_url . '/' . ltrim($row['url_text'], '/');
+            }
+        }
+    }
+
+    // Statische Seiten
+    $static_pages = array('/angebote', '/blog/', '/info/kontakt');
+    foreach ($static_pages as $sp) {
+        $batch_urls[] = $shop_url . $sp;
+    }
+
+    $batch_urls = array_unique($batch_urls);
+    echo '[FPC] v10.4.0: ' . count($batch_urls) . ' priorisierte URLs' . "\n";
+
+    $total_urls = count($batch_urls);
+    $resume_offset = 0;
+    $resume_data = array();
+    $resume_file = $FPC_CONFIG_DIR . 'preloader_resume_priority.json';
+
+} else {
+    // ============================================================
+    // NORMALER MODUS (Original-Logik mit Sitemap + Resume)
+    // ============================================================
+
+    // --- URLs sammeln ---
+    $urls = array();
+
+    // 1. Sitemap laden (mit Chrome-UA wegen Reverse-Proxy)
+    $sitemap_url = $shop_url . '/sitemap.xml';
+    $ch_sitemap = curl_init($sitemap_url);
+    curl_setopt_array($ch_sitemap, array(
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_FOLLOWLOCATION => true,
+        CURLOPT_SSL_VERIFYPEER => false,
+        CURLOPT_TIMEOUT        => 30,
+        CURLOPT_USERAGENT      => $user_agent,
+    ));
+    $sitemap_xml = curl_exec($ch_sitemap);
+    $sitemap_code = curl_getinfo($ch_sitemap, CURLINFO_HTTP_CODE);
+    curl_close($ch_sitemap);
+
+    if ($sitemap_xml !== false && $sitemap_code == 200 && strlen($sitemap_xml) > 100) {
+        echo '[FPC] Sitemap geladen: ' . $sitemap_url . ' (' . strlen($sitemap_xml) . ' Bytes)' . "\n";
+
+        // Pruefen ob Sitemap-Index
+        if (strpos($sitemap_xml, '<sitemapindex') !== false) {
+            preg_match_all('/<loc>(.*?)<\/loc>/i', $sitemap_xml, $matches);
+            echo '[FPC] Sitemap-Index mit ' . count($matches[1]) . ' Sub-Sitemaps' . "\n";
+            foreach ($matches[1] as $sub_url) {
+                $ch_sub = curl_init(trim($sub_url));
+                curl_setopt_array($ch_sub, array(
+                    CURLOPT_RETURNTRANSFER => true,
+                    CURLOPT_FOLLOWLOCATION => true,
+                    CURLOPT_SSL_VERIFYPEER => false,
+                    CURLOPT_TIMEOUT        => 30,
+                    CURLOPT_USERAGENT      => $user_agent,
+                ));
+                $sub_xml = curl_exec($ch_sub);
+                curl_close($ch_sub);
+                if ($sub_xml !== false) {
+                    preg_match_all('/<loc>(.*?)<\/loc>/i', $sub_xml, $sub_m);
+                    foreach ($sub_m[1] as $u) {
+                        $urls[] = trim($u);
+                    }
+                }
+            }
+        } else {
+            // Einfache Sitemap
+            preg_match_all('/<loc>(.*?)<\/loc>/i', $sitemap_xml, $matches);
+            foreach ($matches[1] as $u) {
+                $urls[] = trim($u);
+            }
+        }
+        echo '[FPC] ' . count($urls) . ' URLs aus Sitemap' . "\n";
+    } else {
+        echo '[FPC] Sitemap nicht verfuegbar (HTTP ' . $sitemap_code . '). Lade aus DB...' . "\n";
+    }
+
+    // 2. Fallback: Aktive Produkte und Kategorien aus DB
+    if (empty($urls)) {
+        echo '[FPC] Lade aktive Produkte/Kategorien aus DB...' . "\n";
+
+        // Startseite
+        $urls[] = $shop_url . '/';
+
+        // Aktive Kategorien mit SEO-URL
         $r = $db->query("
             SELECT DISTINCT c.url_text
             FROM clean_seo_url c
-            INNER JOIN products p ON c.id = p.products_id AND c.type = 'products'
-            WHERE p.products_status = 1
+            INNER JOIN categories cat ON c.id = cat.categories_id AND c.type = 'categories'
+            WHERE cat.categories_status = 1
               AND c.url_text != ''
               AND c.language_id = 2
-            LIMIT " . $remaining);
+            LIMIT " . $max_pages);
         if ($r) {
             while ($row = $r->fetch_assoc()) {
                 $urls[] = $shop_url . '/' . ltrim($row['url_text'], '/');
             }
         }
+
+        // Aktive Produkte mit SEO-URL
+        $remaining = $max_pages - count($urls);
+        if ($remaining > 0) {
+            $r = $db->query("
+                SELECT DISTINCT c.url_text
+                FROM clean_seo_url c
+                INNER JOIN products p ON c.id = p.products_id AND c.type = 'products'
+                WHERE p.products_status = 1
+                  AND c.url_text != ''
+                  AND c.language_id = 2
+                LIMIT " . $remaining);
+            if ($r) {
+                while ($row = $r->fetch_assoc()) {
+                    $urls[] = $shop_url . '/' . ltrim($row['url_text'], '/');
+                }
+            }
+        }
+
+        echo '[FPC] ' . count($urls) . ' URLs aus DB' . "\n";
     }
 
-    echo '[FPC] ' . count($urls) . ' URLs aus DB' . "\n";
-}
+    // ============================================================
+    // v8.0.3: KATEGORIE-URLs AUS DB PRIORISIEREN
+    // ============================================================
+    $priority_urls = array();
 
-// ============================================================
-// v8.0.3: KATEGORIE-URLs AUS DB PRIORISIEREN
-// Die Sitemap enthaelt primaer Produkt-URLs. Kategorie-Seiten
-// werden hier aus der DB geladen und VOR die Sitemap-URLs gesetzt,
-// damit sie immer gecacht werden (auch wenn das Limit greift).
-// ============================================================
-$priority_urls = array();
+    // Startseite immer zuerst
+    $priority_urls[] = $shop_url . '/';
 
-// Startseite immer zuerst
-$priority_urls[] = $shop_url . '/';
-
-// Alle aktiven Sprachen ermitteln
-$languages = array();
-$r_lang = $db->query("SELECT languages_id, code FROM languages WHERE status = 1 ORDER BY sort_order");
-if ($r_lang) {
-    while ($row = $r_lang->fetch_assoc()) {
-        $languages[] = $row;
-    }
-}
-
-// Kategorie-URLs fuer alle Sprachen laden
-foreach ($languages as $lang) {
-    $r_cat = $db->query("
-        SELECT DISTINCT c.url_text
-        FROM clean_seo_url c
-        INNER JOIN categories cat ON c.id = cat.categories_id AND c.type = 'categories'
-        WHERE cat.categories_status = 1
-          AND c.url_text != ''
-          AND c.language_id = " . (int)$lang['languages_id'] . "
-        ORDER BY cat.sort_order, cat.categories_id
-    ");
-    if ($r_cat) {
-        while ($row = $r_cat->fetch_assoc()) {
-            $priority_urls[] = $shop_url . '/' . ltrim($row['url_text'], '/');
+    // Alle aktiven Sprachen ermitteln
+    $languages = array();
+    $r_lang = $db->query("SELECT languages_id, code FROM languages WHERE status = 1 ORDER BY sort_order");
+    if ($r_lang) {
+        while ($row = $r_lang->fetch_assoc()) {
+            $languages[] = $row;
         }
     }
-}
 
-// Statische Seiten (Info-Seiten, Blog, etc.)
-$static_pages = array('/angebote', '/blog/', '/info/kontakt');
-foreach ($static_pages as $sp) {
-    $priority_urls[] = $shop_url . $sp;
-}
-
-echo '[FPC] v8.0.3: ' . count($priority_urls) . ' priorisierte URLs (Startseite + Kategorien + Statisch)' . "\n";
-
-// Priority-URLs VOR Sitemap-URLs setzen, dann deduplizieren
-$urls = array_merge($priority_urls, $urls);
-$urls = array_unique($urls);
-
-// Filtern (ausgeschlossene Seiten)
-$filtered = array();
-foreach ($urls as $url) {
-    $skip = false;
-    foreach ($exclude_arr as $ex) {
-        if ($ex !== '' && strpos($url, $ex) !== false) { $skip = true; break; }
-    }
-    if (!$skip) { $filtered[] = $url; }
-}
-// v8.3.0: KEIN array_slice mehr! Alle URLs bleiben in der Liste.
-// Das Batch-Limit wird stattdessen in der Hauptschleife angewendet.
-$total_urls = count($filtered);
-echo '[FPC] ' . $total_urls . ' URLs nach Filter (gesamt)' . "\n";
-
-// ============================================================
-// v8.3.0: RESUME-MECHANISMUS
-// Speichert die Position wo der letzte Lauf aufgehoert hat.
-// Beim naechsten Start wird ab dieser Position weitergemacht.
-// ============================================================
-$resume_file = $FPC_CONFIG_DIR . 'preloader_resume.json';
-// Migration: Alte Resume-Datei uebernehmen
-if (!is_file($resume_file)) {
-    if (is_file(__DIR__ . '/cache/fpc_config/preloader_resume.json')) {
-        @copy(__DIR__ . '/cache/fpc_config/preloader_resume.json', $resume_file);
-    } elseif (is_file($cache_dir . 'preloader_resume.json')) {
-        @copy($cache_dir . 'preloader_resume.json', $resume_file);
-    }
-}
-$resume_offset = 0;
-$resume_data = array();
-if (is_file($resume_file)) {
-    $resume_data = @json_decode(file_get_contents($resume_file), true);
-    if (is_array($resume_data) && isset($resume_data['next_offset'])) {
-        $resume_offset = (int) $resume_data['next_offset'];
-        // Wenn Offset >= Gesamtzahl -> von vorne anfangen (alle durch)
-        if ($resume_offset >= $total_urls) {
-            echo '[FPC] v8.3.0: Alle URLs wurden durchlaufen! Starte von vorne.' . "\n";
-            $resume_offset = 0;
-        } else {
-            echo '[FPC] v8.3.0: Resume ab Position ' . $resume_offset . ' von ' . $total_urls . ' (letzter Lauf: ' . (isset($resume_data['last_run']) ? $resume_data['last_run'] : '?') . ')' . "\n";
+    // Kategorie-URLs fuer alle Sprachen laden
+    foreach ($languages as $lang) {
+        $r_cat = $db->query("
+            SELECT DISTINCT c.url_text
+            FROM clean_seo_url c
+            INNER JOIN categories cat ON c.id = cat.categories_id AND c.type = 'categories'
+            WHERE cat.categories_status = 1
+              AND c.url_text != ''
+              AND c.language_id = " . (int)$lang['languages_id'] . "
+            ORDER BY cat.sort_order, cat.categories_id
+        ");
+        if ($r_cat) {
+            while ($row = $r_cat->fetch_assoc()) {
+                $priority_urls[] = $shop_url . '/' . ltrim($row['url_text'], '/');
+            }
         }
     }
+
+    // Statische Seiten (Info-Seiten, Blog, etc.)
+    $static_pages = array('/angebote', '/blog/', '/info/kontakt');
+    foreach ($static_pages as $sp) {
+        $priority_urls[] = $shop_url . $sp;
+    }
+
+    echo '[FPC] v8.0.3: ' . count($priority_urls) . ' priorisierte URLs (Startseite + Kategorien + Statisch)' . "\n";
+
+    // Priority-URLs VOR Sitemap-URLs setzen, dann deduplizieren
+    $urls = array_merge($priority_urls, $urls);
+    $urls = array_unique($urls);
+
+    // Filtern (ausgeschlossene Seiten)
+    $filtered = array();
+    foreach ($urls as $url) {
+        $skip = false;
+        foreach ($exclude_arr as $ex) {
+            if ($ex !== '' && strpos($url, $ex) !== false) { $skip = true; break; }
+        }
+        if (!$skip) { $filtered[] = $url; }
+    }
+    // v8.3.0: KEIN array_slice mehr! Alle URLs bleiben in der Liste.
+    // Das Batch-Limit wird stattdessen in der Hauptschleife angewendet.
+    $total_urls = count($filtered);
+    echo '[FPC] ' . $total_urls . ' URLs nach Filter (gesamt)' . "\n";
+
+    // ============================================================
+    // v8.3.0: RESUME-MECHANISMUS
+    // ============================================================
+    $resume_file = $FPC_CONFIG_DIR . 'preloader_resume.json';
+    // Migration: Alte Resume-Datei uebernehmen
+    if (!is_file($resume_file)) {
+        if (is_file(__DIR__ . '/cache/fpc_config/preloader_resume.json')) {
+            @copy(__DIR__ . '/cache/fpc_config/preloader_resume.json', $resume_file);
+        } elseif (is_file($cache_dir . 'preloader_resume.json')) {
+            @copy($cache_dir . 'preloader_resume.json', $resume_file);
+        }
+    }
+    $resume_offset = 0;
+    $resume_data = array();
+    if (is_file($resume_file)) {
+        $resume_data = @json_decode(file_get_contents($resume_file), true);
+        if (is_array($resume_data) && isset($resume_data['next_offset'])) {
+            $resume_offset = (int) $resume_data['next_offset'];
+            // Wenn Offset >= Gesamtzahl -> von vorne anfangen (alle durch)
+            if ($resume_offset >= $total_urls) {
+                echo '[FPC] v8.3.0: Alle URLs wurden durchlaufen! Starte von vorne.' . "\n";
+                $resume_offset = 0;
+            } else {
+                echo '[FPC] v8.3.0: Resume ab Position ' . $resume_offset . ' von ' . $total_urls . ' (letzter Lauf: ' . (isset($resume_data['last_run']) ? $resume_data['last_run'] : '?') . ')' . "\n";
+            }
+        }
+    }
+
+    // Batch fuer diesen Lauf: ab resume_offset, max max_pages URLs
+    $batch_urls = array_slice($filtered, $resume_offset, $max_pages);
+    echo '[FPC] v8.3.0: Batch ' . ($resume_offset + 1) . '-' . ($resume_offset + count($batch_urls)) . ' von ' . $total_urls . ' (' . count($batch_urls) . ' URLs in diesem Lauf, max ' . $max_pages . ')' . "\n";
 }
 
-// Batch fuer diesen Lauf: ab resume_offset, max max_pages URLs
-$batch_urls = array_slice($filtered, $resume_offset, $max_pages);
-$batch_end_offset = $resume_offset + count($batch_urls);
-echo '[FPC] v8.3.0: Batch ' . ($resume_offset + 1) . '-' . $batch_end_offset . ' von ' . $total_urls . ' (' . count($batch_urls) . ' URLs in diesem Lauf, max ' . $max_pages . ')' . "\n";
-
-// --- Preloading mit Rate-Limiting ---
+// ============================================================
+// GEMEINSAME PRELOADING-SCHLEIFE (fuer alle Modi)
+// ============================================================
 $cached = 0; $skipped = 0; $errors = 0; $invalid = 0;
 $load_pauses = 0; $total_ttfb = 0; $ttfb_count = 0;
 $current_delay = $FPC_REQUEST_DELAY_MS;
@@ -513,10 +708,11 @@ foreach ($batch_urls as $i => $url) {
         $cache_file = $cache_dir . $clean . '/index.html';
     }
 
-    // Cache noch gueltig?
+    // Cache noch gueltig? (Im Refresh-Modus trotzdem pruefen - Datei koennte
+    // zwischenzeitlich von einem anderen Prozess erneuert worden sein)
     if (is_file($cache_file) && (time() - filemtime($cache_file)) < $cache_ttl) {
         $skipped++;
-        $total_processed++; // v8.3.0: Auch skipped zaehlen fuer korrekte Resume-Position
+        $total_processed++;
         continue;
     }
 
@@ -543,10 +739,6 @@ foreach ($batch_urls as $i => $url) {
 
     // ==========================================================
     // v8.0.9: REDIRECT-ERKENNUNG
-    // Wenn der Server einen Redirect macht (301/302), cached der Preloader
-    // die Seite unter der FINALEN URL statt der Original-URL.
-    // Ohne diesen Fix wird Content unter einer URL gespeichert die
-    // eigentlich redirected werden sollte -> Redirect-Loop fuer Besucher!
     // ==========================================================
     $redirect_count = curl_getinfo($ch, CURLINFO_REDIRECT_COUNT);
     if ($redirect_count > 0) {
@@ -602,7 +794,6 @@ foreach ($batch_urls as $i => $url) {
     $ct = curl_getinfo($ch, CURLINFO_CONTENT_TYPE);
     if (strpos($ct, 'text/html') === false) {
         $skipped++;
-        // total_processed bereits oben gezaehlt
         continue;
     }
 
@@ -626,7 +817,7 @@ foreach ($batch_urls as $i => $url) {
 
     // Health-Marker und Cache-Kommentar anhaengen
     $html .= "\n" . $FPC_HEALTH_MARKER . "\n";
-    $html .= '<!-- FPC cached: ' . date('Y-m-d H:i:s') . ' | v8.0 -->' . "\n";
+    $html .= '<!-- FPC cached: ' . date('Y-m-d H:i:s') . ' | v10.4.0 | mode:' . $preloader_mode . ' -->' . "\n";
 
     // ==========================================================
     // ATOMIC WRITE (Rename-Pattern)
@@ -653,12 +844,11 @@ foreach ($batch_urls as $i => $url) {
     }
 
     // ==========================================================
-    // v8.0: VERIFY AFTER WRITE - Cache-Datei zuruecklesen und pruefen
+    // v8.0: VERIFY AFTER WRITE
     // ==========================================================
     if ($FPC_VERIFY_AFTER_WRITE) {
         $verify_content = @file_get_contents($cache_file);
         if ($verify_content === false || strlen($verify_content) < $FPC_MIN_HTML_SIZE) {
-            // Geschriebene Datei ist korrupt - sofort loeschen!
             @unlink($cache_file);
             $errors++;
             if ($errors <= 10) {
@@ -666,7 +856,6 @@ foreach ($batch_urls as $i => $url) {
             }
             continue;
         }
-        // Health-Marker pruefen
         if (strpos($verify_content, $FPC_HEALTH_MARKER) === false) {
             @unlink($cache_file);
             $errors++;
@@ -696,34 +885,60 @@ $db->close();
 $runtime = time() - $start_time;
 $avg_ttfb = $ttfb_count > 0 ? (int)($total_ttfb / $ttfb_count) : 0;
 
-$summary = '[FPC] Fertig: ' . date('Y-m-d H:i:s') . "\n"
-         . '[FPC] v8.3.0 | Batch ' . ($resume_offset + 1) . '-' . ($resume_offset + $total_processed) . '/' . $total_urls . ' | Gecacht: ' . $cached . ' | Uebersprungen: ' . $skipped
+$mode_label = strtoupper($preloader_mode);
+$summary = '[FPC] Fertig: ' . date('Y-m-d H:i:s') . ' | Modus: ' . $mode_label . "\n"
+         . '[FPC] v10.4.0 | Gecacht: ' . $cached . ' | Uebersprungen: ' . $skipped
          . ' | Ungueltig: ' . $invalid . ' | Fehler: ' . $errors . "\n"
          . '[FPC] Laufzeit: ' . $runtime . 's | Avg-TTFB: ' . $avg_ttfb . 'ms | Load-Pausen: ' . $load_pauses
          . ' | Requests: ' . $batch_count . "\n";
+
+if ($preloader_mode === 'normal') {
+    $summary = '[FPC] Fertig: ' . date('Y-m-d H:i:s') . ' | Modus: NORMAL' . "\n"
+             . '[FPC] v10.4.0 | Batch ' . ($resume_offset + 1) . '-' . ($resume_offset + $total_processed) . '/' . $total_urls . ' | Gecacht: ' . $cached . ' | Uebersprungen: ' . $skipped
+             . ' | Ungueltig: ' . $invalid . ' | Fehler: ' . $errors . "\n"
+             . '[FPC] Laufzeit: ' . $runtime . 's | Avg-TTFB: ' . $avg_ttfb . 'ms | Load-Pausen: ' . $load_pauses
+             . ' | Requests: ' . $batch_count . "\n";
+}
 echo $summary;
 
-// v8.3.0: Resume-Position speichern
-$next_offset = $resume_offset + $total_processed;
-// Wenn wir wegen Timeout oder Error-Rate abgebrochen haben, trotzdem Position merken
-$resume_save = array(
-    'next_offset' => $next_offset,
-    'total_urls' => $total_urls,
-    'last_run' => date('Y-m-d H:i:s'),
-    'last_batch_cached' => $cached,
-    'last_batch_skipped' => $skipped,
-    'last_batch_errors' => $errors,
-    'runs_completed' => (isset($resume_data['runs_completed']) ? (int)$resume_data['runs_completed'] : 0) + 1,
-    'total_cached_all_runs' => (isset($resume_data['total_cached_all_runs']) ? (int)$resume_data['total_cached_all_runs'] : 0) + $cached,
-);
-// Wenn alle URLs durchlaufen -> Offset zuruecksetzen
-if ($next_offset >= $total_urls) {
-    $resume_save['next_offset'] = 0;
-    $resume_save['completed_full_cycle'] = date('Y-m-d H:i:s');
-    echo '[FPC] v8.3.0: Alle URLs durchlaufen! Naechster Lauf startet von vorne.' . "\n";
+// Resume-Position speichern (nur im Normal-Modus relevant)
+if ($preloader_mode === 'normal') {
+    $next_offset = $resume_offset + $total_processed;
+    $resume_save = array(
+        'next_offset' => $next_offset,
+        'total_urls' => $total_urls,
+        'last_run' => date('Y-m-d H:i:s'),
+        'last_batch_cached' => $cached,
+        'last_batch_skipped' => $skipped,
+        'last_batch_errors' => $errors,
+        'runs_completed' => (isset($resume_data['runs_completed']) ? (int)$resume_data['runs_completed'] : 0) + 1,
+        'total_cached_all_runs' => (isset($resume_data['total_cached_all_runs']) ? (int)$resume_data['total_cached_all_runs'] : 0) + $cached,
+    );
+    if ($next_offset >= $total_urls) {
+        $resume_save['next_offset'] = 0;
+        $resume_save['completed_full_cycle'] = date('Y-m-d H:i:s');
+        echo '[FPC] v8.3.0: Alle URLs durchlaufen! Naechster Lauf startet von vorne.' . "\n";
+    }
+    @file_put_contents($resume_file, json_encode($resume_save, JSON_PRETTY_PRINT));
+    echo '[FPC] v8.3.0: Resume-Position gespeichert: ' . $resume_save['next_offset'] . '/' . $total_urls . ' | Gesamt gecacht (alle Laeufe): ' . $resume_save['total_cached_all_runs'] . "\n";
 }
-@file_put_contents($resume_file, json_encode($resume_save, JSON_PRETTY_PRINT));
-echo '[FPC] v8.3.0: Resume-Position gespeichert: ' . $resume_save['next_offset'] . '/' . $total_urls . ' | Gesamt gecacht (alle Laeufe): ' . $resume_save['total_cached_all_runs'] . "\n";
+
+// Refresh-Modus: Statistik speichern
+if ($preloader_mode === 'refresh') {
+    $refresh_stats = array(
+        'last_run' => date('Y-m-d H:i:s'),
+        'total_cache_files' => $total_cache_files,
+        'expired_found' => count($expired_files),
+        'stale_found' => $stale_count,
+        'fresh_found' => $fresh_count,
+        'refreshed' => $cached,
+        'skipped' => $skipped,
+        'errors' => $errors,
+        'runtime_sec' => $runtime,
+    );
+    @file_put_contents($resume_file, json_encode($refresh_stats, JSON_PRETTY_PRINT));
+    echo '[FPC] v10.4.0: Refresh-Statistik gespeichert.' . "\n";
+}
 
 // Log schreiben
 @file_put_contents($log_file, date('Y-m-d H:i:s') . ' ' . $summary, FILE_APPEND);

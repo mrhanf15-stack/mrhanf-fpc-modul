@@ -1,6 +1,6 @@
 <?php
 /**
- * Mr. Hanf Full Page Cache v9.0.0 - Cache-Handler
+ * Mr. Hanf Full Page Cache v10.4.0 - Cache-Handler
  *
  * Dieses Script wird von Apache via RewriteRule [END] aufgerufen
  * und liefert gecachte HTML-Dateien per readfile() aus.
@@ -11,10 +11,15 @@
  *   - PHP-Overhead: ~5ms (validiert + readfile + exit)
  *   - Zusaetzliche Validierung zur Laufzeit benoetigt wird
  *
+ * CHANGELOG v10.4.0:
+ *   - NEU: Stale-While-Revalidate - abgelaufene Cache-Dateien werden weiterhin
+ *     ausgeliefert (bis MAX_AGE), statt sofort MISS zu liefern
+ *   - NEU: X-FPC-Stale Header wenn abgelaufene Datei ausgeliefert wird
+ *   - NEU: TTL und Stale-Grenze aus DB konfigurierbar
+ *   - VERBESSERT: Kein Auto-Delete mehr bei abgelaufenen Dateien (Refresh-Modus erneuert sie)
+ *
  * CHANGELOG v9.0.0:
  *   - NEU: Request-Logging fuer Live Inspector und SEO-Bot-Tracking
- *     Jeder Request wird mit Status (HIT/MISS/BYPASS), Grund, TTFB,
- *     Bot-Erkennung in Tages-Log-Dateien geschrieben.
  *   - NEU: X-FPC-Reason Header bei MISS/BYPASS
  *   - NEU: Bot-Erkennung (Googlebot, Bing, Ahrefs, Semrush, GPTBot, etc.)
  *   - NEU: Automatische Log-Rotation (7 Tage)
@@ -22,19 +27,67 @@
  *   - v8.2.0: AJAX-Warenkorb fuer gecachte Seiten
  *   - v8.1.0: Session-Initializer JavaScript Injection
  *
- * @version   10.0.0
- * @date      2026-03-27
+ * @version   10.4.0
+ * @date      2026-03-29
  */
 
 // ============================================================
 // KONFIGURATION
 // ============================================================
 $FPC_MIN_FILESIZE  = 500;      // Mindestgroesse in Bytes
-$FPC_MAX_AGE       = 172800;   // Max. Alter in Sekunden (48h Fallback)
 $FPC_HEALTH_MARKER = '<!-- FPC-VALID -->';  // Pflicht-Marker im HTML
 $FPC_AUTO_DELETE   = true;     // Korrupte Dateien automatisch loeschen
 $FPC_REQUEST_LOG   = true;     // Request-Logging fuer Inspector/SEO (v9.0.0)
 $FPC_LOG_DIR       = __DIR__ . '/cache/fpc/logs';  // Log-Verzeichnis
+
+// v10.4.0: TTL-Konfiguration
+// $FPC_CACHE_TTL = primaere Lebensdauer (aus DB, default 24h)
+// $FPC_MAX_AGE   = maximales Stale-Alter (Datei wird bis hierhin ausgeliefert, default 48h)
+// Zwischen TTL und MAX_AGE: Datei wird als STALE ausgeliefert (Header: X-FPC-Stale: true)
+// Nach MAX_AGE: Datei wird NICHT mehr ausgeliefert (MISS)
+$FPC_CACHE_TTL = 86400;   // 24h - wird spaeter aus DB ueberschrieben
+$FPC_MAX_AGE   = 172800;  // 48h - absolute Obergrenze
+
+// ============================================================
+// v10.4.0: TTL aus DB laden (einmalig, gecacht)
+// ============================================================
+$fpc_ttl_cache_file = __DIR__ . '/cache/fpc/ttl_config.json';
+$fpc_ttl_loaded = false;
+
+// TTL-Config wird alle 5 Minuten aus DB aktualisiert
+if (is_file($fpc_ttl_cache_file) && (time() - filemtime($fpc_ttl_cache_file)) < 300) {
+    $ttl_data = @json_decode(@file_get_contents($fpc_ttl_cache_file), true);
+    if (is_array($ttl_data) && isset($ttl_data['cache_ttl'])) {
+        $FPC_CACHE_TTL = (int) $ttl_data['cache_ttl'];
+        $FPC_MAX_AGE   = (int) ($ttl_data['max_age'] ?? $FPC_CACHE_TTL * 2);
+        $fpc_ttl_loaded = true;
+    }
+}
+
+if (!$fpc_ttl_loaded) {
+    // Aus DB laden (nur wenn configure.php existiert)
+    if (is_file(__DIR__ . '/includes/configure.php')) {
+        if (!defined('_VALID_XTC')) define('_VALID_XTC', true);
+        @include_once(__DIR__ . '/includes/configure.php');
+        if (defined('DB_SERVER') && defined('DB_SERVER_USERNAME')) {
+            $fpc_db = @new mysqli(DB_SERVER, DB_SERVER_USERNAME, DB_SERVER_PASSWORD, DB_DATABASE);
+            if (!$fpc_db->connect_error) {
+                $r = $fpc_db->query("SELECT configuration_value FROM configuration WHERE configuration_key = 'MODULE_MRHANF_FPC_CACHE_TIME' LIMIT 1");
+                if ($r && $row = $r->fetch_assoc()) {
+                    $FPC_CACHE_TTL = (int) $row['configuration_value'];
+                    $FPC_MAX_AGE = $FPC_CACHE_TTL * 2; // Stale-Grenze = 2x TTL
+                }
+                $fpc_db->close();
+                // Cache fuer 5 Minuten
+                @file_put_contents($fpc_ttl_cache_file, json_encode(array(
+                    'cache_ttl' => $FPC_CACHE_TTL,
+                    'max_age'   => $FPC_MAX_AGE,
+                    'updated'   => date('Y-m-d H:i:s'),
+                )));
+            }
+        }
+    }
+}
 
 // ============================================================
 // SICHERHEITSCHECKS
@@ -83,10 +136,6 @@ if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
 }
 
 // v8.0.7: Bypass-Cookie pruefen
-// Das Autoinclude 95_fpc_bypass_cookie.php setzt "fpc_bypass=1" wenn:
-//   - Der Warenkorb Artikel enthaelt
-//   - Der Benutzer eingeloggt ist
-// HINWEIS: MODsid wird NICHT geprueft (modified setzt es bei jedem Gast).
 if (isset($_COOKIE['fpc_bypass']) && $_COOKIE['fpc_bypass'] === '1') {
     $fpc_miss_reason = 'BYPASS_COOKIE';
     $fpc_cache_status = 'BYPASS';
@@ -112,8 +161,6 @@ if ($uri === '') {
 // ============================================================
 // v10.0.0: SEO REDIRECT CHECK (vor Cache-Pruefung)
 // ============================================================
-// Prueft ob fuer die aktuelle URI ein Redirect definiert ist.
-// Wenn ja: HTTP-Redirect senden und Request beenden.
 $fpc_seo_file = __DIR__ . '/fpc_seo.php';
 if (is_file($fpc_seo_file)) {
     try {
@@ -231,16 +278,36 @@ if ($filesize === false || $filesize < $FPC_MIN_FILESIZE) {
     return false;
 }
 
-// 2. TTL-Check: Abgelaufene Dateien nicht ausliefern
+// 2. TTL-Check mit Stale-While-Revalidate (v10.4.0)
 $mtime = filemtime($cache_file);
 $age = time() - $mtime;
+$is_stale = false;
+
 if ($age > $FPC_MAX_AGE) {
-    if ($FPC_AUTO_DELETE) {
+    // ==========================================================
+    // v10.4.0: Datei ist AELTER als MAX_AGE (z.B. > 48h)
+    // -> Nicht mehr ausliefern, aber NICHT automatisch loeschen!
+    // Der Refresh-Modus (fpc_preloader.php --refresh) kuemmert sich
+    // um die Erneuerung. Nur wirklich uralte Dateien (> 7 Tage)
+    // werden automatisch geloescht.
+    // ==========================================================
+    if ($age > 604800) {
+        // Aelter als 7 Tage -> definitiv loeschen
         @unlink($cache_file);
     }
-    $fpc_miss_reason = 'EXPIRED';
+    $fpc_miss_reason = 'EXPIRED_MAX_AGE';
     fpc_log_request($fpc_request_start, $fpc_cache_status, $fpc_miss_reason, $fpc_is_bot, $fpc_bot_name, $fpc_http_code);
     return false;
+} elseif ($age > $FPC_CACHE_TTL) {
+    // ==========================================================
+    // v10.4.0: STALE-WHILE-REVALIDATE
+    // Datei ist abgelaufen (> TTL) aber noch nicht uralt (< MAX_AGE).
+    // -> Trotzdem ausliefern! Der Preloader --refresh erneuert sie
+    //    im Hintergrund beim naechsten Lauf.
+    // Vorteil: Besucher sieht IMMER eine schnelle gecachte Seite,
+    //          auch wenn der Cache gerade erneuert wird.
+    // ==========================================================
+    $is_stale = true;
 }
 
 // 3. Health-Marker pruefen (schnell: nur letzte 200 Bytes lesen)
@@ -267,12 +334,22 @@ if (strpos($tail, $FPC_HEALTH_MARKER) === false) {
 // ============================================================
 
 header('Content-Type: text/html; charset=utf-8');
-header('X-FPC-Cache: HIT');
-header('X-FPC-Version: 10.0.0');
-$fpc_cache_status = 'HIT';
+
+if ($is_stale) {
+    // v10.4.0: Stale-While-Revalidate - abgelaufene aber noch brauchbare Datei
+    header('X-FPC-Cache: STALE');
+    header('X-FPC-Stale: true');
+    header('X-FPC-Stale-Age: ' . $age . 's');
+    $fpc_cache_status = 'STALE';
+} else {
+    header('X-FPC-Cache: HIT');
+    $fpc_cache_status = 'HIT';
+}
+
+header('X-FPC-Version: 10.4.0');
 $fpc_miss_reason = '';
 header('X-FPC-Cached-At: ' . gmdate('D, d M Y H:i:s', $mtime) . ' GMT');
-if ($fpc_miss_reason) header('X-FPC-Reason: ' . $fpc_miss_reason);
+header('X-FPC-Age: ' . $age . 's');
 header('Cache-Control: no-store, no-cache, must-revalidate');
 header('Pragma: no-cache');
 header('Expires: 0');
@@ -288,16 +365,13 @@ header('Expires: 0');
 $html = file_get_contents($cache_file);
 
 $fpc_inject_js = <<<'FPCJS'
-<script data-fpc-inject="9.0.0">
+<script data-fpc-inject="10.4.0">
 (function(){
     'use strict';
 
     // ========================================================
     // 1. SESSION-INITIALIZER (v8.1.0)
     // ========================================================
-    // Startet eine PHP-Session im Hintergrund wenn noch keine existiert.
-    // Notwendig damit der erste Warenkorb-POST korrekt verarbeitet wird.
-
     var sessionReady = (document.cookie.indexOf('MODsid=') !== -1);
 
     function initSession(callback) {
@@ -324,11 +398,6 @@ $fpc_inject_js = <<<'FPCJS'
     // ========================================================
     // 2. AJAX-WARENKORB (v8.2.0)
     // ========================================================
-    // Fängt alle Warenkorb-Formulare ab und sendet den POST per AJAX.
-    // Nach Erfolg: Mini-Warenkorb aktualisieren, fpc_bypass Cookie setzen,
-    // Free Shipping Bar triggern - OHNE Seitenreload.
-
-    // --- Hilfsfunktionen ---
 
     function setCookie(name, value, path, domain) {
         var c = name + '=' + value + '; path=' + (path || '/');
@@ -348,13 +417,11 @@ $fpc_inject_js = <<<'FPCJS'
         toast.textContent = message;
         document.body.appendChild(toast);
 
-        // Einblenden
         requestAnimationFrame(function() {
             toast.style.opacity = '1';
             toast.style.transform = 'translateY(0)';
         });
 
-        // Ausblenden nach 3s
         setTimeout(function() {
             toast.style.opacity = '0';
             toast.style.transform = 'translateY(-10px)';
@@ -386,13 +453,9 @@ $fpc_inject_js = <<<'FPCJS'
     }
 
     function updateMiniCart(cartCount) {
-        // 1. Mini-Warenkorb Dropdown aktualisieren
         var dropdown = document.querySelector('.dropdown-menu.toggle_cart');
         if (dropdown) {
             if (cartCount > 0) {
-                // Lade den Mini-Warenkorb-Inhalt per Seitenreload des Dropdowns
-                // Da wir keinen dedizierten AJAX-Endpoint haben, aktualisieren wir
-                // den Text und fuegen einen Link zum Warenkorb hinzu
                 var header = dropdown.querySelector('.card-header');
                 if (header) {
                     header.innerHTML = '<span class="font-weight-bold">' + cartCount + ' Artikel im Warenkorb</span>' +
@@ -402,7 +465,6 @@ $fpc_inject_js = <<<'FPCJS'
             }
         }
 
-        // 2. Badge am Warenkorb-Icon hinzufuegen/aktualisieren
         var cartLink = document.getElementById('toggle_cart');
         if (cartLink) {
             var badge = cartLink.querySelector('.fpc-cart-badge');
@@ -416,14 +478,12 @@ $fpc_inject_js = <<<'FPCJS'
             if (badge) {
                 badge.textContent = cartCount;
                 badge.style.display = (cartCount > 0) ? 'flex' : 'none';
-                // Puls-Animation
                 badge.style.animation = 'none';
-                badge.offsetHeight; // Reflow
+                badge.offsetHeight;
                 badge.style.animation = 'fpc-pulse 0.4s ease';
             }
         }
 
-        // 3. Warenkorb-Text aktualisieren
         var cartText = cartLink ? cartLink.querySelector('.d-none.d-lg-block.small') : null;
         if (cartText && cartCount > 0) {
             cartText.textContent = 'Warenkorb (' + cartCount + ')';
@@ -431,48 +491,37 @@ $fpc_inject_js = <<<'FPCJS'
     }
 
     function triggerFSBUpdate() {
-        // Free Shipping Bar aktualisieren (wenn vorhanden)
         if (typeof fsbFetch === 'function') {
             try { fsbFetch(); } catch(e) {}
         }
     }
 
-    // --- CSS fuer Badge-Animation injizieren ---
     var style = document.createElement('style');
     style.textContent = '@keyframes fpc-pulse{0%{transform:scale(1)}50%{transform:scale(1.3)}100%{transform:scale(1)}}';
     document.head.appendChild(style);
-
-    // --- Hauptlogik: Formulare abfangen ---
 
     function handleCartSubmit(e) {
         var form = e.target;
         if (!form || form.tagName !== 'FORM') return;
 
-        // Nur Formulare mit add_product abfangen
         var action = form.getAttribute('action') || '';
         if (action.indexOf('add_product') === -1) return;
 
-        // Pruefen ob der Submit durch den Warenkorb-Button ausgeloest wurde
-        // (nicht durch Wishlist oder Vergleich)
         var submitBtn = form.querySelector('.btn-cart[type="submit"]');
         if (!submitBtn) return;
 
-        // Wishlist-Button hat name="wishlist" - diesen NICHT abfangen
         var activeElement = document.activeElement;
         if (activeElement && activeElement.name === 'wishlist') return;
 
-        // Event abfangen
         e.preventDefault();
         e.stopPropagation();
 
         var originalHtml = submitBtn.innerHTML;
         var restoreButton = animateButton(submitBtn, originalHtml);
 
-        // Sicherstellen dass Session existiert, dann POST senden
         initSession(function() {
             var formData = new FormData(form);
 
-            // Sicherstellen dass action=add_product im Query-String ist
             var postUrl = action;
             if (postUrl.indexOf('action=add_product') === -1) {
                 postUrl += (postUrl.indexOf('?') === -1 ? '?' : '&') + 'action=add_product';
@@ -485,12 +534,8 @@ $fpc_inject_js = <<<'FPCJS'
 
             xhr.onload = function() {
                 if (xhr.status >= 200 && xhr.status < 400) {
-                    // Erfolg! (200 oder 302 - XMLHttpRequest folgt Redirects automatisch)
-
-                    // fpc_bypass Cookie setzen damit naechste Seitenaufrufe dynamisch sind
                     setCookie('fpc_bypass', '1', '/', '.mr-hanf.de');
 
-                    // Mini-Warenkorb per FSB-Endpoint aktualisieren
                     var fsbXhr = new XMLHttpRequest();
                     fsbXhr.open('GET', '/ajax.php?ext=get_free_shipping_bar&t=' + Date.now(), true);
                     fsbXhr.withCredentials = true;
@@ -535,26 +580,19 @@ $fpc_inject_js = <<<'FPCJS'
         });
     }
 
-    // Event-Delegation auf document-Ebene (fängt alle Formulare ab)
     document.addEventListener('submit', handleCartSubmit, true);
 
     // ========================================================
     // 3. BESUCHERSTATISTIK-TRACKER (v8.3.0)
     // ========================================================
-    // Leichtgewichtiges 1x1 Pixel-Tracking fuer Seitenaufrufe und Verweildauer.
-    // DSGVO-konform: Kein IP-Tracking, anonymisierter Cookie-Hash.
-
     var pageLoadTime = Date.now();
 
-    // Pageview tracken (1x1 Pixel)
     var trkImg = new Image();
     trkImg.src = '/fpc_tracker.php?t=pv&p=' + encodeURIComponent(location.pathname) + '&r=' + encodeURIComponent(document.referrer) + '&_=' + Date.now();
 
-    // Verweildauer beim Verlassen senden
     function sendLeaveEvent() {
         var duration = Math.round((Date.now() - pageLoadTime) / 1000);
         if (duration < 1 || duration > 3600) return;
-        // navigator.sendBeacon fuer zuverlaessiges Senden beim Schliessen
         if (navigator.sendBeacon) {
             navigator.sendBeacon('/fpc_tracker.php?t=leave&d=' + duration);
         } else {
@@ -563,7 +601,6 @@ $fpc_inject_js = <<<'FPCJS'
         }
     }
 
-    // beforeunload + visibilitychange fuer maximale Abdeckung
     window.addEventListener('beforeunload', sendLeaveEvent);
     document.addEventListener('visibilitychange', function() {
         if (document.visibilityState === 'hidden') sendLeaveEvent();
