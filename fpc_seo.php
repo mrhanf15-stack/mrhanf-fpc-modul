@@ -392,7 +392,17 @@ class FpcSeo {
 
         // Sortierung: hit_count absteigend
         usort($log, function($a, $b) { return $b['hit_count'] - $a['hit_count']; });
-        return array_values($log);
+        $log = array_values($log);
+
+        // v10.5.0: Limit/Offset fuer Pagination
+        $total = count($log);
+        if (isset($filter['limit']) && intval($filter['limit']) > 0) {
+            $limit = intval($filter['limit']);
+            $offset = isset($filter['offset']) ? intval($filter['offset']) : 0;
+            $log = array_slice($log, $offset, $limit);
+            return array('data' => $log, 'total' => $total, 'limit' => $limit, 'offset' => $offset);
+        }
+        return $log;
     }
 
     /**

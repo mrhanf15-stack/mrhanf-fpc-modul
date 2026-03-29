@@ -2200,7 +2200,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
                 <button class="fpc-btn" style="font-size:11px;padding:4px 10px;background:var(--fpc-card2);color:var(--fpc-text);" onclick="fpcSeo404SetTypeFilter('pdfs')" id="btn-404t-pdfs">PDFs <span id="cnt-404t-pdfs"></span></button>
                 <button class="fpc-btn" style="font-size:11px;padding:4px 10px;background:var(--fpc-card2);color:var(--fpc-text);" onclick="fpcSeo404SetTypeFilter('assets')" id="btn-404t-assets">Assets <span id="cnt-404t-assets"></span></button>
                 <button class="fpc-btn" style="font-size:11px;padding:4px 10px;background:var(--fpc-card2);color:var(--fpc-text);" onclick="fpcSeo404SetTypeFilter('all')" id="btn-404t-all">Alle Typen</button>
-                <input type="text" class="fpc-input" id="404-search" placeholder="404 URLs suchen..." oninput="fpcSeo404Render()" style="width:200px;margin-left:auto;font-size:12px;padding:5px 8px;">
+                <input type="text" class="fpc-input" id="404-search" placeholder="404 URLs suchen..." oninput="seo404Page=0;fpcSeo404Render()" style="width:200px;margin-left:auto;font-size:12px;padding:5px 8px;">
                 <button class="fpc-btn" style="background:var(--fpc-text2);font-size:11px;" onclick="fpcSeo404Cleanup()" title="System-URLs (fpc_serve.php, index.php etc.) aus dem Log entfernen">&#128465; Bereinigen</button>
             </div>
             <!-- Sprach-Filter -->
@@ -2216,6 +2216,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
                 <span id="404-result-count" style="color:var(--fpc-text2);font-size:11px;margin-left:auto;"></span>
             </div>
             <div id="seo-404-table"></div>
+            <div id="seo-404-pagination" class="fpc-pagination" style="margin-top:12px;"></div>
         </div>
     </div>
 
@@ -3157,7 +3158,12 @@ function fpcLoadFehler() {
 var seo404Filter = 'unresolved';
 var seo404TypeFilter = 'pages';  // pages|images|pdfs|assets|all
 var seo404LangFilter = '';       // ''|de|en|fr|es|nl|it
-var seo404RawData = [];          // Rohdaten vom Server
+var seo404RawData = [];          // Geladene Daten (kumuliert)
+var seo404Total = 0;             // Gesamtanzahl auf Server
+var seo404Limit = 50;            // Eintraege pro Batch
+var seo404Offset = 0;            // Aktueller Offset
+var seo404Page = 0;              // Aktuelle Seite in der Anzeige
+var seo404PerPage = 25;          // Eintraege pro Seite in der Tabelle
 var seoScanFilter = '';
 var seoScanTypeFilter = 'pages'; // pages|images|pdfs|assets|all
 var seoScanLangFilter = '';      // ''|de|en|fr|es|nl|it
@@ -3192,6 +3198,7 @@ function fpcToggleAccordion(id) {
 // v10.5.0: 404 Dateityp-Filter
 function fpcSeo404SetTypeFilter(type) {
     seo404TypeFilter = type;
+    seo404Page = 0;
     var types = ['pages','images','pdfs','assets','all'];
     var TYPE_COLORS = {pages:'var(--fpc-blue)', images:'#ffa726', pdfs:'#ff6b6b', assets:'var(--fpc-text2)', all:'var(--fpc-text2)'};
     types.forEach(function(t) {
@@ -3207,6 +3214,7 @@ function fpcSeo404SetTypeFilter(type) {
 // v10.5.0: 404 Sprach-Filter
 function fpcSeo404SetLangFilter(lang) {
     seo404LangFilter = lang;
+    seo404Page = 0;
     var langs = ['all','de','en','fr','es','nl','it'];
     langs.forEach(function(l) {
         var id = l === 'all' ? 'btn-404l-all' : 'btn-404l-' + l;
@@ -3222,6 +3230,7 @@ function fpcSeo404Render() {
     var d = seo404RawData;
     if (!Array.isArray(d) || d.length === 0) {
         document.getElementById('seo-404-table').innerHTML = '<p style="color:var(--fpc-green)">Keine 404-Fehler in dieser Kategorie.</p>';
+        document.getElementById('seo-404-pagination').innerHTML = '';
         var rc = document.getElementById('404-result-count'); if (rc) rc.textContent = '';
         return;
     }
@@ -3253,41 +3262,43 @@ function fpcSeo404Render() {
         if (btn) btn.textContent = l.toUpperCase() + ' (' + langCounts[l] + ')';
     });
 
-    // Client-seitige Filter
+    // Client-seitige Filter (Typ, Sprache, Suche)
     var filtered = d.filter(function(e) {
         if (!e || !e.url || typeof e.url !== 'string') return false;
-        // Dateityp
         if (seo404TypeFilter === 'pages' && fpcSeoIsAsset(e.url)) return false;
         if (seo404TypeFilter === 'images' && !fpcSeoIsImage(e.url)) return false;
         if (seo404TypeFilter === 'pdfs' && !fpcSeoIsPdf(e.url)) return false;
         if (seo404TypeFilter === 'assets' && !fpcSeoIsPureAsset(e.url)) return false;
-        // Sprache
         if (seo404LangFilter !== '' && fpcSeoGetUrlLang(e.url) !== seo404LangFilter) return false;
-        // Suche
         if (search && e.url.toLowerCase().indexOf(search) === -1) return false;
         return true;
     });
 
-    // Badge aktualisieren
+    // Badge aktualisieren (Server-Total wenn bekannt)
     var badge = document.getElementById('badge-404');
-    if (badge) badge.textContent = d.length;
+    if (badge) badge.textContent = seo404Total > 0 ? seo404Total : d.length;
 
     // Ergebnis-Zaehler
     var rc = document.getElementById('404-result-count');
-    if (rc) rc.textContent = filtered.length + ' von ' + d.length + ' Eintraege';
+    var totalInfo = seo404Total > d.length ? ' (von ' + seo404Total + ' gesamt auf Server)' : '';
+    if (rc) rc.textContent = filtered.length + ' von ' + d.length + ' geladen' + totalInfo;
 
-    // Tabelle rendern
+    // Pagination berechnen
+    var totalPages = Math.ceil(filtered.length / seo404PerPage);
+    if (seo404Page >= totalPages) seo404Page = Math.max(0, totalPages - 1);
+    var startIdx = seo404Page * seo404PerPage;
+    var pageData = filtered.slice(startIdx, startIdx + seo404PerPage);
+
+    // Tabelle rendern (nur aktuelle Seite)
     var html = '<table class="fpc-table"><thead><tr><th>URL</th><th>Typ</th><th>Sprache</th><th>Hits</th><th>Erstmals</th><th>Letzter Hit</th><th>Referers</th><th>Aktion</th></tr></thead><tbody>';
-    filtered.forEach(function(e) {
+    pageData.forEach(function(e) {
         if (!e || !e.url || typeof e.url !== 'string') return;
-        html += '<tr>';
+        html += '<tr id="row-404-' + e.id + '">';
         var checkUrl = (e.url.indexOf('http') === 0) ? e.url : 'https://mr-hanf.de' + e.url;
         html += '<td style="max-width:280px;overflow:hidden;text-overflow:ellipsis;" title="' + e.url + '"><a href="' + checkUrl + '" target="_blank" style="color:var(--fpc-text);text-decoration:none;" title="URL oeffnen">' + e.url + '</a></td>';
-        // Dateityp-Badge
         var typeLabel = fpcSeoIsImage(e.url) ? 'Bild' : fpcSeoIsPdf(e.url) ? 'PDF' : fpcSeoIsPureAsset(e.url) ? 'Asset' : 'Seite';
         var typeColor = fpcSeoIsImage(e.url) ? '#ffa726' : fpcSeoIsPdf(e.url) ? '#ff6b6b' : fpcSeoIsPureAsset(e.url) ? 'var(--fpc-text2)' : 'var(--fpc-blue)';
         html += '<td><span style="font-size:10px;padding:1px 6px;border-radius:3px;background:' + typeColor + '22;color:' + typeColor + ';font-weight:600;">' + typeLabel + '</span></td>';
-        // Sprache
         var langColorMap = {de:'#00d4aa', en:'#00a8ff', fr:'#ff6b6b', es:'#ffa726', nl:'#ff9800', it:'#ab47bc'};
         var lang = fpcSeoGetUrlLang(e.url);
         html += '<td><span style="color:' + (langColorMap[lang]||'#ccc') + ';font-size:11px;font-weight:bold;">' + lang.toUpperCase() + '</span></td>';
@@ -3314,8 +3325,67 @@ function fpcSeo404Render() {
         html += '</tr>';
     });
     html += '</tbody></table>';
-    html += '<p style="color:var(--fpc-text2);font-size:12px;margin-top:4px;">' + filtered.length + ' von ' + d.length + ' Eintraege</p>';
     document.getElementById('seo-404-table').innerHTML = html;
+
+    // Pagination + Mehr-laden rendern
+    var pagHtml = '';
+    if (totalPages > 1) {
+        pagHtml += '<div style="display:flex;gap:4px;flex-wrap:wrap;justify-content:center;align-items:center;">';
+        if (seo404Page > 0) pagHtml += '<button onclick="seo404Page=0;fpcSeo404Render()">&laquo;</button>';
+        if (seo404Page > 0) pagHtml += '<button onclick="seo404Page--;fpcSeo404Render()">&lsaquo;</button>';
+        var startP = Math.max(0, seo404Page - 3);
+        var endP = Math.min(totalPages - 1, seo404Page + 3);
+        if (startP > 0) pagHtml += '<span class="ellipsis">...</span>';
+        for (var p = startP; p <= endP; p++) {
+            pagHtml += '<button class="' + (p === seo404Page ? 'active' : '') + '" onclick="seo404Page=' + p + ';fpcSeo404Render()">' + (p + 1) + '</button>';
+        }
+        if (endP < totalPages - 1) pagHtml += '<span class="ellipsis">...</span>';
+        if (seo404Page < totalPages - 1) pagHtml += '<button onclick="seo404Page++;fpcSeo404Render()">&rsaquo;</button>';
+        if (seo404Page < totalPages - 1) pagHtml += '<button onclick="seo404Page=' + (totalPages-1) + ';fpcSeo404Render()">&raquo;</button>';
+        pagHtml += '<span style="color:var(--fpc-text2);font-size:11px;margin-left:8px;">Seite ' + (seo404Page+1) + ' / ' + totalPages + '</span>';
+        pagHtml += '</div>';
+    }
+    // "Mehr laden" Button wenn noch Daten auf dem Server
+    if (seo404Total > seo404RawData.length) {
+        var remaining = seo404Total - seo404RawData.length;
+        pagHtml += '<div style="text-align:center;margin-top:10px;">';
+        pagHtml += '<button class="fpc-btn" style="background:var(--fpc-teal);color:#000;padding:6px 20px;font-size:13px;font-weight:600;" onclick="fpcSeo404LoadMore()">';
+        pagHtml += '&#8595; Weitere ' + Math.min(seo404Limit, remaining) + ' laden (' + remaining + ' verbleibend)</button>';
+        pagHtml += '</div>';
+    }
+    if (pagHtml) {
+        pagHtml += '<p style="color:var(--fpc-text2);font-size:11px;margin-top:6px;text-align:center;">' + d.length + ' von ' + seo404Total + ' geladen | Seite ' + (seo404Page+1) + ' von ' + totalPages + ' | ' + filtered.length + ' nach Filter</p>';
+    }
+    document.getElementById('seo-404-pagination').innerHTML = pagHtml;
+}
+
+// v10.5.1: Mehr Daten vom Server nachladen
+function fpcSeo404LoadMore() {
+    seo404Offset = seo404RawData.length;
+    var search = document.getElementById('404-search') ? document.getElementById('404-search').value : '';
+    var params = 'ajax=seo_404_log&limit=' + seo404Limit + '&offset=' + seo404Offset + '&search=' + encodeURIComponent(search);
+    if (seo404Filter === 'unresolved') params += '&resolved=false&dismissed=false';
+    else if (seo404Filter === 'resolved') params += '&resolved=true';
+    else if (seo404Filter === 'dismissed') params += '&dismissed=true';
+
+    document.getElementById('seo-404-pagination').innerHTML = '<p style="color:var(--fpc-teal);text-align:center;">&#8987; Lade weitere Eintraege...</p>';
+
+    fpcAjax(params, function(resp) {
+        var newData = [];
+        if (resp && resp.data) {
+            newData = resp.data;
+            seo404Total = resp.total || seo404Total;
+        } else if (Array.isArray(resp)) {
+            newData = resp;
+        }
+        // Duplikate vermeiden
+        var existingIds = {};
+        seo404RawData.forEach(function(e) { if (e && e.id) existingIds[e.id] = true; });
+        newData.forEach(function(e) {
+            if (e && e.id && !existingIds[e.id]) seo404RawData.push(e);
+        });
+        fpcSeo404Render();
+    });
 }
 
 function fpcLoadSeo() {
@@ -3561,8 +3631,14 @@ function fpcSeoCanonicalDelete(id) {
 }
 
 // --- 404 LOG ---
+// v10.5.1: Server-seitige Pagination - nur 50 Eintraege pro Batch laden
 function fpcSeoLoad404(filter) {
     if (filter) seo404Filter = filter;
+    // Bei Filterwechsel: Daten zuruecksetzen
+    seo404RawData = [];
+    seo404Total = 0;
+    seo404Offset = 0;
+    seo404Page = 0;
     // Status-Buttons aktualisieren
     var statusBtns = {unresolved:'btn-404-unresolved', resolved:'btn-404-resolved', dismissed:'btn-404-dismissed'};
     for (var k in statusBtns) {
@@ -3573,32 +3649,70 @@ function fpcSeoLoad404(filter) {
         }
     }
     var search = document.getElementById('404-search') ? document.getElementById('404-search').value : '';
-    var params = 'ajax=seo_404_log&search=' + encodeURIComponent(search);
+    var params = 'ajax=seo_404_log&limit=' + seo404Limit + '&offset=0&search=' + encodeURIComponent(search);
     if (seo404Filter === 'unresolved') params += '&resolved=false&dismissed=false';
     else if (seo404Filter === 'resolved') params += '&resolved=true';
     else if (seo404Filter === 'dismissed') params += '&dismissed=true';
 
-    fpcAjax(params, function(d) {
-        seo404RawData = Array.isArray(d) ? d : [];
-        // Badge aktualisieren
+    document.getElementById('seo-404-table').innerHTML = '<p style="color:var(--fpc-teal)">&#8987; Lade 404-Daten...</p>';
+
+    fpcAjax(params, function(resp) {
+        if (resp && resp.data) {
+            seo404RawData = resp.data;
+            seo404Total = resp.total || resp.data.length;
+        } else if (Array.isArray(resp)) {
+            seo404RawData = resp;
+            seo404Total = resp.length;
+        } else {
+            seo404RawData = [];
+            seo404Total = 0;
+        }
         var badge = document.getElementById('badge-404');
-        if (badge) badge.textContent = seo404RawData.length;
+        if (badge) badge.textContent = seo404Total;
         fpcSeo404Render();
     });
 }
 
+// v10.5.1: Resolve - sofort aus lokaler Liste entfernen (kein Reload)
 function fpcSeo404Resolve(id, url) {
     var target = prompt('Redirect-Ziel fuer ' + url + ':', '/');
     if (target === null) return;
     fpcAjaxPostJson('seo_404_resolve', { id: id, target: target }, function(r) {
         fpcToast(r.msg, !r.ok);
-        fpcSeoLoad404();
-        fpcSeoLoadRedirects();
+        if (r.ok !== false) {
+            // Eintrag sofort aus lokaler Liste entfernen
+            fpcSeo404RemoveLocal(id);
+            fpcSeoLoadRedirects();
+        }
     });
 }
 
+// v10.5.1: Dismiss - sofort aus lokaler Liste entfernen (kein Reload)
 function fpcSeo404Dismiss(id) {
-    fpcAjax('ajax=seo_404_dismiss&id=' + id, function(r) { fpcToast(r.msg, !r.ok); fpcSeoLoad404(); });
+    fpcAjax('ajax=seo_404_dismiss&id=' + id, function(r) {
+        fpcToast(r.msg, !r.ok);
+        if (r.ok !== false) {
+            fpcSeo404RemoveLocal(id);
+        }
+    });
+}
+
+// v10.5.1: Eintrag lokal entfernen und Tabelle neu rendern (ohne Server-Reload)
+function fpcSeo404RemoveLocal(id) {
+    seo404RawData = seo404RawData.filter(function(e) { return e && e.id !== id; });
+    if (seo404Total > 0) seo404Total--;
+    var badge = document.getElementById('badge-404');
+    if (badge) badge.textContent = seo404Total;
+    // Zeile mit Fade-Out Animation entfernen
+    var row = document.getElementById('row-404-' + id);
+    if (row) {
+        row.style.transition = 'opacity 0.3s, transform 0.3s';
+        row.style.opacity = '0';
+        row.style.transform = 'translateX(20px)';
+        setTimeout(function() { fpcSeo404Render(); }, 350);
+    } else {
+        fpcSeo404Render();
+    }
 }
 
 // v10.4.5: KI-Redirect-Vorschlag fuer einzelne 404-URL
@@ -3656,9 +3770,11 @@ function fpcSeo404AiSuggest(id, url) {
 
         // Redirect anlegen
         fpcAjaxPostJson('seo_404_resolve', { id: id, target: userTarget }, function(r) {
-            fpcToast(r.ok !== false ? ('Redirect angelegt: ' + url + ' → ' + userTarget + ' (' + confLabel + ')') : (r.msg || 'Fehler'), !r.ok);
-            fpcSeoLoad404();
-            fpcSeoLoadRedirects();
+            fpcToast(r.ok !== false ? ('Redirect angelegt: ' + url + ' \u2192 ' + userTarget + ' (' + confLabel + ')') : (r.msg || 'Fehler'), !r.ok);
+            if (r.ok !== false) {
+                fpcSeo404RemoveLocal(id);
+                fpcSeoLoadRedirects();
+            }
         });
     });
 }

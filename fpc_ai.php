@@ -1027,7 +1027,8 @@ PROMPT;
                     $data['problems'] = $seo->getCrossApiProblems();
                     $data['seo_ist'] = $seo->getIstZustand();
                     // 404 Log (Top 50)
-                    $log404 = $seo->get404Log('open', 50);
+                    $log404 = $seo->get404Log(array('resolved' => 'false', 'dismissed' => 'false', 'limit' => 50));
+                    if (isset($log404['data'])) $log404 = $log404['data'];
                     $data['top_404s'] = $log404;
                     // Scan-Ergebnisse mit Fehlern
                     $scan = $seo->getScanResults();
@@ -1056,7 +1057,8 @@ PROMPT;
                     $data['problems'] = $seo->getCrossApiProblems();
 
                     if ($tab === 'seo_404' || $tab === 'seo') {
-                        $data['open_404s'] = $seo->get404Log('open', 100);
+                        $open404 = $seo->get404Log(array('resolved' => 'false', 'dismissed' => 'false', 'limit' => 100));
+                        $data['open_404s'] = isset($open404['data']) ? $open404['data'] : $open404;
                     }
                     if ($tab === 'seo_scan' || $tab === 'seo') {
                         $scan = $seo->getScanResults();
