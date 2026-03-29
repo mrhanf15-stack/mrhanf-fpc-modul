@@ -87,7 +87,7 @@ $alerts_log     = $cache_dir . 'alerts_history.json';
 $shop_url       = 'https://mr-hanf.de';
 
 $active_tab = isset($_GET['tab']) ? $_GET['tab'] : 'dashboard';
-$allowed_tabs = array('dashboard','performance','coverage','steuerung','urls','preloader','fehler','seo','inspector','health','statistik','alerts','settings','gsc','analytics','sistrix');
+$allowed_tabs = array('dashboard','performance','coverage','steuerung','urls','preloader','fehler','seo','inspector','health','statistik','alerts','settings','gsc','analytics','sistrix','security');
 if (!in_array($active_tab, $allowed_tabs)) $active_tab = 'dashboard';
 
 // ============================================================
@@ -427,6 +427,12 @@ if (isset($_GET['ajax'])) {
 
         case 'seo_problems':
             echo json_encode(fpc_seo_problems($base_dir, $cache_dir));
+            exit;
+
+        // v10.6.0: Security Threats
+        case 'security_threats':
+            $seo = fpc_seo_init($base_dir);
+            echo json_encode($seo->getSecurityThreats($_GET));
             exit;
 
         case 'seo_export_csv':
@@ -1957,6 +1963,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
         'gsc' => '&#128270; GSC',
         'analytics' => '&#128200; Analytics',
         'sistrix' => '&#128202; SISTRIX',
+        'security' => '&#128274; Security',
     );
     foreach ($tab_labels as $key => $label) {
         $cls = ($active_tab === $key) ? 'fpc-tab active' : 'fpc-tab';
@@ -2692,6 +2699,54 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
         </div>
     </div>
     <div id="sx-error" style="display:none;"></div>
+</div>
+
+<!-- ========== TAB 17: SECURITY ========== -->
+<div class="fpc-panel <?php echo $active_tab === 'security' ? 'active' : ''; ?>" id="panel-security">
+
+    <!-- Security KPIs -->
+    <div class="fpc-kpis" id="sec-kpis"></div>
+
+    <!-- Threat Categories Overview -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:20px;">
+        <div style="background:var(--fpc-card);border-radius:10px;padding:20px;border:1px solid var(--fpc-border);">
+            <h3 style="font-size:14px;color:var(--fpc-text2);margin-bottom:12px;">Bedrohungs-Kategorien</h3>
+            <div id="sec-categories"></div>
+        </div>
+        <div style="background:var(--fpc-card);border-radius:10px;padding:20px;border:1px solid var(--fpc-border);">
+            <h3 style="font-size:14px;color:var(--fpc-text2);margin-bottom:12px;">Scan-Aktivitaet (Timeline)</h3>
+            <div style="height:200px;position:relative;"><canvas id="chart-sec-timeline"></canvas></div>
+        </div>
+    </div>
+
+    <!-- Threat Log Table -->
+    <div class="fpc-accordion open" id="acc-sec-threats">
+        <div class="fpc-accordion-header" onclick="fpcToggleAccordion('acc-sec-threats')">
+            <span>&#9660; &#128274; Security Threat Log</span>
+            <span class="fpc-accordion-badge" id="badge-sec-threats" style="background:var(--fpc-red);">0</span>
+        </div>
+        <div class="fpc-accordion-body">
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px;">
+                <input type="text" id="sec-search" placeholder="Threats durchsuchen..." oninput="fpcSecRender()" style="flex:1;min-width:200px;padding:8px 12px;background:var(--fpc-card2);border:1px solid var(--fpc-border);border-radius:6px;color:var(--fpc-text);font-size:13px;">
+                <select id="sec-cat-filter" onchange="fpcSecRender()" style="padding:8px 12px;background:var(--fpc-card2);border:1px solid var(--fpc-border);border-radius:6px;color:var(--fpc-text);font-size:13px;">
+                    <option value="">Alle Kategorien</option>
+                    <option value="db_dump">Datenbank-Dumps</option>
+                    <option value="config">Config/Credentials</option>
+                    <option value="log_file">Log-Dateien</option>
+                    <option value="admin_probe">Admin-Panels</option>
+                    <option value="cms_probe">CMS/Framework Probes</option>
+                    <option value="crypto_key">SSL/Crypto Keys</option>
+                    <option value="backup">Backup-Dateien</option>
+                    <option value="api_probe">API/Debug Endpoints</option>
+                    <option value="shell_exploit">Shell/Exploit</option>
+                </select>
+            </div>
+            <div id="sec-threats-table"></div>
+            <div id="sec-load-more" style="text-align:center;margin-top:12px;"></div>
+            <div class="fpc-pagination" id="sec-pagination"></div>
+        </div>
+    </div>
+
 </div>
 
 </div><!-- /fpc-content -->
@@ -3493,7 +3548,7 @@ function fpcSeoLoadRedirects() {
             var esc_note = (r.note || '').replace(/"/g, '&quot;');
             // v10.2.5: Anzeige-Zeile (normal)
             html += '<tr id="redir-row-' + r.id + '">';
-            html += '<td style="max-width:250px;overflow:hidden;text-overflow:ellipsis;" title="' + esc_src + '">' + r.source + '</td>';
+            html += '<td style="max-width:250px;overflow:hidden;text-overflow:ellipsis;" title="' + esc_src + '"><a href="https://mr-hanf.de' + r.source + '" target="_blank" style="color:var(--fpc-teal);text-decoration:none;" title="Redirect testen">' + r.source + ' &#8599;</a></td>';
             html += '<td style="max-width:250px;overflow:hidden;text-overflow:ellipsis;" title="' + esc_tgt + '">' + r.target + '</td>';
             html += '<td><span class="fpc-badge ' + (r.type === '301' ? 'hit' : 'bypass') + '">' + r.type + '</span></td>';
             html += '<td>' + (r.is_regex ? 'Ja' : 'Nein') + '</td>';
@@ -4520,19 +4575,83 @@ function fpcSeoLoadProblems() {
         if (!d || d.length === 0) { document.getElementById('seo-problems').innerHTML = '<p style="color:var(--fpc-green)">Keine Cross-API Probleme erkannt.</p>'; return; }
         var html = '<div style="background:var(--fpc-card);border-radius:10px;padding:16px;border:1px solid var(--fpc-border);">';
         d.forEach(function(p, i) {
-            if (i >= 20) return;
+            if (i >= 30) return;
             var sevColor = p.severity === 'critical' ? 'var(--fpc-red)' : 'var(--fpc-orange)';
-            html += '<div style="padding:10px 0;border-bottom:1px solid var(--fpc-border);">';
+            var esc_url = (p.url || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+            html += '<div id="problem-row-' + i + '" style="padding:10px 0;border-bottom:1px solid var(--fpc-border);display:flex;align-items:flex-start;gap:12px;">';
+            html += '<div style="flex:1;">';
             html += '<span style="color:' + sevColor + ';font-weight:bold;">' + (p.severity === 'critical' ? '&#9888; KRITISCH' : '&#9888; WARNUNG') + '</span> ';
             html += '<span style="color:var(--fpc-text);font-weight:bold;">[' + p.type + ']</span> ';
             html += '<span style="color:var(--fpc-text2);">' + p.description + '</span>';
-            if (p.url) html += '<br><code style="color:var(--fpc-teal);font-size:12px;">' + p.url + '</code>';
+            if (p.url) html += '<br><a href="https://mr-hanf.de' + p.url + '" target="_blank" style="color:var(--fpc-teal);font-size:12px;text-decoration:none;font-family:monospace;">' + p.url + ' &#8599;</a>';
             if (p.suggestion) html += '<br><span style="color:var(--fpc-blue);font-size:12px;">Vorschlag: ' + p.suggestion + '</span>';
+            html += '</div>';
+            // v10.6.0: Aktionsbuttons
+            if (p.url && (p.type === '404_high_hits' || p.type === 'gsc_404' || p.type === 'http_error')) {
+                html += '<div style="display:flex;gap:4px;flex-shrink:0;align-items:center;">';
+                html += '<button class="fpc-btn" style="padding:3px 8px;font-size:11px;background:var(--fpc-teal);" onclick="fpcProblemRedirect(\'' + esc_url + '\', ' + i + ')" title="Redirect erstellen">&#8594; Redirect</button>';
+                html += '<button class="fpc-btn" style="padding:3px 8px;font-size:11px;background:var(--fpc-orange);" onclick="fpcProblemDismiss(\'' + esc_url + '\', ' + i + ')" title="Ignorieren">&#128683; Ignorieren</button>';
+                html += '<button class="fpc-btn" style="padding:3px 8px;font-size:11px;background:var(--fpc-purple);" onclick="fpcProblemAiSuggest(\'' + esc_url + '\', ' + i + ')" title="KI-Vorschlag">&#129302; KI</button>';
+                html += '</div>';
+            }
             html += '</div>';
         });
         html += '</div>';
         html += '<p style="color:var(--fpc-text2);font-size:12px;margin-top:4px;">' + d.length + ' Probleme erkannt</p>';
         document.getElementById('seo-problems').innerHTML = html;
+    });
+}
+
+// v10.6.0: Cross-API Problem Aktionen
+function fpcProblemRedirect(url, rowIdx) {
+    var target = prompt('Redirect-Ziel fuer ' + url + ':', '/');
+    if (!target) return;
+    fpcAjaxPostJson('seo_redirect_add', {source: url, target: target, type: '301', note: 'Auto: Cross-API Problem'}, function(r) {
+        fpcToast(r.msg, !r.ok);
+        if (r.ok) {
+            var row = document.getElementById('problem-row-' + rowIdx);
+            if (row) { row.style.opacity = '0.3'; row.style.pointerEvents = 'none'; }
+        }
+    });
+}
+
+function fpcProblemDismiss(url, rowIdx) {
+    // Finde die 404-ID ueber die URL und setze dismiss
+    fpcAjax('ajax=seo_404_log&search=' + encodeURIComponent(url) + '&limit=1', function(d) {
+        var entries = d.data || d;
+        if (entries && entries.length > 0 && entries[0].id) {
+            fpcAjax('ajax=seo_404_dismiss&id=' + entries[0].id, function(r) {
+                fpcToast(r.msg || 'Ignoriert', !r.ok);
+                var row = document.getElementById('problem-row-' + rowIdx);
+                if (row) { row.style.opacity = '0.3'; row.style.pointerEvents = 'none'; }
+            });
+        } else {
+            fpcToast('404-Eintrag nicht gefunden', true);
+        }
+    });
+}
+
+function fpcProblemAiSuggest(url, rowIdx) {
+    var btn = event.target;
+    btn.disabled = true;
+    btn.textContent = '...';
+    fpcAjaxPostJson('ai_404_suggest', {url: url}, function(r) {
+        btn.disabled = false;
+        btn.textContent = '\uD83E\uDD16 KI';
+        if (r.suggestion) {
+            var row = document.getElementById('problem-row-' + rowIdx);
+            if (row) {
+                var hint = document.createElement('div');
+                hint.style.cssText = 'margin-top:6px;padding:6px 10px;background:rgba(156,39,176,0.15);border-radius:6px;font-size:12px;color:var(--fpc-purple);';
+                hint.innerHTML = '<strong>KI-Vorschlag:</strong> ' + r.suggestion + (r.target ? ' &rarr; <code>' + r.target + '</code>' : '');
+                if (r.target) {
+                    hint.innerHTML += ' <button class="fpc-btn" style="padding:2px 6px;font-size:10px;background:var(--fpc-green);margin-left:6px;" onclick="fpcProblemRedirect(\'' + url.replace(/'/g, "\\'") + '\', ' + rowIdx + ')">Redirect erstellen</button>';
+                }
+                row.querySelector('div').appendChild(hint);
+            }
+        } else {
+            fpcToast(r.msg || 'KI-Fehler', true);
+        }
     });
 }
 
@@ -5939,6 +6058,105 @@ function fpcSaveApiCredentials() {
 }
 
 // ============================================================
+// TAB 17: SECURITY v10.6.0
+// ============================================================
+var secData = [];
+var secPage = 0;
+var secPerPage = 25;
+
+function fpcLoadSecurity() {
+    // KPIs und Kategorien laden
+    fpcAjax('ajax=security_threats&limit=50&offset=0', function(d) {
+        if (d.error) { fpcToast(d.msg, true); return; }
+        secData = d.data || [];
+        // KPIs
+        var kpis = '';
+        kpis += fpcKpiBox('Scan-Versuche gesamt', fpcNum(d.total_hits || 0), 'var(--fpc-red)');
+        kpis += fpcKpiBox('Unique Threat URLs', fpcNum(d.total || 0), 'var(--fpc-orange)');
+        kpis += fpcKpiBox('Kategorien', d.categories ? d.categories.length : 0, 'var(--fpc-purple)');
+        var today = new Date().toISOString().substring(0, 10);
+        var todayHits = d.timeline && d.timeline[today] ? d.timeline[today] : 0;
+        kpis += fpcKpiBox('Heute', fpcNum(todayHits), todayHits > 10 ? 'var(--fpc-red)' : 'var(--fpc-green)');
+        document.getElementById('sec-kpis').innerHTML = kpis;
+        // Badge
+        var badge = document.getElementById('badge-sec-threats');
+        if (badge) badge.textContent = d.total || 0;
+        // Kategorien
+        var catHtml = '';
+        var catIcons = {db_dump:'&#128451;', config:'&#128272;', log_file:'&#128196;', admin_probe:'&#128274;', cms_probe:'&#127760;', crypto_key:'&#128273;', backup:'&#128190;', api_probe:'&#128268;', shell_exploit:'&#128163;'};
+        var catColors = {db_dump:'var(--fpc-red)', config:'var(--fpc-orange)', log_file:'var(--fpc-blue)', admin_probe:'var(--fpc-purple)', cms_probe:'var(--fpc-teal)', crypto_key:'var(--fpc-red)', backup:'var(--fpc-orange)', api_probe:'var(--fpc-blue)', shell_exploit:'var(--fpc-red)'};
+        if (d.categories && d.categories.length > 0) {
+            d.categories.forEach(function(c) {
+                var icon = catIcons[c.key] || '&#9888;';
+                var color = catColors[c.key] || 'var(--fpc-text2)';
+                catHtml += '<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--fpc-border);">';
+                catHtml += '<span style="font-size:20px;">' + icon + '</span>';
+                catHtml += '<div style="flex:1;"><span style="color:' + color + ';font-weight:bold;">' + c.label + '</span></div>';
+                catHtml += '<span style="color:var(--fpc-text2);font-size:12px;">' + c.count + ' URLs</span>';
+                catHtml += '<span style="background:' + color + ';color:#fff;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:bold;">' + c.total_hits + ' Hits</span>';
+                catHtml += '</div>';
+            });
+        } else {
+            catHtml = '<p style="color:var(--fpc-green);">Keine Bedrohungen erkannt.</p>';
+        }
+        document.getElementById('sec-categories').innerHTML = catHtml;
+        // Timeline Chart
+        if (d.timeline && typeof Chart !== 'undefined') {
+            var tlLabels = Object.keys(d.timeline);
+            var tlData = Object.values(d.timeline);
+            fpcMakeChart('chart-sec-timeline', {
+                type: 'bar',
+                data: { labels: tlLabels, datasets: [{ label: 'Scan-Versuche', data: tlData, backgroundColor: 'rgba(255,71,87,0.6)', borderColor: 'var(--fpc-red)', borderWidth: 1 }] },
+                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } }
+            });
+        }
+        // Tabelle rendern
+        fpcSecRender();
+    });
+}
+
+function fpcSecRender() {
+    var search = (document.getElementById('sec-search') ? document.getElementById('sec-search').value : '').toLowerCase();
+    var catFilter = document.getElementById('sec-cat-filter') ? document.getElementById('sec-cat-filter').value : '';
+    var filtered = secData.filter(function(t) {
+        if (search && t.url.toLowerCase().indexOf(search) === -1) return false;
+        if (catFilter && t.threat_category !== catFilter) return false;
+        return true;
+    });
+    var totalPages = Math.max(1, Math.ceil(filtered.length / secPerPage));
+    if (secPage >= totalPages) secPage = totalPages - 1;
+    var start = secPage * secPerPage;
+    var page = filtered.slice(start, start + secPerPage);
+    var catLabels = {db_dump:'DB-Dump', config:'Config', log_file:'Log', admin_probe:'Admin', cms_probe:'CMS', crypto_key:'Crypto', backup:'Backup', api_probe:'API', shell_exploit:'Shell'};
+    var catColors = {db_dump:'var(--fpc-red)', config:'var(--fpc-orange)', log_file:'var(--fpc-blue)', admin_probe:'var(--fpc-purple)', cms_probe:'var(--fpc-teal)', crypto_key:'var(--fpc-red)', backup:'var(--fpc-orange)', api_probe:'var(--fpc-blue)', shell_exploit:'var(--fpc-red)'};
+    var html = '<table class="fpc-table"><thead><tr><th>URL</th><th>Kategorie</th><th>Hits</th><th>Erster Zugriff</th><th>Letzter Zugriff</th></tr></thead><tbody>';
+    if (page.length === 0) {
+        html += '<tr><td colspan="5" style="text-align:center;color:var(--fpc-text2);">Keine Threats gefunden</td></tr>';
+    }
+    page.forEach(function(t) {
+        var cat = t.threat_category || 'unknown';
+        var catLabel = catLabels[cat] || cat;
+        var catColor = catColors[cat] || 'var(--fpc-text2)';
+        html += '<tr>';
+        html += '<td style="max-width:350px;overflow:hidden;text-overflow:ellipsis;"><a href="https://mr-hanf.de' + t.url + '" target="_blank" style="color:var(--fpc-teal);text-decoration:none;font-family:monospace;font-size:12px;" title="' + t.url + '">' + t.url + ' &#8599;</a></td>';
+        html += '<td><span style="background:' + catColor + ';color:#fff;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:bold;">' + catLabel + '</span></td>';
+        html += '<td style="font-weight:bold;">' + t.hit_count + '</td>';
+        html += '<td style="font-size:11px;">' + (t.first_hit || '-') + '</td>';
+        html += '<td style="font-size:11px;">' + (t.last_hit || '-') + '</td>';
+        html += '</tr>';
+    });
+    html += '</tbody></table>';
+    html += '<p style="color:var(--fpc-text2);font-size:12px;margin-top:4px;">' + filtered.length + ' von ' + secData.length + ' Threats (Seite ' + (secPage + 1) + '/' + totalPages + ')</p>';
+    document.getElementById('sec-threats-table').innerHTML = html;
+    fpcBuildPagination('sec-pagination', secPage + 1, totalPages, 'fpcSecGoPage');
+}
+
+function fpcSecGoPage(p) {
+    secPage = p - 1;
+    fpcSecRender();
+}
+
+// ============================================================
 // INIT: Tab-specific data loading
 // ============================================================
 document.addEventListener('DOMContentLoaded', function() {
@@ -5960,6 +6178,7 @@ document.addEventListener('DOMContentLoaded', function() {
         case 'gsc': fpcLoadGSC(); break;
         case 'analytics': fpcLoadGA4(); break;
         case 'sistrix': fpcLoadSistrix(); break;
+        case 'security': fpcLoadSecurity(); break;
     }
     // Check if rebuild is running
     fpcAjax('ajax=rebuild_progress', function(d) {
@@ -5977,7 +6196,7 @@ var AI_TAB_MAP = {
     'steuerung': 'cache_tools', 'urls': 'cache_tools', 'preloader': 'cache_tools',
     'fehler': 'fehler', 'seo': 'seo', 'inspector': 'performance',
     'health': 'health', 'statistik': 'stats', 'alerts': 'dashboard',
-    'settings': 'dashboard', 'gsc': 'gsc', 'analytics': 'ga4', 'sistrix': 'sistrix'
+    'settings': 'dashboard', 'gsc': 'gsc', 'analytics': 'ga4', 'sistrix': 'sistrix', 'security': 'security'
 };
 
 // Tab-spezifische Beschreibungen fuer den Button
@@ -5997,7 +6216,8 @@ var AI_TAB_LABELS = {
     'settings': 'Einstellungen pruefen',
     'gsc': 'SEO-Chancen finden',
     'analytics': 'Traffic & Conversions analysieren',
-    'sistrix': 'Sichtbarkeit analysieren'
+    'sistrix': 'Sichtbarkeit analysieren',
+    'security': 'Sicherheits-Bedrohungen analysieren'
 };
 
 // Sub-Kontext fuer SEO-Tab (je nach sichtbarer Sektion)

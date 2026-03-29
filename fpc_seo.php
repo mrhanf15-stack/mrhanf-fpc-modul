@@ -371,6 +371,14 @@ class FpcSeo {
     public function get404Log($filter = array()) {
         $log = $this->readJson($this->file_404_log);
 
+        // v10.6.0: Security-Scans aus dem normalen 404-Log filtern (ausser explizit angefordert)
+        if (!isset($filter['include_security']) || !$filter['include_security']) {
+            $log = array_filter($log, function($e) {
+                return self::isSecurityScan($e['url']) === false;
+            });
+            $log = array_values($log);
+        }
+
         if (isset($filter['resolved'])) {
             $resolved = $filter['resolved'] === 'true' || $filter['resolved'] === true;
             $log = array_filter($log, function($e) use ($resolved) {
@@ -1044,6 +1052,91 @@ class FpcSeo {
     /**
      * v10.2.3: Pruefen ob eine URL eine System-URL ist die nicht als SEO-Problem gemeldet werden soll
      */
+    /**
+     * v10.6.0: Erkennt ob eine 404-URL ein Hacker/Vulnerability-Scan ist
+     * Gibt die Bedrohungskategorie zurueck oder false
+     */
+    public static function isSecurityScan($url) {
+        $url_lower = strtolower($url);
+        // Kategorie 1: Datenbank-Dumps
+        $db_patterns = array('.sql', 'backup.sql', 'dump.sql', 'database.sql', 'db.sql', 'mysql.sql', '.sql.gz', '.sql.bak', '.sql.zip');
+        foreach ($db_patterns as $p) { if (strpos($url_lower, $p) !== false) return 'db_dump'; }
+        // Kategorie 2: Config/Credentials
+        $config_patterns = array('.env', '.ini', '.yml', '.yaml', '.toml', '.conf', '.cfg', '.config', 'wp-config', 'config.php', 'settings.php', 'database.php', '.htpasswd', '.htaccess', 'web.config', '.git/', '.svn/', '.gitlab-ci', '.github/', 'composer.json', 'package.json', 'Gemfile', 'Dockerfile', 'docker-compose', '.dockerenv');
+        foreach ($config_patterns as $p) { if (strpos($url_lower, $p) !== false) return 'config'; }
+        // Kategorie 3: Log-Dateien
+        $log_patterns = array('.log', 'access.log', 'error.log', 'debug.log', 'system.log', 'application.log', 'wp-debug', '/log/', '/logs/', 'phpinfo', 'server-status', 'server-info');
+        foreach ($log_patterns as $p) { if (strpos($url_lower, $p) !== false) return 'log_file'; }
+        // Kategorie 4: Admin/Login Panels
+        $admin_patterns = array('/wp-admin', '/wp-login', '/wp-content', '/wp-includes', '/wordpress', '/administrator', '/admin.php', '/login.php', '/phpmyadmin', '/pma/', '/adminer', '/cpanel', '/webmail', '/plesk', '/manager/', '/console', '/dashboard/login', '/user/login');
+        foreach ($admin_patterns as $p) { if (strpos($url_lower, $p) !== false) return 'admin_probe'; }
+        // Kategorie 5: Bekannte CMS/Framework Probes
+        $cms_patterns = array('/wp-json', '/xmlrpc.php', '/wp-cron', '/wp-signup', '/joomla', '/drupal', '/magento', '/laravel', '/symfony', '/artisan', '/telescope', '/nova', '/horizon', '/vendor/', '/node_modules/', '/bower_components/');
+        foreach ($cms_patterns as $p) { if (strpos($url_lower, $p) !== false) return 'cms_probe'; }
+        // Kategorie 6: SSL/Crypto Keys
+        $key_patterns = array('.key', '.pem', '.crt', '.cert', '.p12', '.pfx', '.jks', 'id_rsa', 'id_dsa', 'private_key', 'secret_key');
+        foreach ($key_patterns as $p) { if (strpos($url_lower, $p) !== false) return 'crypto_key'; }
+        // Kategorie 7: Backup-Dateien
+        $backup_patterns = array('.bak', '.backup', '.old', '.orig', '.save', '.swp', '.tmp', '~', '.copy', 'backup/', '/backups/');
+        foreach ($backup_patterns as $p) { if (strpos($url_lower, $p) !== false) return 'backup'; }
+        // Kategorie 8: API/Debug Endpoints
+        $api_patterns = array('/api/v1', '/api/v2', '/graphql', '/debug/', '/_debug', '/trace', '/actuator', '/metrics', '/health', '/status', '/info', '/.well-known/openid', '/oauth/', '/token');
+        foreach ($api_patterns as $p) { if (strpos($url_lower, $p) !== false) return 'api_probe'; }
+        // Kategorie 9: Shell/Exploit Versuche
+        $shell_patterns = array('.php.bak', 'shell.php', 'cmd.php', 'eval.php', 'c99.php', 'r57.php', 'webshell', '/cgi-bin/', '.asp', '.aspx', '.jsp', '.cgi');
+        foreach ($shell_patterns as $p) { if (strpos($url_lower, $p) !== false) return 'shell_exploit'; }
+        return false;
+    }
+
+    /**
+     * v10.6.0: Gibt alle Security-Threats aus dem 404-Log zurueck
+     * Gruppiert nach Kategorie mit Statistiken
+     */
+    public function getSecurityThreats($filter = array()) {
+        $log = $this->readJson($this->file_404_log);
+        $threats = array();
+        $categories = array();
+        $timeline = array();
+        foreach ($log as $entry) {
+            $cat = self::isSecurityScan($entry['url']);
+            if ($cat === false) continue;
+            $entry['threat_category'] = $cat;
+            $threats[] = $entry;
+            if (!isset($categories[$cat])) $categories[$cat] = array('count' => 0, 'total_hits' => 0, 'urls' => array());
+            $categories[$cat]['count']++;
+            $categories[$cat]['total_hits'] += $entry['hit_count'];
+            $categories[$cat]['urls'][] = $entry['url'];
+            // Timeline (nach Tag)
+            $day = substr($entry['last_hit'], 0, 10);
+            if ($day) {
+                if (!isset($timeline[$day])) $timeline[$day] = 0;
+                $timeline[$day] += $entry['hit_count'];
+            }
+        }
+        // Sortierung: neueste zuerst
+        usort($threats, function($a, $b) {
+            return strcmp($b['last_hit'], $a['last_hit']);
+        });
+        // Limit/Offset
+        $total = count($threats);
+        $limit = isset($filter['limit']) ? intval($filter['limit']) : 50;
+        $offset = isset($filter['offset']) ? intval($filter['offset']) : 0;
+        if ($limit > 0) $threats = array_slice($threats, $offset, $limit);
+        // Kategorie-Labels
+        $cat_labels = array(
+            'db_dump' => 'Datenbank-Dumps', 'config' => 'Config/Credentials', 'log_file' => 'Log-Dateien',
+            'admin_probe' => 'Admin-Panels', 'cms_probe' => 'CMS/Framework Probes', 'crypto_key' => 'SSL/Crypto Keys',
+            'backup' => 'Backup-Dateien', 'api_probe' => 'API/Debug Endpoints', 'shell_exploit' => 'Shell/Exploit'
+        );
+        $cat_summary = array();
+        foreach ($categories as $k => $v) {
+            $cat_summary[] = array('key' => $k, 'label' => isset($cat_labels[$k]) ? $cat_labels[$k] : $k, 'count' => $v['count'], 'total_hits' => $v['total_hits']);
+        }
+        usort($cat_summary, function($a, $b) { return $b['total_hits'] - $a['total_hits']; });
+        ksort($timeline);
+        return array('data' => array_values($threats), 'total' => $total, 'categories' => $cat_summary, 'timeline' => $timeline, 'total_hits' => array_sum(array_column($cat_summary, 'total_hits')));
+    }
+
     private static function isSystemUrl($url) {
         $system_patterns = array(
             '/fpc_serve.php',
