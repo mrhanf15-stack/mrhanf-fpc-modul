@@ -3359,9 +3359,10 @@ function fpcSeoLoad404(filter) {
     else if (seo404Filter === 'dismissed') params += '&dismissed=true';
 
     fpcAjax(params, function(d) {
-        if (!d || d.length === 0) { document.getElementById('seo-404-table').innerHTML = '<p style="color:var(--fpc-green)">Keine 404-Fehler in dieser Kategorie.</p>'; return; }
+        if (!Array.isArray(d) || d.length === 0) { document.getElementById('seo-404-table').innerHTML = '<p style="color:var(--fpc-green)">Keine 404-Fehler in dieser Kategorie.</p>'; return; }
         var html = '<table class="fpc-table"><thead><tr><th>URL</th><th>Hits</th><th>Erstmals</th><th>Letzter Hit</th><th>Referers</th><th>Aktion</th></tr></thead><tbody>';
         d.forEach(function(e) {
+            if (!e || !e.url || typeof e.url !== 'string') return;
             html += '<tr>';
             var checkUrl = (e.url.indexOf('http') === 0) ? e.url : 'https://mr-hanf.de' + e.url;
             html += '<td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;" title="' + e.url + '"><a href="' + checkUrl + '" target="_blank" style="color:var(--fpc-text);text-decoration:none;" title="URL oeffnen">' + e.url + '</a></td>';
@@ -3483,6 +3484,7 @@ function fpcSeoSwitchTypeTab(type) {
 
 // Dateityp-Erkennung: Bild? (Endungs-basiert + Pfad-basiert)
 function fpcSeoIsImage(url) {
+    if (!url || typeof url !== 'string') return false;
     var lower = url.toLowerCase();
     for (var i = 0; i < IMAGE_EXTENSIONS.length; i++) {
         if (lower.endsWith(IMAGE_EXTENSIONS[i]) || lower.indexOf(IMAGE_EXTENSIONS[i] + '?') !== -1 || lower.indexOf(IMAGE_EXTENSIONS[i] + '#') !== -1) return true;
@@ -3496,12 +3498,14 @@ function fpcSeoIsImage(url) {
 
 // Dateityp-Erkennung: PDF?
 function fpcSeoIsPdf(url) {
+    if (!url || typeof url !== 'string') return false;
     var lower = url.toLowerCase();
     return lower.endsWith('.pdf') || lower.indexOf('.pdf?') !== -1;
 }
 
 // Dateityp-Erkennung: Reines Asset (CSS/JS/Font etc, NICHT Bild/PDF)?
 function fpcSeoIsPureAsset(url) {
+    if (!url || typeof url !== 'string') return false;
     var lower = url.toLowerCase();
     for (var i = 0; i < PURE_ASSET_EXTENSIONS.length; i++) {
         if (lower.endsWith(PURE_ASSET_EXTENSIONS[i]) || lower.indexOf(PURE_ASSET_EXTENSIONS[i] + '?') !== -1) return true;
@@ -3512,7 +3516,7 @@ function fpcSeoIsPureAsset(url) {
 // Manuell angelegte Redirects laden (aus Redirect-Manager)
 function fpcSeoLoadManualRedirects() {
     fpcAjax('ajax=seo_redirects&search=', function(d) {
-        seoManualRedirects = d || [];
+        seoManualRedirects = Array.isArray(d) ? d : [];
         fpcSeoUpdateTabCounts();
     });
 }
@@ -3532,6 +3536,7 @@ function fpcSeoSetLangFilter(lang) {
 
 // v10.4.0: URL-Sprache erkennen
 function fpcSeoGetUrlLang(url) {
+    if (!url || typeof url !== 'string') return 'de';
     for (var i = 0; i < LANG_PREFIXES.length; i++) {
         if (url.indexOf(LANG_PREFIXES[i]) === 0) return LANG_PREFIXES[i].replace(/\//g, '');
     }
@@ -3552,6 +3557,7 @@ function fpcSeoToggleGroupView() {
 
 // v10.4.0: Basis-Pfad aus URL extrahieren (Sprach-Prefix entfernen)
 function fpcSeoGetBasePath(url) {
+    if (!url || typeof url !== 'string') return '/';
     for (var i = 0; i < LANG_PREFIXES.length; i++) {
         if (url.indexOf(LANG_PREFIXES[i]) === 0) {
             return url.substring(LANG_PREFIXES[i].length - 1);
@@ -3938,34 +3944,43 @@ function fpcSeoLoadScanResults(filter) {
     if (filter !== undefined) seoScanFilter = filter;
     // Alle Daten laden (Filterung passiert client-seitig)
     fpcAjax('ajax=seo_scan_results&status=&search=', function(d) {
-        seoScanData = d || [];
+        seoScanData = Array.isArray(d) ? d : [];
         // 404-Log laden und Bild/Asset-URLs als zusaetzliche Eintraege einfuegen
-        fpcAjax('ajax=seo_404_log&search=&resolved=false&dismissed=false', function(log404) {
-            if (log404 && log404.length > 0) {
-                var existingUrls = {};
-                seoScanData.forEach(function(r) { existingUrls[r.url] = true; });
-                log404.forEach(function(e) {
-                    if (!existingUrls[e.url]) {
-                        seoScanData.push({
-                            url: e.url,
-                            http_status: 404,
-                            fpc_cache: 'MISS',
-                            response_ms: 0,
-                            canonical: '-',
-                            status: 'error',
-                            issues: ['404-Fehler (aus 404-Log, ' + (e.hit_count || 0) + ' Hits)'],
-                            redirect_target: '',
-                            _source: '404log',
-                            _hits: e.hit_count || 0,
-                            _referers: e.referers || [],
-                            _404id: e.id
+        try {
+            fpcAjax('ajax=seo_404_log&search=&resolved=false&dismissed=false', function(log404) {
+                try {
+                    if (Array.isArray(log404) && log404.length > 0) {
+                        var existingUrls = {};
+                        seoScanData.forEach(function(r) { existingUrls[r.url] = true; });
+                        log404.forEach(function(e) {
+                            if (e && e.url && !existingUrls[e.url]) {
+                                seoScanData.push({
+                                    url: e.url,
+                                    http_status: 404,
+                                    fpc_cache: 'MISS',
+                                    response_ms: 0,
+                                    canonical: '-',
+                                    status: 'error',
+                                    issues: ['404-Fehler (aus 404-Log, ' + (e.hit_count || 0) + ' Hits)'],
+                                    redirect_target: '',
+                                    _source: '404log',
+                                    _hits: e.hit_count || 0,
+                                    _referers: e.referers || [],
+                                    _404id: e.id || 0
+                                });
+                                existingUrls[e.url] = true;
+                            }
                         });
-                        existingUrls[e.url] = true;
                     }
-                });
-            }
+                } catch(e404err) {
+                    console.warn('404-Log Integration fehlgeschlagen:', e404err);
+                }
+                fpcSeoRenderScanTable();
+            });
+        } catch(ajaxErr) {
+            console.warn('404-Log AJAX fehlgeschlagen:', ajaxErr);
             fpcSeoRenderScanTable();
-        });
+        }
     });
     // Manuell angelegte Redirects parallel laden
     fpcSeoLoadManualRedirects();
