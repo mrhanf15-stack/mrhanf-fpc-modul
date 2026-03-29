@@ -2129,22 +2129,22 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
             <span style="color:var(--fpc-text2);font-size:11px;margin-left:8px;">|</span>
             <!-- v10.4.0: Dateityp-Filter -->
             <button class="fpc-btn teal" style="font-size:11px;padding:4px 8px;" onclick="fpcSeoSetTypeFilter('pages')" id="btn-type-pages" title="Nur Shop-Seiten (HTML)">Seiten</button>
-            <button class="fpc-btn" style="font-size:11px;padding:4px 8px;background:var(--fpc-card2);" onclick="fpcSeoSetTypeFilter('all')" id="btn-type-all" title="Alle URLs anzeigen">Alle Typen</button>
-            <button class="fpc-btn" style="font-size:11px;padding:4px 8px;background:var(--fpc-card2);" onclick="fpcSeoSetTypeFilter('assets')" id="btn-type-assets" title="Nur Assets (PDF, Bilder, CSS, JS)">Assets</button>
+            <button class="fpc-btn" style="font-size:11px;padding:4px 8px;background:var(--fpc-card2);color:var(--fpc-text);" onclick="fpcSeoSetTypeFilter('all')" id="btn-type-all" title="Alle URLs anzeigen">Alle Typen</button>
+            <button class="fpc-btn" style="font-size:11px;padding:4px 8px;background:var(--fpc-card2);color:var(--fpc-text);" onclick="fpcSeoSetTypeFilter('assets')" id="btn-type-assets" title="Nur Assets (PDF, Bilder, CSS, JS)">Assets</button>
             <input type="text" class="fpc-input" id="scan-search" placeholder="URLs suchen..." oninput="fpcSeoLoadScanResults()" style="width:200px;margin-left:auto;">
         </div>
         <!-- v10.4.0: Sprach-Filter + KI-Aktionen -->
         <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center;">
             <span style="color:var(--fpc-text2);font-size:11px;">Sprache:</span>
             <button class="fpc-btn teal" style="font-size:11px;padding:3px 7px;" onclick="fpcSeoSetLangFilter('')" id="btn-lang-all">Alle</button>
-            <button class="fpc-btn" style="font-size:11px;padding:3px 7px;background:var(--fpc-card2);" onclick="fpcSeoSetLangFilter('de')" id="btn-lang-de">DE</button>
-            <button class="fpc-btn" style="font-size:11px;padding:3px 7px;background:var(--fpc-card2);" onclick="fpcSeoSetLangFilter('en')" id="btn-lang-en">EN</button>
-            <button class="fpc-btn" style="font-size:11px;padding:3px 7px;background:var(--fpc-card2);" onclick="fpcSeoSetLangFilter('fr')" id="btn-lang-fr">FR</button>
-            <button class="fpc-btn" style="font-size:11px;padding:3px 7px;background:var(--fpc-card2);" onclick="fpcSeoSetLangFilter('es')" id="btn-lang-es">ES</button>
-            <button class="fpc-btn" style="font-size:11px;padding:3px 7px;background:var(--fpc-card2);" onclick="fpcSeoSetLangFilter('nl')" id="btn-lang-nl">NL</button>
-            <button class="fpc-btn" style="font-size:11px;padding:3px 7px;background:var(--fpc-card2);" onclick="fpcSeoSetLangFilter('it')" id="btn-lang-it">IT</button>
+            <button class="fpc-btn" style="font-size:11px;padding:3px 7px;background:var(--fpc-card2);color:var(--fpc-text);" onclick="fpcSeoSetLangFilter('de')" id="btn-lang-de">DE</button>
+            <button class="fpc-btn" style="font-size:11px;padding:3px 7px;background:var(--fpc-card2);color:var(--fpc-text);" onclick="fpcSeoSetLangFilter('en')" id="btn-lang-en">EN</button>
+            <button class="fpc-btn" style="font-size:11px;padding:3px 7px;background:var(--fpc-card2);color:var(--fpc-text);" onclick="fpcSeoSetLangFilter('fr')" id="btn-lang-fr">FR</button>
+            <button class="fpc-btn" style="font-size:11px;padding:3px 7px;background:var(--fpc-card2);color:var(--fpc-text);" onclick="fpcSeoSetLangFilter('es')" id="btn-lang-es">ES</button>
+            <button class="fpc-btn" style="font-size:11px;padding:3px 7px;background:var(--fpc-card2);color:var(--fpc-text);" onclick="fpcSeoSetLangFilter('nl')" id="btn-lang-nl">NL</button>
+            <button class="fpc-btn" style="font-size:11px;padding:3px 7px;background:var(--fpc-card2);color:var(--fpc-text);" onclick="fpcSeoSetLangFilter('it')" id="btn-lang-it">IT</button>
             <span style="color:var(--fpc-text2);font-size:11px;margin-left:12px;">|</span>
-            <button class="fpc-btn" style="font-size:11px;padding:4px 10px;background:var(--fpc-card2);" onclick="fpcSeoToggleGroupView()" id="btn-group-toggle" title="URLs nach Basis-Pfad gruppieren (alle Sprachen zusammen)">&#127760; Gruppiert</button>
+            <button class="fpc-btn" style="font-size:11px;padding:4px 10px;background:var(--fpc-card2);color:var(--fpc-text);" onclick="fpcSeoToggleGroupView()" id="btn-group-toggle" title="URLs nach Basis-Pfad gruppieren (alle Sprachen zusammen)">&#127760; Gruppiert</button>
             <button class="fpc-btn" style="font-size:11px;padding:4px 10px;background:linear-gradient(135deg,#667eea,#764ba2);color:#fff;" onclick="fpcSeoAiSuggestRedirects()" id="btn-ai-suggest" title="KI analysiert problematische URLs und schlaegt Redirects vor">&#129302; KI Redirect-Vorschlaege</button>
             <span id="scan-result-count" style="color:var(--fpc-text2);font-size:11px;margin-left:auto;"></span>
         </div>
@@ -3396,7 +3396,7 @@ function fpcSeoSetTypeFilter(type) {
     seoScanTypeFilter = type;
     ['pages','all','assets'].forEach(function(t) {
         var btn = document.getElementById('btn-type-' + t);
-        if (btn) { btn.style.background = (t === type) ? '' : 'var(--fpc-card2)'; btn.className = 'fpc-btn' + (t === type ? ' teal' : ''); }
+        if (btn) { btn.style.background = (t === type) ? '' : 'var(--fpc-card2)'; btn.style.color = (t === type) ? '' : 'var(--fpc-text)'; btn.className = 'fpc-btn' + (t === type ? ' teal' : ''); }
     });
     fpcSeoRenderScanTable();
 }
@@ -3409,7 +3409,7 @@ function fpcSeoSetLangFilter(lang) {
         var id = l === 'all' ? 'btn-lang-all' : 'btn-lang-' + l;
         var btn = document.getElementById(id);
         var match = (l === 'all' && lang === '') || l === lang;
-        if (btn) { btn.style.background = match ? '' : 'var(--fpc-card2)'; btn.className = 'fpc-btn' + (match ? ' teal' : ''); }
+        if (btn) { btn.style.background = match ? '' : 'var(--fpc-card2)'; btn.style.color = match ? '' : 'var(--fpc-text)'; btn.className = 'fpc-btn' + (match ? ' teal' : ''); }
     });
     fpcSeoRenderScanTable();
 }
@@ -3428,6 +3428,7 @@ function fpcSeoToggleGroupView() {
     var btn = document.getElementById('btn-group-toggle');
     if (btn) {
         btn.style.background = seoScanGrouped ? '' : 'var(--fpc-card2)';
+        btn.style.color = seoScanGrouped ? '' : 'var(--fpc-text)';
         btn.className = 'fpc-btn' + (seoScanGrouped ? ' teal' : '');
     }
     fpcSeoRenderScanTable();
