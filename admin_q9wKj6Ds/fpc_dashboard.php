@@ -3481,11 +3481,15 @@ function fpcSeoSwitchTypeTab(type) {
     fpcSeoRenderScanTable();
 }
 
-// Dateityp-Erkennung: Bild?
+// Dateityp-Erkennung: Bild? (Endungs-basiert + Pfad-basiert)
 function fpcSeoIsImage(url) {
     var lower = url.toLowerCase();
     for (var i = 0; i < IMAGE_EXTENSIONS.length; i++) {
-        if (lower.endsWith(IMAGE_EXTENSIONS[i]) || lower.indexOf(IMAGE_EXTENSIONS[i] + '?') !== -1) return true;
+        if (lower.endsWith(IMAGE_EXTENSIONS[i]) || lower.indexOf(IMAGE_EXTENSIONS[i] + '?') !== -1 || lower.indexOf(IMAGE_EXTENSIONS[i] + '#') !== -1) return true;
+    }
+    var imgPaths = ['/images/', '/img/', '/bilder/', '/fotos/', '/photos/', '/thumbnails/', '/thumb/', '/media/image', '/product_images/', '/popup_images/', '/original_images/', '/info_images/', '/banner/'];
+    for (var i = 0; i < imgPaths.length; i++) {
+        if (lower.indexOf(imgPaths[i]) !== -1) return true;
     }
     return false;
 }
@@ -3556,13 +3560,11 @@ function fpcSeoGetBasePath(url) {
     return url;
 }
 
-// v10.4.0: Pruefen ob URL ein Asset ist
+// v10.4.0: Pruefen ob URL ein Asset ist (Bild, PDF, CSS, JS, Font etc.)
 function fpcSeoIsAsset(url) {
-    var lower = url.toLowerCase();
-    for (var i = 0; i < ASSET_EXTENSIONS.length; i++) {
-        if (lower.indexOf(ASSET_EXTENSIONS[i]) === lower.length - ASSET_EXTENSIONS[i].length) return true;
-        if (lower.indexOf(ASSET_EXTENSIONS[i] + '?') !== -1) return true;
-    }
+    if (fpcSeoIsImage(url)) return true;
+    if (fpcSeoIsPdf(url)) return true;
+    if (fpcSeoIsPureAsset(url)) return true;
     return false;
 }
 
