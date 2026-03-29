@@ -2144,6 +2144,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
             <button class="fpc-btn" style="font-size:11px;padding:3px 7px;background:var(--fpc-card2);" onclick="fpcSeoSetLangFilter('nl')" id="btn-lang-nl">NL</button>
             <button class="fpc-btn" style="font-size:11px;padding:3px 7px;background:var(--fpc-card2);" onclick="fpcSeoSetLangFilter('it')" id="btn-lang-it">IT</button>
             <span style="color:var(--fpc-text2);font-size:11px;margin-left:12px;">|</span>
+            <button class="fpc-btn" style="font-size:11px;padding:4px 10px;background:var(--fpc-card2);" onclick="fpcSeoToggleGroupView()" id="btn-group-toggle" title="URLs nach Basis-Pfad gruppieren (alle Sprachen zusammen)">&#127760; Gruppiert</button>
             <button class="fpc-btn" style="font-size:11px;padding:4px 10px;background:linear-gradient(135deg,#667eea,#764ba2);color:#fff;" onclick="fpcSeoAiSuggestRedirects()" id="btn-ai-suggest" title="KI analysiert problematische URLs und schlaegt Redirects vor">&#129302; KI Redirect-Vorschlaege</button>
             <span id="scan-result-count" style="color:var(--fpc-text2);font-size:11px;margin-left:auto;"></span>
         </div>
@@ -3043,6 +3044,7 @@ var seo404Filter = 'unresolved';
 var seoScanFilter = '';
 var seoScanTypeFilter = 'pages'; // v10.4.0: pages|all|assets
 var seoScanLangFilter = '';      // v10.4.0: ''|de|en|fr|es|nl|it
+var seoScanGrouped = false;      // v10.4.0: Gruppierte Ansicht
 var seoScanData = [];            // v10.4.0: Rohdaten fuer KI-Analyse
 
 function fpcLoadSeo() {
@@ -3420,6 +3422,27 @@ function fpcSeoGetUrlLang(url) {
     return 'de';
 }
 
+// v10.4.0: Gruppierte Ansicht togglen
+function fpcSeoToggleGroupView() {
+    seoScanGrouped = !seoScanGrouped;
+    var btn = document.getElementById('btn-group-toggle');
+    if (btn) {
+        btn.style.background = seoScanGrouped ? '' : 'var(--fpc-card2)';
+        btn.className = 'fpc-btn' + (seoScanGrouped ? ' teal' : '');
+    }
+    fpcSeoRenderScanTable();
+}
+
+// v10.4.0: Basis-Pfad aus URL extrahieren (Sprach-Prefix entfernen)
+function fpcSeoGetBasePath(url) {
+    for (var i = 0; i < LANG_PREFIXES.length; i++) {
+        if (url.indexOf(LANG_PREFIXES[i]) === 0) {
+            return url.substring(LANG_PREFIXES[i].length - 1);
+        }
+    }
+    return url;
+}
+
 // v10.4.0: Pruefen ob URL ein Asset ist
 function fpcSeoIsAsset(url) {
     var lower = url.toLowerCase();
@@ -3441,15 +3464,11 @@ function fpcSeoRenderScanTable() {
 
     // Client-seitige Filter anwenden
     var filtered = d.filter(function(r) {
-        // Dateityp-Filter
         var isAsset = fpcSeoIsAsset(r.url);
         if (seoScanTypeFilter === 'pages' && isAsset) return false;
         if (seoScanTypeFilter === 'assets' && !isAsset) return false;
-
-        // Sprach-Filter
         if (seoScanLangFilter !== '') {
-            var urlLang = fpcSeoGetUrlLang(r.url);
-            if (urlLang !== seoScanLangFilter) return false;
+            if (fpcSeoGetUrlLang(r.url) !== seoScanLangFilter) return false;
         }
         return true;
     });
@@ -3457,23 +3476,32 @@ function fpcSeoRenderScanTable() {
     // Sprach-Statistik zaehlen
     var langCounts = {de:0, en:0, fr:0, es:0, nl:0, it:0};
     d.forEach(function(r) { var l = fpcSeoGetUrlLang(r.url); if (langCounts[l] !== undefined) langCounts[l]++; });
-
-    // Sprach-Badges aktualisieren
     ['de','en','fr','es','nl','it'].forEach(function(l) {
         var btn = document.getElementById('btn-lang-' + l);
         if (btn) btn.textContent = l.toUpperCase() + ' (' + langCounts[l] + ')';
     });
 
+    // Gruppierte oder flache Ansicht?
+    if (seoScanGrouped) {
+        fpcSeoRenderGroupedTable(filtered);
+    } else {
+        fpcSeoRenderFlatTable(filtered);
+    }
+    document.getElementById('scan-result-count').textContent = filtered.length + ' von ' + d.length + ' URLs' + (seoScanGrouped ? ' (gruppiert)' : '');
+}
+
+// v10.4.0: Flache Tabelle (Standard-Ansicht)
+function fpcSeoRenderFlatTable(filtered) {
+    var langColorMap = {de:'#00d4aa', en:'#00a8ff', fr:'#ff6b6b', es:'#ffa726', nl:'#ff9800', it:'#ab47bc'};
     var html = '<table class="fpc-table"><thead><tr><th>URL</th><th>Sprache</th><th>HTTP</th><th>Canonical</th><th>FPC Cache</th><th>Response (ms)</th><th>Status</th><th>Issues</th><th>Aktion</th></tr></thead><tbody>';
     filtered.forEach(function(r) {
         var statusCls = r.status === 'ok' ? 'hit' : (r.status === 'warning' ? 'bypass' : 'miss');
         var escUrl = (r.url || '').replace(/'/g, "\\'");
         var fullUrl = (r.url.indexOf('http') === 0) ? r.url : 'https://mr-hanf.de' + r.url;
         var lang = fpcSeoGetUrlLang(r.url);
-        var langColor = lang === 'de' ? '#00d4aa' : lang === 'en' ? '#00a8ff' : lang === 'fr' ? '#ff6b6b' : lang === 'es' ? '#ffa726' : lang === 'nl' ? '#ff9800' : '#ab47bc';
         html += '<tr>';
-        html += '<td style="max-width:280px;overflow:hidden;text-overflow:ellipsis;" title="' + r.url + '"><a href="' + fullUrl + '" target="_blank" style="color:var(--fpc-teal);text-decoration:none;" title="URL im Browser oeffnen">' + r.url + '</a></td>';
-        html += '<td><span style="color:' + langColor + ';font-size:11px;font-weight:bold;">' + lang.toUpperCase() + '</span></td>';
+        html += '<td style="max-width:280px;overflow:hidden;text-overflow:ellipsis;" title="' + r.url + '"><a href="' + fullUrl + '" target="_blank" style="color:var(--fpc-teal);text-decoration:none;">' + r.url + '</a></td>';
+        html += '<td><span style="color:' + (langColorMap[lang]||'#ccc') + ';font-size:11px;font-weight:bold;">' + lang.toUpperCase() + '</span></td>';
         html += '<td><span class="fpc-badge ' + (r.http_status < 300 ? 'hit' : r.http_status < 400 ? 'bypass' : 'miss') + '">' + r.http_status + '</span></td>';
         html += '<td>' + (r.canonical_match === true ? '<span style="color:var(--fpc-green)">OK</span>' : r.canonical_match === false ? '<span style="color:var(--fpc-red)">Mismatch</span>' : '-') + '</td>';
         html += '<td>' + (r.has_fpc_cache ? '<span style="color:var(--fpc-green)">HIT</span>' : '<span style="color:var(--fpc-orange)">MISS</span>') + '</td>';
@@ -3482,18 +3510,180 @@ function fpcSeoRenderScanTable() {
         html += '<td style="font-size:11px;">' + (r.issues ? r.issues.join(', ') : '') + '</td>';
         html += '<td style="white-space:nowrap;">';
         html += '<button class="fpc-btn" style="padding:2px 6px;font-size:11px;margin-right:3px;background:var(--fpc-blue);" onclick="fpcSeo404Check(\'' + escUrl + '\')" title="URL pruefen">&#128269;</button>';
-        if (r.http_status >= 300 && r.http_status < 400) {
-            html += '<button class="fpc-btn green" style="padding:2px 6px;font-size:11px;margin-right:3px;" onclick="fpcSeoScanRedirect(\'' + escUrl + '\')" title="Redirect anlegen">&#8594;</button>';
-        }
-        if (r.http_status >= 400) {
-            html += '<button class="fpc-btn red" style="padding:2px 6px;font-size:11px;" onclick="fpcSeoScanRedirect(\'' + escUrl + '\')" title="Redirect anlegen">&#8594;</button>';
-        }
-        html += '</td>';
-        html += '</tr>';
+        if (r.http_status >= 300 && r.http_status < 400) html += '<button class="fpc-btn green" style="padding:2px 6px;font-size:11px;margin-right:3px;" onclick="fpcSeoScanRedirect(\'' + escUrl + '\')" title="Redirect anlegen">&#8594;</button>';
+        if (r.http_status >= 400) html += '<button class="fpc-btn red" style="padding:2px 6px;font-size:11px;" onclick="fpcSeoScanRedirect(\'' + escUrl + '\')" title="Redirect anlegen">&#8594;</button>';
+        html += '</td></tr>';
     });
     html += '</tbody></table>';
-    document.getElementById('scan-result-count').textContent = filtered.length + ' von ' + d.length + ' URLs';
     document.getElementById('seo-scan-table').innerHTML = html;
+}
+
+// v10.4.0: Gruppierte Tabelle - URLs nach Basis-Pfad gruppiert
+function fpcSeoRenderGroupedTable(filtered) {
+    var langColorMap = {de:'#00d4aa', en:'#00a8ff', fr:'#ff6b6b', es:'#ffa726', nl:'#ff9800', it:'#ab47bc'};
+    var langOrder = ['de','en','fr','es','nl','it'];
+
+    // Nach Basis-Pfad gruppieren
+    var groups = {};
+    var groupOrder = [];
+    filtered.forEach(function(r) {
+        var base = fpcSeoGetBasePath(r.url);
+        if (!groups[base]) {
+            groups[base] = {};
+            groupOrder.push(base);
+        }
+        var lang = fpcSeoGetUrlLang(r.url);
+        groups[base][lang] = r;
+    });
+
+    // Sortieren: Gruppen mit mehreren Sprachen zuerst, dann nach Basis-Pfad
+    groupOrder.sort(function(a, b) {
+        var aCount = Object.keys(groups[a]).length;
+        var bCount = Object.keys(groups[b]).length;
+        if (aCount !== bCount) return bCount - aCount;
+        return a.localeCompare(b);
+    });
+
+    var html = '';
+    var multiLangGroups = 0;
+    var singleGroups = 0;
+
+    groupOrder.forEach(function(base) {
+        var langs = groups[base];
+        var langKeys = Object.keys(langs);
+        var isMultiLang = langKeys.length > 1;
+        if (isMultiLang) multiLangGroups++; else singleGroups++;
+
+        // Worst-Status der Gruppe ermitteln
+        var worstStatus = 'ok';
+        var worstHttp = 200;
+        langKeys.forEach(function(l) {
+            var s = langs[l].http_status;
+            if (s > worstHttp) worstHttp = s;
+            if (langs[l].status === 'error') worstStatus = 'error';
+            else if (langs[l].status === 'redirect' && worstStatus !== 'error') worstStatus = 'redirect';
+            else if (langs[l].status === 'warning' && worstStatus === 'ok') worstStatus = 'warning';
+        });
+        var groupColor = worstStatus === 'error' ? 'var(--fpc-red)' : worstStatus === 'redirect' ? 'var(--fpc-blue)' : worstStatus === 'warning' ? 'var(--fpc-orange)' : 'var(--fpc-green)';
+        var groupBorder = isMultiLang ? 'border-left:3px solid ' + groupColor + ';' : '';
+
+        // Gruppen-Container
+        html += '<div style="background:var(--fpc-card);border-radius:8px;padding:0;margin-bottom:' + (isMultiLang ? '12' : '4') + 'px;border:1px solid var(--fpc-border);' + groupBorder + 'overflow:hidden;">';
+
+        if (isMultiLang) {
+            // Gruppen-Header mit Basis-Pfad und Sprach-Badges
+            var langBadges = langKeys.sort(function(a,b) { return langOrder.indexOf(a) - langOrder.indexOf(b); }).map(function(l) {
+                var c = langColorMap[l] || '#ccc';
+                var s = langs[l].http_status;
+                return '<span style="display:inline-block;background:' + c + '22;color:' + c + ';font-size:10px;font-weight:bold;padding:2px 6px;border-radius:3px;border:1px solid ' + c + '44;">' + l.toUpperCase() + ' (' + s + ')</span>';
+            }).join(' ');
+
+            html += '<div style="padding:10px 14px;background:var(--fpc-card2);display:flex;align-items:center;gap:10px;flex-wrap:wrap;cursor:pointer;" onclick="this.parentElement.querySelector(\'.scan-group-body\').style.display=this.parentElement.querySelector(\'.scan-group-body\').style.display===\'none\'?\'block\':\'none\'">';
+            html += '<span style="color:var(--fpc-text);font-weight:bold;font-size:13px;">&#127760; ' + base + '</span>';
+            html += '<span style="font-size:11px;color:var(--fpc-text2);">' + langKeys.length + ' Sprachen</span>';
+            html += langBadges;
+            // Gruppen-Aktionen
+            if (worstHttp >= 300) {
+                var escBase = base.replace(/'/g, "\\'");
+                html += '<button class="fpc-btn" style="padding:3px 8px;font-size:11px;margin-left:auto;background:linear-gradient(135deg,#667eea,#764ba2);color:#fff;" onclick="event.stopPropagation();fpcSeoGroupRedirect(\'' + escBase + '\')" title="Redirect fuer ALLE Sprachen dieser URL anlegen">&#127760; Redirect alle Sprachen</button>';
+            }
+            html += '</div>';
+
+            // Gruppen-Body: Einzelne Sprach-Zeilen
+            html += '<div class="scan-group-body" style="display:block;">';
+            html += '<table class="fpc-table" style="margin:0;border-radius:0;"><tbody>';
+        }
+
+        // Zeilen fuer jede Sprache
+        langKeys.sort(function(a,b) { return langOrder.indexOf(a) - langOrder.indexOf(b); }).forEach(function(lang) {
+            var r = langs[lang];
+            var statusCls = r.status === 'ok' ? 'hit' : (r.status === 'warning' ? 'bypass' : 'miss');
+            var escUrl = (r.url || '').replace(/'/g, "\\'");
+            var fullUrl = 'https://mr-hanf.de' + r.url;
+
+            if (!isMultiLang) {
+                html += '<table class="fpc-table" style="margin:0;border-radius:0;"><tbody>';
+            }
+
+            html += '<tr style="' + (isMultiLang ? 'border-left:3px solid ' + (langColorMap[lang]||'#ccc') + ';' : '') + '">';
+            html += '<td style="width:30px;text-align:center;"><span style="color:' + (langColorMap[lang]||'#ccc') + ';font-size:11px;font-weight:bold;">' + lang.toUpperCase() + '</span></td>';
+            html += '<td style="max-width:280px;overflow:hidden;text-overflow:ellipsis;" title="' + r.url + '"><a href="' + fullUrl + '" target="_blank" style="color:var(--fpc-teal);text-decoration:none;font-size:12px;">' + r.url + '</a></td>';
+            html += '<td style="width:50px;"><span class="fpc-badge ' + (r.http_status < 300 ? 'hit' : r.http_status < 400 ? 'bypass' : 'miss') + '">' + r.http_status + '</span></td>';
+            html += '<td style="width:60px;">' + (r.has_fpc_cache ? '<span style="color:var(--fpc-green);font-size:11px;">HIT</span>' : '<span style="color:var(--fpc-orange);font-size:11px;">MISS</span>') + '</td>';
+            html += '<td style="width:50px;font-size:11px;">' + r.response_time_ms + 'ms</td>';
+            html += '<td style="width:60px;"><span class="fpc-badge ' + statusCls + '" style="font-size:10px;">' + r.status + '</span></td>';
+            html += '<td style="font-size:10px;color:var(--fpc-text2);">' + (r.issues ? r.issues.join(', ') : '') + '</td>';
+            html += '<td style="white-space:nowrap;width:70px;">';
+            html += '<button class="fpc-btn" style="padding:2px 5px;font-size:10px;margin-right:2px;background:var(--fpc-blue);" onclick="fpcSeo404Check(\'' + escUrl + '\')" title="Pruefen">&#128269;</button>';
+            if (r.http_status >= 300) {
+                var btnCls = r.http_status < 400 ? 'green' : 'red';
+                html += '<button class="fpc-btn ' + btnCls + '" style="padding:2px 5px;font-size:10px;" onclick="fpcSeoScanRedirect(\'' + escUrl + '\')" title="Redirect">&#8594;</button>';
+            }
+            html += '</td></tr>';
+
+            if (!isMultiLang) {
+                html += '</tbody></table>';
+            }
+        });
+
+        if (isMultiLang) {
+            html += '</tbody></table></div>'; // close group-body
+        }
+        html += '</div>'; // close group container
+    });
+
+    // Zusammenfassung oben
+    var summary = '<div style="display:flex;gap:12px;margin-bottom:10px;font-size:12px;color:var(--fpc-text2);">';
+    summary += '<span>&#127760; <strong>' + multiLangGroups + '</strong> Sprach-Gruppen</span>';
+    summary += '<span>&#128196; <strong>' + singleGroups + '</strong> Einzel-URLs</span>';
+    summary += '<span>&#128202; <strong>' + groupOrder.length + '</strong> Basis-Pfade gesamt</span>';
+    summary += '</div>';
+
+    document.getElementById('seo-scan-table').innerHTML = summary + html;
+}
+
+// v10.4.0: Gruppen-Redirect - fragt nach Ziel und legt fuer ALLE Sprachen an
+function fpcSeoGroupRedirect(basePath) {
+    var target = prompt('Redirect-Ziel fuer alle Sprachen von:\n' + basePath + '\n\nGib den Basis-Pfad ein (ohne Sprach-Prefix):', '/');
+    if (target === null || target === '') return;
+
+    // Alle Sprach-Varianten dieser Basis-URL finden
+    var redirects = [];
+    var langPrefixes = ['', '/en', '/fr', '/es', '/nl', '/it'];
+    var langNames = ['DE', 'EN', 'FR', 'ES', 'NL', 'IT'];
+
+    seoScanData.forEach(function(r) {
+        var rBase = fpcSeoGetBasePath(r.url);
+        if (rBase === basePath && r.http_status >= 300) {
+            var lang = fpcSeoGetUrlLang(r.url);
+            var prefix = lang === 'de' ? '' : '/' + lang;
+            redirects.push({
+                source: r.url,
+                target: prefix + target,
+                type: '301',
+                note: 'Gruppen-Redirect (' + lang.toUpperCase() + ')'
+            });
+        }
+    });
+
+    if (redirects.length === 0) {
+        fpcToast('Keine problematischen URLs in dieser Gruppe gefunden', true);
+        return;
+    }
+
+    var msg = redirects.length + ' Redirects anlegen:\n\n';
+    redirects.forEach(function(r) { msg += r.source + ' -> ' + r.target + '\n'; });
+    if (!confirm(msg)) return;
+
+    fpcAjaxPostJson('seo_redirect_bulk_add', { redirects: redirects }, function(r) {
+        if (r.ok) {
+            fpcToast(r.msg);
+            fpcSeoLoadRedirects();
+            fpcSeoLoadScanResults();
+        } else {
+            fpcToast(r.msg || 'Fehler', true);
+        }
+    });
 }
 
 function fpcSeoLoadScanResults(filter) {
